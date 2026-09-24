@@ -9,16 +9,27 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$cdpUrl = "http://localhost:$Port/json/version"
+$cdpUrl = "http://127.0.0.1:$Port/json/version"
 
 function Test-Cdp {
-    try { return Invoke-RestMethod -Uri $cdpUrl -TimeoutSec 2 } catch { return $null }
+    # 127.0.0.1, not localhost: CDP binds IPv4 only and localhost may resolve to ::1.
+    # Proxy disabled: a system proxy must never see the CDP endpoint.
+    try {
+        $req = [System.Net.HttpWebRequest]::Create($cdpUrl)
+        $req.Proxy = $null
+        $req.Timeout = 2000
+        $resp = $req.GetResponse()
+        try {
+            $body = (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd()
+        } finally { $resp.Close() }
+        return $body | ConvertFrom-Json
+    } catch { return $null }
 }
 
 # Already running with CDP on this port: nothing to do.
 $info = Test-Cdp
 if ($info) {
-    Write-Host "CDP deja actif sur http://localhost:$Port ($($info.Browser))"
+    Write-Host "CDP deja actif sur http://127.0.0.1:$Port ($($info.Browser))"
     exit 0
 }
 
@@ -96,7 +107,7 @@ while ((Get-Date) -lt $deadline) {
     $info = Test-Cdp
     if ($info) {
         Write-Host ""
-        Write-Host "CDP pret : http://localhost:$Port"
+        Write-Host "CDP pret : http://127.0.0.1:$Port"
         $info | ConvertTo-Json
         exit 0
     }

@@ -4,6 +4,7 @@
 import { getClient, getTargetInfo, evaluate } from '../connection.js';
 import { existsSync } from 'fs';
 import { execSync, spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 
 export async function healthCheck() {
   await getClient();
@@ -234,15 +235,25 @@ export async function launch({ port, kill_existing } = {}) {
     } catch { /* may not be running */ }
   }
 
-  const child = spawn(tvPath, [`--remote-debugging-port=${cdpPort}`], { detached: true, stdio: 'ignore' });
+  // Microsoft Store (MSIX) exes can't be spawned directly (access denied): delegate to the
+  // launcher script, which runs the exe inside the package context.
+  const isMsix = platform === 'win32' && /\\WindowsApps\\/i.test(tvPath);
+  const child = isMsix
+    ? spawn('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File',
+        fileURLToPath(new URL('../../scripts/launch_tv_debug.ps1', import.meta.url)), '-Port', String(cdpPort)],
+        { detached: true, stdio: 'ignore', windowsHide: true })
+    : spawn(tvPath, [`--remote-debugging-port=${cdpPort}`], { detached: true, stdio: 'ignore' });
+  let spawnError = null;
+  child.on('error', (e) => { spawnError = e; });
   child.unref();
 
   for (let i = 0; i < 15; i++) {
     await new Promise(r => setTimeout(r, 1000));
+    if (spawnError) throw new Error(`Failed to launch TradingView (${tvPath}): ${spawnError.message}`);
     try {
       const http = await import('http');
       const ready = await new Promise((resolve) => {
-        http.get(`http://localhost:${cdpPort}/json/version`, (res) => {
+        http.get(`http://127.0.0.1:${cdpPort}/json/version`, (res) => {
           let data = '';
           res.on('data', (chunk) => data += chunk);
           res.on('end', () => resolve(data));
@@ -252,7 +263,7 @@ export async function launch({ port, kill_existing } = {}) {
         const info = JSON.parse(ready);
         return {
           success: true, platform, binary: tvPath, pid: child.pid,
-          cdp_port: cdpPort, cdp_url: `http://localhost:${cdpPort}`,
+          cdp_port: cdpPort, cdp_url: `http://127.0.0.1:${cdpPort}`,
           browser: info.Browser, user_agent: info['User-Agent'],
         };
       }
