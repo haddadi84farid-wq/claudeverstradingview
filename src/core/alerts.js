@@ -39,12 +39,7 @@ export async function create({ condition, price: priceRaw, message }) {
           return true;
         }
       }
-      if (inputs.length > 0) {
-        var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        nativeSet.call(inputs[0], ${priceStr});
-        inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }
+      // No blind fallback to the first input: it may not be the price field.
       return false;
     })()
   `);
@@ -61,6 +56,18 @@ export async function create({ condition, price: priceRaw, message }) {
         }
       })()
     `);
+  }
+
+  // Never submit an alert whose price was not set: TradingView would create it at the
+  // default (current market) price. Close the dialog instead.
+  if (!priceSet) {
+    const client = await getClient();
+    await client.Input.dispatchKeyEvent({ type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    await client.Input.dispatchKeyEvent({ type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    return {
+      success: false, price, condition, price_set: false, created: false,
+      error: 'Price field not found in the alert dialog; no alert was created (dialog closed). Create it manually.',
+    };
   }
 
   await new Promise(r => setTimeout(r, 500));
