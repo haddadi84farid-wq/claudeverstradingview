@@ -10,3 +10,6 @@ discovery-log.json
 .env.*
 *.pem
 *.key
+
+# Regles de trading personnelles (utiliser ~/.kasper/rules.json)
+rules.json
