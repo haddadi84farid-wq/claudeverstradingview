@@ -1,0 +1,108 @@
+//@version=6
+// Checklist visuelle du plan de vente XAUUSD : 3 conditions cochées en direct
+// + schéma des bougies attendues, dessiné dans l'espace vide à droite du graphique.
+// À utiliser sur un graphique 15 min. Ne passe aucun ordre.
+indicator("Plan XAUUSD — checklist vente", overlay = true, max_boxes_count = 30, max_lines_count = 30, max_labels_count = 30)
+
+zLow       = input.float(4289.0,  "Zone de vente — bas")
+zTop       = input.float(4296.0,  "Zone de vente — haut")
+stopLvl    = input.float(4306.5,  "Stop")
+invLvl     = input.float(4303.44, "Invalidation (clôture 15 min au-dessus)")
+tp1        = input.float(4262.0,  "TP1")
+tp2        = input.float(4246.0,  "TP2")
+lots       = input.float(0.01,    "Taille (lots)")
+endHourUtc = input.int(18,        "Fin de validité (heure UTC)", minval = 0, maxval = 23)
+wickRatio  = input.float(0.5,     "Mèche haute minimale (part de la bougie)", minval = 0.1, maxval = 0.9)
+
+// 1. Le prix a atteint la zone (bougie en cours ou 3 précédentes)
+touched = ta.highest(high, 4) >= zLow
+
+// 2. Rejet sur la dernière bougie 15 min CLÔTURÉE : elle a touché la zone,
+//    longue mèche haute, clôture sous le milieu de la zone
+rng       = high[1] - low[1]
+upperWick = high[1] - math.max(open[1], close[1])
+rejection = high[1] >= zLow and rng > 0 and upperWick >= wickRatio * rng and close[1] < zLow + (zTop - zLow) / 2
+
+// 3. Cassure de structure baissière en 5 min (approximation) : une clôture 5 min
+//    sous le plus bas des 6 bougies 5 min précédentes, après un passage dans la zone
+choch5Expr() => ta.highest(high, 12) >= zLow and close < ta.lowest(low, 6)[1]
+choch5 = request.security(syminfo.tickerid, "5", choch5Expr())
+
+invalidated = ta.highest(close[1], 16) > invLvl
+expired     = hour(timenow, "UTC") >= endHourUtc
+signal      = touched and rejection and choch5 and not invalidated and not expired
+
+alertcondition(signal, "Signal vente XAU", "Les 3 conditions du plan de vente sont réunies")
+
+// ---------- Tableau ----------
+var table t = table.new(position.top_right, 2, 8, bgcolor = color.white, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.gray, frame_width = 1)
+
+mark(bool c) => c ? "✅" : "⬜"
+px(float v) => str.tostring(v, "#.##")
+
+// Fusion des cellules une seule fois (refusionner à chaque tick provoque une erreur)
+if barstate.isfirst
+    table.merge_cells(t, 0, 0, 1, 0)
+    table.merge_cells(t, 0, 4, 1, 4)
+    table.merge_cells(t, 0, 5, 1, 5)
+    table.merge_cells(t, 0, 6, 1, 6)
+    table.merge_cells(t, 0, 7, 1, 7)
+
+if barstate.islast
+    statusTxt = invalidated ? "ANNULÉ : clôture au-dessus de " + px(invLvl) : expired ? "EXPIRÉ : après " + str.tostring(endHourUtc) + ":00 UTC" : signal ? "SIGNAL DE VENTE : à toi de décider" : "EN ATTENTE : ne rien faire"
+    statusCol = invalidated or expired ? color.gray : signal ? color.red : color.orange
+    table.cell(t, 0, 0, "PLAN VENTE XAUUSD", text_color = color.white, bgcolor = color.new(color.red, 15), text_halign = text.align_left)
+    table.cell(t, 0, 1, mark(touched))
+    table.cell(t, 1, 1, "1. Prix dans la zone " + px(zLow) + "–" + px(zTop), text_halign = text.align_left)
+    table.cell(t, 0, 2, mark(rejection))
+    table.cell(t, 1, 2, "2. Bougie 15 min rejetée (longue mèche haute)", text_halign = text.align_left)
+    table.cell(t, 0, 3, mark(choch5))
+    table.cell(t, 1, 3, "3. Cassure baissière en 5 min", text_halign = text.align_left)
+    table.cell(t, 0, 4, statusTxt, text_color = color.white, bgcolor = statusCol, text_halign = text.align_left)
+    table.cell(t, 0, 5, "Stop " + px(stopLvl) + "   TP1 " + px(tp1) + "   TP2 " + px(tp2), text_halign = text.align_left)
+    table.cell(t, 0, 6, "Taille : " + str.tostring(lots) + " lot — stop et TP activés", text_halign = text.align_left)
+    table.cell(t, 0, 7, "Valable jusqu'à " + str.tostring(endHourUtc) + ":00 UTC — invalidation > " + px(invLvl), text_halign = text.align_left)
+
+// ---------- Schéma des bougies attendues ----------
+var array<box>   sBoxes  = array.new<box>()
+var array<line>  sLines  = array.new<line>()
+var array<label> sLabels = array.new<label>()
+
+clearAll() =>
+    for b in sBoxes
+        box.delete(b)
+    for l in sLines
+        line.delete(l)
+    for lb in sLabels
+        label.delete(lb)
+    array.clear(sBoxes)
+    array.clear(sLines)
+    array.clear(sLabels)
+
+candle(int x, float o, float h, float l, float c) =>
+    col = c < o ? color.red : color.teal
+    array.push(sBoxes, box.new(x - 1, math.max(o, c), x + 1, math.min(o, c), xloc = xloc.bar_index, border_color = col, bgcolor = col))
+    array.push(sLines, line.new(x, h, x, l, xloc = xloc.bar_index, color = col, width = 2))
+
+note(int x, float y, string txt, string st) =>
+    array.push(sLabels, label.new(x, y, txt, xloc = xloc.bar_index, style = st, size = size.small, color = color.new(color.white, 100), textcolor = color.black))
+
+if barstate.islast
+    clearAll()
+    base = bar_index + 12
+    // zone
+    array.push(sBoxes, box.new(base - 4, zTop, base + 14, zLow, xloc = xloc.bar_index, border_color = color.red, bgcolor = color.new(color.red, 85)))
+    note(base + 5, zTop, "Zone de vente (schéma)", label.style_label_down)
+    // niveau de structure 5 min (dernier creux avant le rejet)
+    swingLow = zLow - 15
+    array.push(sLines, line.new(base - 4, swingLow, base + 14, swingLow, xloc = xloc.bar_index, color = color.blue, style = line.style_dashed))
+    note(base + 14, swingLow, "creux 5 min", label.style_label_left)
+    // 1 : montée vers la zone
+    candle(base, zLow - 14, zLow - 1, swingLow, zLow - 3)
+    note(base, swingLow - 2, "1\nle prix\nmonte", label.style_label_up)
+    // 2 : rejet, longue mèche dans la zone
+    candle(base + 5, zLow - 3, zTop - 1, zLow - 8, zLow - 6)
+    note(base + 5, zTop - 1, "2\nmèche haute\ndans la zone", label.style_label_down)
+    // 3 : cassure sous le creux 5 min → signal
+    candle(base + 10, zLow - 6, zLow - 5, swingLow - 7, swingLow - 5)
+    note(base + 10, swingLow - 7, "3\ncassure\n→ vente", label.style_label_up)
