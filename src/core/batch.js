@@ -3,6 +3,7 @@
  */
 import { evaluate, evaluateAsync, getClient, getChartApi, getChartCollection } from '../connection.js';
 import { waitForChartReady } from '../wait.js';
+import * as validate from '../validate.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -11,8 +12,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCREENSHOT_DIR = join(dirname(dirname(__dirname)), 'screenshots');
 
 export async function batchRun({ symbols, timeframes, action, delay_ms, ohlcv_count }) {
+  if (!Array.isArray(symbols) || symbols.length === 0) throw new Error('symbols must be a non-empty array');
+  symbols.forEach(validate.symbol);
   const tfs = timeframes && timeframes.length > 0 ? timeframes : [null];
-  const delay = delay_ms || 2000;
+  tfs.forEach(tf => { if (tf !== null) validate.timeframe(tf); });
+  const delay = delay_ms ? validate.finiteNumber(delay_ms, 'delay_ms') : 2000;
   const results = [];
 
   let colPath, apiPath;
@@ -23,12 +27,12 @@ export async function batchRun({ symbols, timeframes, action, delay_ms, ohlcv_co
     for (const tf of tfs) {
       const combo = { symbol, timeframe: tf };
       try {
-        if (colPath) await evaluate(`${colPath}.setSymbol('${symbol}')`);
-        else if (apiPath) await evaluate(`${apiPath}.setSymbol('${symbol}')`);
+        if (colPath) await evaluate(`${colPath}.setSymbol(${JSON.stringify(symbol)})`);
+        else if (apiPath) await evaluate(`${apiPath}.setSymbol(${JSON.stringify(symbol)})`);
 
         if (tf) {
-          if (colPath) await evaluate(`${colPath}.setResolution('${tf}')`);
-          else if (apiPath) await evaluate(`${apiPath}.setResolution('${tf}')`);
+          if (colPath) await evaluate(`${colPath}.setResolution(${JSON.stringify(tf)})`);
+          else if (apiPath) await evaluate(`${apiPath}.setResolution(${JSON.stringify(tf)})`);
         }
 
         await waitForChartReady(symbol);
@@ -40,7 +44,7 @@ export async function batchRun({ symbols, timeframes, action, delay_ms, ohlcv_co
           const client = await getClient();
           const { data } = await client.Page.captureScreenshot({ format: 'png' });
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
-          const fname = `batch_${symbol}_${tf || 'default'}_${ts}.png`;
+          const fname = `batch_${validate.fileSafe(symbol)}_${validate.fileSafe(tf || 'default')}_${ts}.png`;
           const filePath = join(SCREENSHOT_DIR, fname);
           writeFileSync(filePath, Buffer.from(data, 'base64'));
           actionResult = { file_path: filePath };

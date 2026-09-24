@@ -3,6 +3,10 @@
 # Usage: ./scripts/launch_tv_debug_linux.sh [port]
 
 PORT="${1:-9222}"
+if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
+  echo "Error: invalid port '$PORT' (expected an integer between 1024 and 65535)."
+  exit 1
+fi
 
 # Auto-detect TradingView install location
 APP=""
@@ -43,13 +47,19 @@ if [ -z "$APP" ] || [ ! -f "$APP" ]; then
   exit 1
 fi
 
-# Kill any existing TradingView
-pkill -f "[Tt]rading[Vv]iew" 2>/dev/null
-sleep 1
+# Never force-close TradingView (unsaved work would be lost): ask the user instead.
+# pgrep -x matches the exact process name only. The previous `pkill -f "[Tt]rading[Vv]iew"`
+# also matched any command line containing "tradingview" (e.g. this project's own
+# MCP server in ~/claudeverstradingview, or an editor opened in that folder).
+if pgrep -x "tradingview" > /dev/null 2>&1 || pgrep -x "TradingView" > /dev/null 2>&1; then
+  echo "TradingView est deja ouvert. Enregistrez votre travail, fermez TradingView,"
+  echo "puis relancez ce script."
+  exit 1
+fi
 
 echo "Found TradingView at: $APP"
 echo "Launching with --remote-debugging-port=$PORT ..."
-"$APP" --remote-debugging-port=$PORT &
+"$APP" --remote-debugging-port="$PORT" &
 TV_PID=$!
 echo "PID: $TV_PID"
 

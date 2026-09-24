@@ -9,17 +9,18 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as chart from "./chart.js";
 import * as data from "./data.js";
+import * as validate from "../validate.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(__dirname, "../../");
 const SESSIONS_DIR = join(homedir(), ".kasper", "sessions");
 
-function loadRules(rulesPath) {
+// Only these two fixed locations are read — no caller-supplied path.
+function loadRules() {
   const candidates = [
-    rulesPath,
     join(PROJECT_ROOT, "rules.json"),
     join(homedir(), ".kasper", "rules.json"),
-  ].filter(Boolean);
+  ];
 
   for (const p of candidates) {
     if (existsSync(p)) {
@@ -41,8 +42,8 @@ function loadRules(rulesPath) {
   );
 }
 
-export async function runBrief({ rules_path } = {}) {
-  const { rules, path: loadedFrom } = loadRules(rules_path);
+export async function runBrief() {
+  const { rules, path: loadedFrom } = loadRules();
   const { watchlist = [], default_timeframe = "240" } = rules;
 
   if (!watchlist.length) {
@@ -117,7 +118,7 @@ export async function runBrief({ rules_path } = {}) {
 export function saveSession({ brief, date } = {}) {
   mkdirSync(SESSIONS_DIR, { recursive: true });
 
-  const dateStr = date || new Date().toISOString().split("T")[0];
+  const dateStr = date ? validate.date(date) : new Date().toISOString().split("T")[0];
   const filePath = join(SESSIONS_DIR, `${dateStr}.json`);
 
   const existing = existsSync(filePath)
@@ -135,7 +136,7 @@ export function saveSession({ brief, date } = {}) {
 }
 
 export function getSession({ date } = {}) {
-  const dateStr = date || new Date().toISOString().split("T")[0];
+  const dateStr = date ? validate.date(date) : new Date().toISOString().split("T")[0];
   const filePath = join(SESSIONS_DIR, `${dateStr}.json`);
 
   if (existsSync(filePath)) {

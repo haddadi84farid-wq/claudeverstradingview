@@ -160,8 +160,12 @@ export async function uiState() {
 }
 
 export async function launch({ port, kill_existing } = {}) {
-  const cdpPort = port || 9222;
-  const killFirst = kill_existing !== false;
+  const cdpPort = port === undefined || port === null ? 9222 : Number(port);
+  if (!Number.isInteger(cdpPort) || cdpPort < 1024 || cdpPort > 65535) {
+    throw new Error(`Invalid CDP port: ${JSON.stringify(port)}. Expected an integer between 1024 and 65535.`);
+  }
+  // Never force-close TradingView unless explicitly asked (unsaved work would be lost).
+  const killFirst = kill_existing === true;
   const platform = process.platform;
 
   const pathMap = {
@@ -214,7 +218,8 @@ export async function launch({ port, kill_existing } = {}) {
   if (killFirst) {
     try {
       if (platform === 'win32') execSync('taskkill /F /IM TradingView.exe', { timeout: 5000 });
-      else execSync('pkill -f TradingView', { timeout: 5000 });
+      // -x: exact process name only (pkill -f would also match any command line containing "TradingView")
+      else execSync('pkill -x TradingView || pkill -x tradingview', { timeout: 5000 });
       await new Promise(r => setTimeout(r, 1500));
     } catch { /* may not be running */ }
   }

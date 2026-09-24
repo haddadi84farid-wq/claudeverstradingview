@@ -2,27 +2,37 @@
  * Core drawing logic.
  */
 import { evaluate, getChartApi } from '../connection.js';
+import * as validate from '../validate.js';
+
+function toPoint(p, name) {
+  if (!p || typeof p !== 'object') throw new Error(`${name} must be { time, price }`);
+  return { time: validate.finiteNumber(p.time, `${name}.time`), price: validate.finiteNumber(p.price, `${name}.price`) };
+}
 
 export async function drawShape({ shape, point, point2, overrides: overridesRaw, text }) {
+  validate.shape(shape);
+  const p1 = toPoint(point, 'point');
+  const p2 = point2 ? toPoint(point2, 'point2') : null;
   const overrides = overridesRaw ? (typeof overridesRaw === 'string' ? JSON.parse(overridesRaw) : overridesRaw) : {};
   const apiPath = await getChartApi();
   const overridesStr = JSON.stringify(overrides || {});
   const textStr = text ? JSON.stringify(text) : '""';
+  const shapeStr = JSON.stringify(shape);
 
   const before = await evaluate(`${apiPath}.getAllShapes().map(function(s) { return s.id; })`);
 
-  if (point2) {
+  if (p2) {
     await evaluate(`
       ${apiPath}.createMultipointShape(
-        [{ time: ${point.time}, price: ${point.price} }, { time: ${point2.time}, price: ${point2.price} }],
-        { shape: '${shape}', overrides: ${overridesStr}, text: ${textStr} }
+        [{ time: ${p1.time}, price: ${p1.price} }, { time: ${p2.time}, price: ${p2.price} }],
+        { shape: ${shapeStr}, overrides: ${overridesStr}, text: ${textStr} }
       )
     `);
   } else {
     await evaluate(`
       ${apiPath}.createShape(
-        { time: ${point.time}, price: ${point.price} },
-        { shape: '${shape}', overrides: ${overridesStr}, text: ${textStr} }
+        { time: ${p1.time}, price: ${p1.price} },
+        { shape: ${shapeStr}, overrides: ${overridesStr}, text: ${textStr} }
       )
     `);
   }
@@ -47,11 +57,12 @@ export async function listDrawings() {
 }
 
 export async function getProperties({ entity_id }) {
+  validate.entityId(entity_id);
   const apiPath = await getChartApi();
   const result = await evaluate(`
     (function() {
       var api = ${apiPath};
-      var eid = '${entity_id}';
+      var eid = ${JSON.stringify(entity_id)};
       var props = { entity_id: eid };
       var shape = api.getShapeById(eid);
       if (!shape) return { error: 'Shape not found: ' + eid };
@@ -76,11 +87,12 @@ export async function getProperties({ entity_id }) {
 }
 
 export async function removeOne({ entity_id }) {
+  validate.entityId(entity_id);
   const apiPath = await getChartApi();
   const result = await evaluate(`
     (function() {
       var api = ${apiPath};
-      var eid = '${entity_id}';
+      var eid = ${JSON.stringify(entity_id)};
       var before = api.getAllShapes();
       var found = false;
       for (var i = 0; i < before.length; i++) { if (before[i].id === eid) { found = true; break; } }

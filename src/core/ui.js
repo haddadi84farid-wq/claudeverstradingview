@@ -3,30 +3,8 @@
  */
 import { evaluate, evaluateAsync, getClient } from '../connection.js';
 
-export async function click({ by, value }) {
-  const escaped = JSON.stringify(value);
-  const result = await evaluate(`
-    (function() {
-      var by = ${JSON.stringify(by)};
-      var value = ${escaped};
-      var el = null;
-      if (by === 'aria-label') el = document.querySelector('[aria-label="' + value.replace(/"/g, '\\\\"') + '"]');
-      else if (by === 'data-name') el = document.querySelector('[data-name="' + value.replace(/"/g, '\\\\"') + '"]');
-      else if (by === 'text') {
-        var candidates = document.querySelectorAll('button, a, [role="button"], [role="menuitem"], [role="tab"]');
-        for (var i = 0; i < candidates.length; i++) {
-          var text = candidates[i].textContent.trim();
-          if (text === value || text.toLowerCase() === value.toLowerCase()) { el = candidates[i]; break; }
-        }
-      } else if (by === 'class-contains') el = document.querySelector('[class*="' + value.replace(/"/g, '\\\\"') + '"]');
-      if (!el) return { found: false };
-      el.click();
-      return { found: true, tag: el.tagName.toLowerCase(), text: (el.textContent || '').trim().substring(0, 80), aria_label: el.getAttribute('aria-label') || null, data_name: el.getAttribute('data-name') || null };
-    })()
-  `);
-  if (!result || !result.found) throw new Error('No matching element found for ' + by + '="' + value + '"');
-  return { success: true, clicked: result };
-}
+// click, keyboard, typeText and mouseClick (free clicking / typing anywhere in
+// the TradingView window) removed for security.
 
 export async function openPanel({ panel, action }) {
   const isBottomPanel = panel === 'pine-editor' || panel === 'strategy-tester';
@@ -61,9 +39,10 @@ export async function openPanel({ panel, action }) {
     const selectorMap = {
       'watchlist': { dataName: 'base-watchlist-widget-button', ariaLabel: 'Watchlist' },
       'alerts': { dataName: 'alerts-button', ariaLabel: 'Alerts' },
-      'trading': { dataName: 'trading-button', ariaLabel: 'Trading Panel' },
+      // 'trading' (broker order panel) intentionally not supported.
     };
     const sel = selectorMap[panel];
+    if (!sel) throw new Error(`Unsupported panel: ${panel}. Use pine-editor, strategy-tester, watchlist or alerts.`);
     const result = await evaluate(`
       (function() {
         var dataName = ${JSON.stringify(sel.dataName)};
@@ -140,54 +119,23 @@ export async function layoutSwitch({ name }) {
   `);
   if (!result?.success) throw new Error(result?.error || 'Unknown error switching layout');
 
-  // Handle "unsaved changes" confirmation dialog
+  // Detect an "unsaved changes" dialog but never dismiss it automatically:
+  // discarding the user's unsaved work is their decision.
   await new Promise(r => setTimeout(r, 500));
-  const dismissed = await evaluate(`
+  const unsavedDialog = await evaluate(`
     (function() {
       var btns = document.querySelectorAll('button');
       for (var i = 0; i < btns.length; i++) {
-        var text = btns[i].textContent.trim();
-        if (/open anyway|don't save|discard/i.test(text)) {
-          btns[i].click();
-          return true;
-        }
+        if (/open anyway|don't save|discard/i.test(btns[i].textContent.trim())) return true;
       }
       return false;
     })()
   `);
 
-  if (dismissed) await new Promise(r => setTimeout(r, 1000));
-  return { success: true, layout: result.name || name, layout_id: result.id, source: result.source, action: 'switched', unsaved_dialog_dismissed: dismissed };
-}
-
-export async function keyboard({ key, modifiers }) {
-  const c = await getClient();
-  let mod = 0;
-  if (modifiers) {
-    if (modifiers.includes('alt')) mod |= 1;
-    if (modifiers.includes('ctrl')) mod |= 2;
-    if (modifiers.includes('meta')) mod |= 4;
-    if (modifiers.includes('shift')) mod |= 8;
+  if (unsavedDialog) {
+    return { success: false, layout: result.name || name, layout_id: result.id, source: result.source, action: 'waiting_for_user', unsaved_dialog_open: true, note: 'TradingView is asking about unsaved changes. The user must choose in the dialog.' };
   }
-  const keyMap = {
-    'Enter': { code: 'Enter', vk: 13 }, 'Escape': { code: 'Escape', vk: 27 }, 'Tab': { code: 'Tab', vk: 9 },
-    'Backspace': { code: 'Backspace', vk: 8 }, 'Delete': { code: 'Delete', vk: 46 },
-    'ArrowUp': { code: 'ArrowUp', vk: 38 }, 'ArrowDown': { code: 'ArrowDown', vk: 40 },
-    'ArrowLeft': { code: 'ArrowLeft', vk: 37 }, 'ArrowRight': { code: 'ArrowRight', vk: 39 },
-    'Space': { code: 'Space', vk: 32 }, 'Home': { code: 'Home', vk: 36 }, 'End': { code: 'End', vk: 35 },
-    'PageUp': { code: 'PageUp', vk: 33 }, 'PageDown': { code: 'PageDown', vk: 34 },
-    'F1': { code: 'F1', vk: 112 }, 'F2': { code: 'F2', vk: 113 }, 'F5': { code: 'F5', vk: 116 },
-  };
-  const mapped = keyMap[key] || { code: 'Key' + key.toUpperCase(), vk: key.toUpperCase().charCodeAt(0) };
-  await c.Input.dispatchKeyEvent({ type: 'keyDown', modifiers: mod, key, code: mapped.code, windowsVirtualKeyCode: mapped.vk });
-  await c.Input.dispatchKeyEvent({ type: 'keyUp', key, code: mapped.code });
-  return { success: true, key, modifiers: modifiers || [] };
-}
-
-export async function typeText({ text }) {
-  const c = await getClient();
-  await c.Input.insertText({ text });
-  return { success: true, typed: text.substring(0, 100), length: text.length };
+  return { success: true, layout: result.name || name, layout_id: result.id, source: result.source, action: 'switched' };
 }
 
 export async function hover({ by, value }) {
@@ -234,21 +182,6 @@ export async function scroll({ direction, amount }) {
   return { success: true, direction, amount: px };
 }
 
-export async function mouseClick({ x, y, button, double_click }) {
-  const c = await getClient();
-  const btn = button === 'right' ? 'right' : button === 'middle' ? 'middle' : 'left';
-  const btnNum = btn === 'right' ? 2 : btn === 'middle' ? 1 : 0;
-  await c.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y });
-  await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 1 });
-  await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
-  if (double_click) {
-    await new Promise(r => setTimeout(r, 50));
-    await c.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: btn, buttons: btnNum, clickCount: 2 });
-    await c.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: btn });
-  }
-  return { success: true, x, y, button: btn, double_click: !!double_click };
-}
-
 export async function findElement({ query, strategy }) {
   const strat = strategy || 'text';
   const results = await evaluate(`
@@ -287,7 +220,4 @@ export async function findElement({ query, strategy }) {
   return { success: true, query, strategy: strat, count: results?.length || 0, elements: results || [] };
 }
 
-export async function uiEvaluate({ expression }) {
-  const result = await evaluate(expression);
-  return { success: true, result };
-}
+// uiEvaluate (arbitrary JavaScript execution in the TradingView page) removed for security.

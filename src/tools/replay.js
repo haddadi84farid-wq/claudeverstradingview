@@ -4,7 +4,7 @@ import * as core from '../core/replay.js';
 
 export function registerReplayTools(server) {
   server.tool('replay_start', 'Start bar replay mode, optionally at a specific date', {
-    date: z.string().optional().describe('Date to start replay from (YYYY-MM-DD format). If omitted, selects first available date.'),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Date to start replay from (YYYY-MM-DD format). If omitted, selects first available date.'),
   }, async ({ date }) => {
     try { return jsonResult(await core.start({ date })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
@@ -28,7 +28,7 @@ export function registerReplayTools(server) {
   });
 
   server.tool('replay_trade', 'Execute a trade action in replay mode (buy, sell, or close position)', {
-    action: z.string().describe('Trade action: buy, sell, or close'),
+    action: z.enum(['buy', 'sell', 'close']).describe('Trade action: buy, sell, or close'),
   }, async ({ action }) => {
     try { return jsonResult(await core.trade({ action })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

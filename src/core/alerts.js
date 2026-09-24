@@ -2,8 +2,11 @@
  * Core alert logic.
  */
 import { evaluate, evaluateAsync, getClient } from '../connection.js';
+import * as validate from '../validate.js';
 
-export async function create({ condition, price, message }) {
+export async function create({ condition, price: priceRaw, message }) {
+  const price = validate.finiteNumber(priceRaw, 'price');
+  const priceStr = JSON.stringify(String(price));
   const opened = await evaluate(`
     (function() {
       var btn = document.querySelector('[aria-label="Create Alert"]')
@@ -28,7 +31,7 @@ export async function create({ condition, price, message }) {
         var label = inputs[i].closest('[class*="row"]')?.querySelector('[class*="label"]');
         if (label && /value|price/i.test(label.textContent)) {
           var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-          nativeSet.call(inputs[i], '${price}');
+          nativeSet.call(inputs[i], ${priceStr});
           inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
           inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
           return true;
@@ -36,7 +39,7 @@ export async function create({ condition, price, message }) {
       }
       if (inputs.length > 0) {
         var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
-        nativeSet.call(inputs[0], '${price}');
+        nativeSet.call(inputs[0], ${priceStr});
         inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
         return true;
       }

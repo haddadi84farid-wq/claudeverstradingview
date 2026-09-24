@@ -1,82 +1,95 @@
-# Setup Guide for Claude Code
+# Guide d'installation pour Claude Code
 
-This file is a step-by-step guide for Claude Code (or any LLM agent) to install and configure the TradingView MCP server. If a user asks you to install or set up this project, follow these steps exactly.
+Ce fichier guide Claude Code (ou tout agent) pour installer et configurer ce serveur MCP TradingView **durci**. Suivez ces étapes dans l'ordre.
 
-## Step 1: Clone and Install
+## Règles pour l'agent
 
-```bash
-git clone https://github.com/LewisWJackson/tradingview-mcp-jackson.git ~/tradingview-mcp-jackson
-cd ~/tradingview-mcp-jackson
-npm install
+- **Demandez confirmation à l'utilisateur avant chaque étape** qui installe, modifie la configuration ou lance un programme.
+- **Ne modifiez jamais un serveur MCP déjà configuré.** Ajoutez celui-ci sous un nom distinct.
+- **Ne fermez jamais TradingView à la place de l'utilisateur.** N'utilisez pas `tv_launch` avec `kill_existing: true` sauf demande explicite.
+- N'exécutez pas `npm link`, `npm run test:e2e`, `test:all` ni `test:verbose`.
+
+## Étape 1 : récupérer le code
+
+```powershell
+git clone https://github.com/haddadi84farid-wq/claudeverstradingview.git $HOME\claudeverstradingview
 ```
 
-If the user specifies a different install path, use that instead of `~/tradingview-mcp-jackson`.
+Si Git n'est pas installé, demandez à l'utilisateur s'il préfère installer Git (`winget install --id Git.Git -e`) ou télécharger le ZIP du fork depuis GitHub.
 
-## Step 2: Set Up Rules
+Si l'utilisateur indique un autre dossier, utilisez-le à la place de `$HOME\claudeverstradingview` dans toutes les étapes suivantes.
 
-Copy the example rules file and open it for the user to fill in:
+## Étape 2 : installer les dépendances
 
-```bash
-cp ~/tradingview-mcp-jackson/rules.example.json ~/tradingview-mcp-jackson/rules.json
+```powershell
+cd $HOME\claudeverstradingview
+npm ci --ignore-scripts
 ```
 
-Tell the user: "Open `rules.json` and fill in your watchlist (the symbols you trade), your bias criteria (what makes something bullish/bearish for you), and your risk rules. This is what the morning brief uses every day."
+`npm ci` respecte exactement `package-lock.json`, et `--ignore-scripts` bloque les scripts d'installation.
 
-## Step 3: Add to MCP Config
+## Étape 3 : règles de trading
 
-Add the server to the user's Claude Code MCP configuration. The config file is at `~/.claude/.mcp.json` (global) or `.mcp.json` (project-level).
+`rules.json` contient déjà un exemple neutre. Dites à l'utilisateur :
 
-```json
-{
-  "mcpServers": {
-    "tradingview": {
-      "command": "node",
-      "args": ["/Users/YOUR_USERNAME/tradingview-mcp-jackson/src/server.js"]
-    }
-  }
-}
+> « Ouvrez `rules.json` et renseignez votre watchlist (symboles au format TradingView, par ex. `OANDA:XAUUSD`), vos critères de biais et vos règles de risque. C'est ce que le brief matinal utilise chaque jour. »
+
+`morning_brief` ne lit que `rules.json` à la racine du projet ou `~/.kasper/rules.json`.
+
+## Étape 4 : enregistrer le serveur MCP
+
+```powershell
+claude mcp add tradingview-desktop --scope user -- node $HOME\claudeverstradingview\src\server.js
 ```
 
-Replace `YOUR_USERNAME` with the user's actual system username. Run `echo $USER` (Mac/Linux) or `echo %USERNAME%` (Windows) to find it.
+- Remplacez le chemin si le projet est ailleurs. Utilisez le chemin Windows réel, pas `/Users/...`.
+- Ne modifiez pas les fichiers de configuration à la main, et n'écrasez aucun serveur existant.
+- Vérifiez ensuite avec `claude mcp list`.
 
-If the config file already exists and has other servers, merge the `tradingview` entry into the existing `mcpServers` object. Do not overwrite other servers.
+## Étape 5 : lancer TradingView Desktop avec CDP
 
-## Step 4: Launch TradingView Desktop
+TradingView doit tourner avec le Chrome DevTools Protocol activé sur le port 9222.
 
-TradingView Desktop must be running with Chrome DevTools Protocol enabled.
+**Windows (recommandé) :** demandez à l'utilisateur d'enregistrer son travail et de fermer TradingView, puis :
 
-**Auto-detect and launch (recommended):**
-After the MCP server is connected, use the `tv_launch` tool — it auto-detects TradingView on Mac, Windows, and Linux.
+```bat
+scripts\launch_tv_debug.bat
+```
 
-**Manual launch by platform:**
+Le script s'arrête avec un message si TradingView est déjà ouvert.
 
-Mac:
+**Lancement manuel :** TradingView doit être fermé.
+
+Windows :
+```bat
+"%LOCALAPPDATA%\TradingView\TradingView.exe" --remote-debugging-port=9222
+```
+
+macOS :
 ```bash
 /Applications/TradingView.app/Contents/MacOS/TradingView --remote-debugging-port=9222
 ```
 
-Windows:
-```bash
-%LOCALAPPDATA%\TradingView\TradingView.exe --remote-debugging-port=9222
-```
-
-Linux:
+Linux :
 ```bash
 /opt/TradingView/tradingview --remote-debugging-port=9222
-# or: tradingview --remote-debugging-port=9222
 ```
 
-## Step 5: Restart Claude Code
+Sur macOS et Linux, vous pouvez aussi utiliser `./scripts/launch_tv_debug_mac.sh` ou `./scripts/launch_tv_debug_linux.sh`. Comme le script Windows, ils s'arrêtent si TradingView est déjà ouvert.
 
-The MCP server only loads when Claude Code starts. After adding the config:
+**Avec l'outil MCP :** `tv_launch` fonctionne si TradingView est fermé. Il ne ferme pas une instance ouverte.
 
-1. Exit Claude Code (Ctrl+C)
-2. Relaunch Claude Code
-3. The tradingview MCP server should connect automatically
+## Étape 6 : redémarrer Claude Code
 
-## Step 6: Verify Connection
+Le serveur MCP n'est chargé qu'au démarrage de Claude Code :
 
-Use the `tv_health_check` tool. Expected response:
+1. Quittez Claude Code.
+2. Relancez-le.
+3. Le serveur `tradingview-desktop` doit se connecter automatiquement.
+
+## Étape 7 : vérifier la connexion
+
+Utilisez l'outil `tv_health_check`. Réponse attendue :
 
 ```json
 {
@@ -87,43 +100,50 @@ Use the `tv_health_check` tool. Expected response:
 }
 ```
 
-If `cdp_connected: false`, TradingView is not running with `--remote-debugging-port=9222`.
+Si `cdp_connected` vaut `false`, TradingView n'est pas lancé avec `--remote-debugging-port=9222`.
 
-## Step 7: Run Your First Morning Brief
+## Étape 8 : premier brief matinal
 
-Ask Claude: *"Run morning_brief and give me my session bias"*
+L'utilisateur demande : *« Lance morning_brief et donne-moi mon biais de session »*.
 
-Claude will scan your watchlist, read your indicators, apply your `rules.json` criteria, and print your bias for each symbol.
+Claude scanne la watchlist, lit les indicateurs, applique les critères de `rules.json` et affiche un biais par symbole.
 
-To save it: *"Save this brief using session_save"*
+- Pour sauvegarder : *« Sauvegarde ce brief avec session_save »*
+- Pour le relire le lendemain : *« Récupère la session d'hier avec session_get »*
 
-To retrieve tomorrow: *"Get yesterday's session using session_get"*
+## CLI (optionnel)
 
-## Step 8: Install CLI (Optional)
+Pas d'installation globale. Depuis le dossier du projet :
 
-To use the `tv` CLI command globally:
-
-```bash
-cd ~/tradingview-mcp-jackson
-npm link
+```powershell
+node src\cli\index.js status
+node src\cli\index.js quote
+node src\cli\index.js --help
 ```
 
-Then `tv status`, `tv quote`, `tv pine compile`, etc. work from anywhere.
+## Dépannage
 
-## Troubleshooting
-
-| Problem | Solution |
+| Problème | Solution |
 |---------|----------|
-| `cdp_connected: false` | Launch TradingView with `--remote-debugging-port=9222` |
-| `ECONNREFUSED` | TradingView isn't running or port 9222 is blocked |
-| MCP server not showing in Claude Code | Check `~/.claude/.mcp.json` syntax, restart Claude Code |
-| `tv` command not found | Run `npm link` from the project directory |
-| Tools return stale data | TradingView may still be loading — wait a few seconds |
-| Pine Editor tools fail | Open the Pine Editor panel first (`ui_open_panel pine-editor open`) |
+| `cdp_connected: false` | Lancer TradingView avec `--remote-debugging-port=9222` (étape 5) |
+| Le script `.bat` dit que TradingView est déjà ouvert | L'utilisateur enregistre son travail et ferme TradingView, puis relance le script |
+| `ECONNREFUSED` | TradingView n'est pas lancé ou le port 9222 est bloqué |
+| Serveur MCP absent de Claude Code | `claude mcp list`, puis redémarrer Claude Code |
+| `Invalid symbol` / `Invalid timeframe` / `Invalid date` | Utiliser les formats attendus : `NASDAQ:AAPL`, `240`, `D`, `AAAA-MM-JJ` |
+| Données obsolètes | TradingView charge encore, attendre quelques secondes |
+| Les outils Pine échouent | Ouvrir d'abord l'éditeur Pine (`ui_open_panel` avec `pine-editor` / `open`) |
+| `layout_switch` renvoie `waiting_for_user` | TradingView demande quoi faire des modifications non enregistrées : laisser l'utilisateur choisir |
 
-## What to Read Next
+## Sécurité
 
-- `rules.json` — Your personal trading rules (fill this in before using morning_brief)
-- `CLAUDE.md` — Decision tree for which tool to use when (auto-loaded by Claude Code)
-- `README.md` — Full tool reference including morning brief workflow
-- `RESEARCH.md` — Research context and open questions
+- Pas de courtier connecté dans TradingView pendant l'utilisation du port 9222.
+- Confirmation de l'utilisateur pour les outils qui agissent : Pine (`pine_set_source`, `pine_save`…), alertes, dessins, `layout_switch`, `tv_launch`, `batch_run`, `session_save`.
+- Détail des corrections de ce fork : `INSTALL_WINDOWS_SECURISE.md`.
+
+## À lire ensuite
+
+- `rules.json` : les règles de trading personnelles (à remplir avant `morning_brief`)
+- `CLAUDE.md` : quel outil utiliser et quand (chargé automatiquement par Claude Code)
+- `README.md` : référence complète des 76 outils
+- `INSTALL_WINDOWS_SECURISE.md` : procédure sécurisée et liste des corrections
+- `RESEARCH.md` : contexte de recherche

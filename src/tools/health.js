@@ -19,8 +19,9 @@ export function registerHealthTools(server) {
   });
 
   server.tool('tv_launch', 'Launch TradingView Desktop with Chrome DevTools Protocol (remote debugging) enabled. Auto-detects install location on Mac, Windows, and Linux.', {
-    port: z.coerce.number().optional().describe('CDP port (default 9222)'),
-    kill_existing: z.coerce.boolean().optional().describe('Kill existing TradingView instances first (default true)'),
+    port: z.number().int().min(1024).max(65535).optional().describe('CDP port (default 9222)'),
+    // z.boolean (not z.coerce.boolean): coercion would turn the string "false" into true.
+    kill_existing: z.boolean().optional().describe('Force-close running TradingView instances first — unsaved work is lost. Default false; only set true if the user explicitly asks.'),
   }, async ({ port, kill_existing }) => {
     try { return jsonResult(await core.launch({ port, kill_existing })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

@@ -4,14 +4,7 @@ import * as core from "../../core/morning.js";
 register("brief", {
   description:
     "Run your morning brief — scan watchlist, read indicators, apply your rules",
-  options: {
-    rules: {
-      type: "string",
-      short: "r",
-      description: "Path to rules.json (default: ./rules.json)",
-    },
-  },
-  handler: async ({ rules }) => core.runBrief({ rules_path: rules }),
+  handler: async () => core.runBrief(),
 });
 
 register("session", {

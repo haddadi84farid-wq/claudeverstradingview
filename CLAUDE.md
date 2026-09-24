@@ -74,8 +74,7 @@ Use `study_filter` parameter to target a specific indicator by name substring (e
 - `alert_delete` → remove alerts
 
 ### "Navigate the UI"
-- `ui_open_panel` → open/close pine-editor, strategy-tester, watchlist, alerts, trading
-- `ui_click` → click buttons by aria-label, text, or data-name
+- `ui_open_panel` → open/close pine-editor, strategy-tester, watchlist, alerts (the broker trading panel is intentionally not supported)
 - `layout_switch` → load a saved layout by name
 - `ui_fullscreen` → toggle fullscreen
 - `capture_screenshot` → take a screenshot (regions: "full", "chart", "strategy_tester")

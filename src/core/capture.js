@@ -5,15 +5,17 @@ import { getClient, evaluate, getChartCollection } from '../connection.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import * as validate from '../validate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SCREENSHOT_DIR = join(dirname(dirname(__dirname)), 'screenshots');
 
 export async function captureScreenshot({ region, filename, method } = {}) {
+  if (filename) validate.filename(filename);
   mkdirSync(SCREENSHOT_DIR, { recursive: true });
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const fname = filename || `tv_${region}_${ts}`;
+  const fname = filename || `tv_${validate.fileSafe(region || 'full')}_${ts}`;
   const filePath = join(SCREENSHOT_DIR, `${fname}.png`);
 
   if (method === 'api') {

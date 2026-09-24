@@ -5,18 +5,11 @@ import * as core from "../core/morning.js";
 export function registerMorningTools(server) {
   server.tool(
     "morning_brief",
-    "Scan your watchlist, read all indicator values, and return structured data for a session brief. Reads rules.json for your bias criteria and watchlist. Claude applies the rules to generate your daily bias.",
-    {
-      rules_path: z
-        .string()
-        .optional()
-        .describe(
-          "Optional path to rules.json. Defaults to rules.json in the project root.",
-        ),
-    },
-    async ({ rules_path } = {}) => {
+    "Scan your watchlist, read all indicator values, and return structured data for a session brief. Reads rules.json (project root, or ~/.kasper/rules.json) for your bias criteria and watchlist. Claude applies the rules to generate your daily bias.",
+    {},
+    async () => {
       try {
-        return jsonResult(await core.runBrief({ rules_path }));
+        return jsonResult(await core.runBrief());
       } catch (err) {
         return jsonResult({ success: false, error: err.message }, true);
       }
@@ -34,6 +27,7 @@ export function registerMorningTools(server) {
         ),
       date: z
         .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
         .optional()
         .describe("Date string YYYY-MM-DD. Defaults to today."),
     },
@@ -52,6 +46,7 @@ export function registerMorningTools(server) {
     {
       date: z
         .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
         .optional()
         .describe("Date string YYYY-MM-DD. Defaults to today."),
     },

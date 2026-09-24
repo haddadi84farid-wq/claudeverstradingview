@@ -3,6 +3,7 @@
  * Controls multi-chart layouts (split panes) in TradingView.
  */
 import { evaluate, evaluateAsync, getClient } from '../connection.js';
+import * as validate from '../validate.js';
 
 const CWC = 'window.TradingViewApi._chartWidgetCollection';
 
@@ -114,6 +115,7 @@ export async function setLayout({ layout }) {
  */
 export async function focus({ index }) {
   const idx = Number(index);
+  if (!Number.isInteger(idx) || idx < 0) throw new Error(`Invalid pane index: ${JSON.stringify(index)}`);
   const result = await evaluate(`
     (function() {
       var cwc = ${CWC};
@@ -136,7 +138,7 @@ export async function focus({ index }) {
  */
 export async function setSymbol({ index, symbol }) {
   const idx = Number(index);
-  const escaped = symbol.replace(/'/g, "\\'");
+  validate.symbol(symbol);
 
   // Focus the target pane first
   await focus({ index: idx });
@@ -147,7 +149,7 @@ export async function setSymbol({ index, symbol }) {
     (function() {
       var chart = window.TradingViewApi._activeChartWidgetWV.value();
       return new Promise(function(resolve) {
-        chart.setSymbol('${escaped}', {});
+        chart.setSymbol(${JSON.stringify(symbol)}, {});
         setTimeout(resolve, 500);
       });
     })()

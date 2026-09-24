@@ -5,9 +5,13 @@ REM Usage: scripts\launch_tv_debug.bat [port]
 set PORT=%1
 if "%PORT%"=="" set PORT=9222
 
-REM Kill existing TradingView instances
-taskkill /F /IM TradingView.exe >nul 2>&1
-timeout /t 2 /nobreak >nul
+REM Never force-close TradingView (unsaved work would be lost): ask the user instead.
+tasklist /FI "IMAGENAME eq TradingView.exe" 2>nul | find /I "TradingView.exe" >nul
+if %errorlevel% equ 0 (
+    echo TradingView est deja ouvert. Enregistrez votre travail, fermez TradingView,
+    echo puis relancez ce script.
+    exit /b 1
+)
 
 REM Auto-detect TradingView install location
 set "TV_EXE="

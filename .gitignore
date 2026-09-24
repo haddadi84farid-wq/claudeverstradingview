@@ -4,3 +4,9 @@ scripts/current.pine
 temp_*
 *.log
 discovery-log.json
+
+# Secrets — never commit (this fork is public)
+.env
+.env.*
+*.pem
+*.key

@@ -2,12 +2,14 @@
  * Core replay mode logic.
  */
 import { evaluate, getReplayApi } from '../connection.js';
+import * as validate from '../validate.js';
 
 function wv(path) {
   return `(function(){ var v = ${path}; return (v && typeof v === 'object' && typeof v.value === 'function') ? v.value() : v; })()`;
 }
 
 export async function start({ date } = {}) {
+  if (date) validate.date(date);
   const rp = await getReplayApi();
   const available = await evaluate(wv(`${rp}.isReplayAvailable()`));
   if (!available) throw new Error('Replay is not available for the current symbol/timeframe');
@@ -15,7 +17,7 @@ export async function start({ date } = {}) {
   await evaluate(`${rp}.showReplayToolbar()`);
   await new Promise(r => setTimeout(r, 500));
 
-  if (date) await evaluate(`${rp}.selectDate(new Date('${date}'))`);
+  if (date) await evaluate(`${rp}.selectDate(new Date(${JSON.stringify(date)}))`);
   else await evaluate(`${rp}.selectFirstAvailableDate()`);
   await new Promise(r => setTimeout(r, 1000));
 
@@ -56,7 +58,10 @@ export async function autoplay({ speed } = {}) {
   const rp = await getReplayApi();
   const started = await evaluate(wv(`${rp}.isReplayStarted()`));
   if (!started) throw new Error('Replay is not started. Use replay_start first.');
-  if (speed > 0) await evaluate(`${rp}.changeAutoplayDelay(${speed})`);
+  if (speed !== undefined && speed !== null) {
+    const delay = validate.finiteNumber(speed, 'speed');
+    if (delay > 0) await evaluate(`${rp}.changeAutoplayDelay(${delay})`);
+  }
   await evaluate(`${rp}.toggleAutoplay()`);
   const isAutoplay = await evaluate(wv(`${rp}.isAutoplayStarted()`));
   const currentDelay = await evaluate(wv(`${rp}.autoplayDelay()`));
