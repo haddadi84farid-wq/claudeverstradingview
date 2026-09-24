@@ -193,6 +193,16 @@ export async function launch({ port, kill_existing } = {}) {
     if (p && existsSync(p)) { tvPath = p; break; }
   }
 
+  // Microsoft Store (MSIX) install: WindowsApps is not listable, resolve via the Appx API.
+  if (!tvPath && platform === 'win32') {
+    try {
+      const ps = "$p = Get-AppxPackage -Name 'TradingView.Desktop' | Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1; "
+        + "if ($p) { Get-ChildItem -LiteralPath $p.InstallLocation -Filter 'TradingView.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName }";
+      const found = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/"/g, '\\"')}"`, { timeout: 15000 }).toString().trim().split(/\r?\n/)[0];
+      if (found && existsSync(found)) tvPath = found;
+    } catch { /* ignore */ }
+  }
+
   if (!tvPath) {
     try {
       const cmd = platform === 'win32' ? 'where TradingView.exe' : 'which tradingview';
