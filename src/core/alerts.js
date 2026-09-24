@@ -7,19 +7,21 @@ import * as validate from '../validate.js';
 export async function create({ condition, price: priceRaw, message }) {
   const price = validate.finiteNumber(priceRaw, 'price');
   const priceStr = JSON.stringify(String(price));
+  // Localized UI (e.g. French): match the create-alert button in English or French, and never
+  // fall back to the alerts side-panel button (it opens a list, not the create dialog).
   const opened = await evaluate(`
     (function() {
-      var btn = document.querySelector('[aria-label="Create Alert"]')
-        || document.querySelector('[data-name="alerts"]');
+      var btn = document.querySelector('[aria-label="Create Alert"], [aria-label="Create alert"], [aria-label="Créer une alerte"]');
       if (btn) { btn.click(); return true; }
       return false;
     })()
   `);
 
   if (!opened) {
+    // Alt+A: TradingView's "Add alert" shortcut, independent of the UI language.
     const client = await getClient();
     await client.Input.dispatchKeyEvent({ type: 'keyDown', modifiers: 1, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
-    await client.Input.dispatchKeyEvent({ type: 'keyUp', key: 'a', code: 'KeyA' });
+    await client.Input.dispatchKeyEvent({ type: 'keyUp', modifiers: 1, key: 'a', code: 'KeyA', windowsVirtualKeyCode: 65 });
   }
 
   await new Promise(r => setTimeout(r, 1000));
@@ -29,7 +31,7 @@ export async function create({ condition, price: priceRaw, message }) {
       var inputs = document.querySelectorAll('[class*="alert"] input[type="text"], [class*="alert"] input[type="number"]');
       for (var i = 0; i < inputs.length; i++) {
         var label = inputs[i].closest('[class*="row"]')?.querySelector('[class*="label"]');
-        if (label && /value|price/i.test(label.textContent)) {
+        if (label && /value|price|valeur|prix/i.test(label.textContent)) {
           var nativeSet = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
           nativeSet.call(inputs[i], ${priceStr});
           inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
@@ -66,13 +68,13 @@ export async function create({ condition, price: priceRaw, message }) {
     (function() {
       var btns = document.querySelectorAll('button[data-name="submit"], button');
       for (var i = 0; i < btns.length; i++) {
-        if (/^create$/i.test(btns[i].textContent.trim())) { btns[i].click(); return true; }
+        if (/^(create|créer)$/i.test(btns[i].textContent.trim())) { btns[i].click(); return true; }
       }
       return false;
     })()
   `);
 
-  return { success: !!created, price, condition, message: message || '(none)', price_set: !!priceSet, source: 'dom_fallback' };
+  return { success: !!created && !!priceSet, price, condition, message: message || '(none)', price_set: !!priceSet, source: 'dom_fallback' };
 }
 
 export async function list() {
