@@ -1,7 +1,7 @@
 //@version=6
 // Checklist visuelle du plan de vente XAUUSD : 3 conditions cochées en direct
 // + mini-schéma des bougies attendues, dans le tableau.
-// À utiliser sur un graphique 15 min. Ne passe aucun ordre.
+// Fonctionne sur un graphique 1, 5 ou 15 min (calculs forcés en 15 min et 5 min). Ne passe aucun ordre.
 indicator("Plan XAUUSD — checklist vente", overlay = true)
 
 zLow       = input.float(4297.0,  "Zone de vente — bas")
@@ -22,21 +22,28 @@ cellH      = input.float(1.0, "Mini-schéma : hauteur des cases (%)", minval = 0
 posMap = tablePos == "En haut à gauche" ? position.top_left : tablePos == "En bas à droite" ? position.bottom_right : tablePos == "En bas à gauche" ? position.bottom_left : tablePos == "Au milieu à droite" ? position.middle_right : position.top_right
 txtSz  = textSize == "Très petit" ? size.tiny : textSize == "Normal" ? size.normal : size.small
 
-// 1. Le prix a atteint la zone (bougie en cours ou 3 précédentes)
-touched = ta.highest(high, 4) >= zLow
+// Les conditions 1, 2 et l'invalidation sont calculées sur des bougies 15 min,
+// quelle que soit l'unité de temps affichée (1, 5 ou 15 min).
+// 1. Le prix a atteint la zone (bougie 15 min en cours ou 3 précédentes)
+touchedExpr() => ta.highest(high, 4) >= zLow
 
 // 2. Rejet sur la dernière bougie 15 min CLÔTURÉE : elle a touché la zone,
 //    longue mèche haute, clôture sous le milieu de la zone
-rng       = high[1] - low[1]
-upperWick = high[1] - math.max(open[1], close[1])
-rejection = high[1] >= zLow and rng > 0 and upperWick >= wickRatio * rng and close[1] < zLow + (zTop - zLow) / 2
+rejectionExpr() =>
+    rng       = high[1] - low[1]
+    upperWick = high[1] - math.max(open[1], close[1])
+    high[1] >= zLow and rng > 0 and upperWick >= wickRatio * rng and close[1] < zLow + (zTop - zLow) / 2
+
+// Invalidation : une clôture 15 min au-dessus du niveau dans les 4 dernières heures
+invalidExpr() => ta.highest(close[1], 16) > invLvl
+
+[touched, rejection, invalidated] = request.security(syminfo.tickerid, "15", [touchedExpr(), rejectionExpr(), invalidExpr()])
 
 // 3. Cassure de structure baissière en 5 min (approximation) : une clôture 5 min
 //    sous le plus bas des 6 bougies 5 min précédentes, après un passage dans la zone
 choch5Expr() => ta.highest(high, 12) >= zLow and close < ta.lowest(low, 6)[1]
 choch5 = request.security(syminfo.tickerid, "5", choch5Expr())
 
-invalidated = ta.highest(close[1], 16) > invLvl
 expired     = hour(timenow, "UTC") >= endHourUtc
 signal      = touched and rejection and choch5 and not invalidated and not expired
 
