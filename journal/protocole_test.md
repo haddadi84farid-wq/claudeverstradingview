@@ -3,7 +3,7 @@
 But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une espérance positive.
 
 ## Règles du test
-1. Version figée : on teste le prompt tel quel (v4 pour le plan 15 min, scalping v2 pour le 5 min). Toute modification = nouvelle version, et les compteurs repartent à zéro pour cette version.
+1. Version figée : on teste le prompt tel quel (v4.2 pour le plan 15 min, scalping v2 pour le 5 min). Toute modification = nouvelle version, et les compteurs repartent à zéro pour cette version.
 2. On note TOUS les setups proposés, pris ou non. Un setup non pris mais déclenché est suivi « sur le papier » jusqu'au TP ou au stop.
 3. Taille constante : 0,01 lot (ou la taille calculée par le prompt), jamais plus, pour que chaque trade compte pareil.
 4. Exécution mécanique : entrée seulement si le déclencheur est complet, stop et TP du plan, aucune modification pendant le trade (sauf stop au point d'entrée prévu par le plan).
@@ -32,3 +32,10 @@ But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une es
 - Espérance > +0,2 R et drawdown supportable : la méthode est exploitable (en démo d'abord, puis en réel avec un risque de 0,5 % par trade).
 - Espérance entre 0 et +0,2 R : prometteur, continuer le test.
 - Espérance ≤ 0 : la méthode ne marche pas en l'état ; analyser les pertes par type d'erreur avant de modifier les règles.
+
+## Routine du soir (un seul message)
+« Lis journal/protocole_test.md et fais le test replay du jour suivant le dernier testé. Enchaîne tout. »
+- Jour à tester : le jour ouvré (lundi-vendredi) qui suit la dernière date « replay » de journal/trades.md.
+- Analyse à 07:15 UTC, plan figé dans journal/replay_AAAA-MM-JJ_plan.md, avance jusqu'à 18:00 UTC, résultats dans journal/trades.md, replay_stop, graphique remis en 5 min.
+- Commit et push de journal/ uniquement.
+- Si replay_step n'accepte pas count, faire /mcp → tradingview-desktop → Reconnect, ou avancer bougie par bougie.

@@ -1,10 +1,10 @@
-# Prompt fixe — analyse de trading (v4.1)
+# Prompt fixe — analyse de trading (v4.2)
 
 À coller au début d'une NOUVELLE session Claude Code locale chaque jour (mode Manuel),
 après avoir réaffiché LuxAlgo et AMD. Remplir les champs du haut.
 
 ```
-=== ANALYSE TRADING — PROMPT FIXE v4.1 ===
+=== ANALYSE TRADING — PROMPT FIXE v4.2 ===
 ACTIF : PEPPERSTONE:XAUUSD          UT d'exécution : 15 min
 COMPTE : Pepperstone DEMO, en EUR   RISQUE PAR TRADE : ____ € (taille minimale 0,01 lot)
 Or : 1 lot = 100 oz → 1 point = 100 $ par lot → 0,01 lot = 1 $ par point.
@@ -54,6 +54,10 @@ Indique le nombre de barres réellement disponibles et la plage de dates. Recons
 - Si le TP1 est atteint avant l'entrée, le setup est ANNULÉ (même s'il se déclenche plus tard).
 - Jamais d'entrée sur la bougie de cassure seule : cassure + retest rejeté.
 - Jamais d'ordre limite à l'aveugle : entrée seulement après un déclencheur (rejet 15 min avec mèche + clôture, ou CHoCH 5 min). Après une forte impulsion contre le trade, exiger les DEUX.
+- DEUX TYPES DE SETUP :
+  (a) RETOUR EN ZONE : balayage d'une liquidité intacte puis entrée dans une zone non consommée (règles ci-dessus).
+  (b) CONTINUATION : dans le sens du H1, après une cassure de structure (BOS) en 15 min, entrée sur le RETEST du niveau cassé ou d'un FVG 15 min laissé par la cassure, avec déclencheur (rejet 15 min ou CHoCH 5 min). Objectif = prochaine liquidité intacte dans le sens du H1 (ex. plus bas/plus haut de la veille). Stop au-delà du dernier sommet/creux qui a précédé la cassure, + 0,3 ATR 15 min + spread. Mêmes règles de R:R (≥ 1,5 au TP1, recalculé au déclenchement).
+- Si la zone du setup (a) est à plus de 2 ATR 15 min du prix au moment de l'analyse, propose AUSSI un setup (b) s'il existe. On ne prend que le premier déclenché.
 - Rejeté : prix au milieu d'une plage sans niveau ; continuation après plus de 4 ATR d'extension ; entrée qui court après un prix déjà sorti de la zone de plus de 2 ATR.
 - FENÊTRE DE TRADING : entrées seulement entre 07:00 et 18:00 UTC (Londres + New York). Pas d'entrée en séance asiatique. Flat 30 min avant une annonce majeure ; pas de position pendant une annonce majeure, sauf reliquat déjà sécurisé au point d'entrée.
 - Un plan expiré ne se rattrape pas : s'il s'est réalisé hors fenêtre, on le note dans le bilan et on repart de zéro.

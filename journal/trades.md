@@ -20,7 +20,9 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 ### Replay (séparé du direct)
 - v4 sans AMD : 1 setup déclenché puis rejeté (R:R réel < 1,5, TP atteints avant l'entrée), 0 trade compté.
 - v4.1 sans AMD : 1 jour testé (23/09), 1 setup proposé, 0 déclenché, 0 trade compté. Échantillon 0/30.
+- v4.2 sans AMD (ajout du setup de continuation) : 0 jour testé. Échantillon 0/30.
 
 ## Leçons
 - 2026-09-25 : une liquidité intacte (PDH 4303,44) vers laquelle va le H1 est un aimant. Ne pas vendre sous elle tant qu'elle n'est pas prise.
 - 2026-09-22 (replay) : le plan n'avait pas de règle d'annulation quand la liquidité cible (TP2) est prise AVANT l'entrée. Le setup s'est déclenché 5 h plus tard avec des cibles périmées et un R:R réel de 0,27. Le R:R n'est vérifié qu'au moment de l'analyse, pas au déclencheur. → Corrigé en v4.1 : R:R recalculé au déclenchement, setup annulé si le TP1 est atteint avant l'entrée.
+- 2026-09-23 (replay) : sens juste (baisse de plus de 50 points vers le PDL), mais aucun setup déclenché : le seul type d'entrée attendait un retour lointain (≈ 2,7 ATR) dans une zone. → v4.2 : ajout du setup de continuation (BOS 15 min + retest, vers la liquidité intacte).
