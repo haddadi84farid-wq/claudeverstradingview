@@ -4,14 +4,14 @@
 // À utiliser sur un graphique 15 min. Ne passe aucun ordre.
 indicator("Plan XAUUSD — checklist vente", overlay = true, max_boxes_count = 30, max_lines_count = 30, max_labels_count = 30)
 
-zLow       = input.float(4289.0,  "Zone de vente — bas")
-zTop       = input.float(4296.0,  "Zone de vente — haut")
-stopLvl    = input.float(4306.5,  "Stop")
+zLow       = input.float(4297.0,  "Zone de vente — bas")
+zTop       = input.float(4303.0,  "Zone de vente — haut")
+stopLvl    = input.float(4308.0,  "Stop")
 invLvl     = input.float(4303.44, "Invalidation (clôture 15 min au-dessus)")
-tp1        = input.float(4262.0,  "TP1")
-tp2        = input.float(4246.0,  "TP2")
+tp1        = input.float(4287.0,  "TP1")
+tp2        = input.float(4257.0,  "TP2")
 lots       = input.float(0.01,    "Taille (lots)")
-endHourUtc = input.int(18,        "Fin de validité (heure UTC)", minval = 0, maxval = 23)
+endHourUtc = input.int(12,        "Fin de validité (heure UTC)", minval = 0, maxval = 23)
 wickRatio  = input.float(0.5,     "Mèche haute minimale (part de la bougie)", minval = 0.1, maxval = 0.9)
 
 // 1. Le prix a atteint la zone (bougie en cours ou 3 précédentes)
