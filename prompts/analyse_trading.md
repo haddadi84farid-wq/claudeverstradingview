@@ -1,10 +1,10 @@
-# Prompt fixe — analyse de trading (v4)
+# Prompt fixe — analyse de trading (v4.1)
 
 À coller au début d'une NOUVELLE session Claude Code locale chaque jour (mode Manuel),
 après avoir réaffiché LuxAlgo et AMD. Remplir les champs du haut.
 
 ```
-=== ANALYSE TRADING — PROMPT FIXE v4 ===
+=== ANALYSE TRADING — PROMPT FIXE v4.1 ===
 ACTIF : PEPPERSTONE:XAUUSD          UT d'exécution : 15 min
 COMPTE : Pepperstone DEMO, en EUR   RISQUE PAR TRADE : ____ € (taille minimale 0,01 lot)
 Or : 1 lot = 100 oz → 1 point = 100 $ par lot → 0,01 lot = 1 $ par point.
@@ -50,6 +50,8 @@ Indique le nombre de barres réellement disponibles et la plage de dates. Recons
 - Le R:R se calcule APRÈS avoir placé le stop correctement, jamais l'inverse.
 - TP1 = PREMIER OBSTACLE sur le chemin (dernier creux/sommet intraday, zone où le prix a déjà réagi), PAS la liquidité finale. TP2 = la liquidité principale. Liste tous les obstacles entre l'entrée et le TP2.
 - R:R ≥ 1,5 au TP1 (depuis le milieu de la zone, spread inclus). Sinon rejeté.
+- AU DÉCLENCHEMENT : recalcule le R:R avec l'entrée réelle (prix après le déclencheur, spread inclus). Sous 1,5 au TP1, on n'entre pas : setup « déclenché mais rejeté », 0 R, non compté comme trade.
+- Si le TP1 est atteint avant l'entrée, le setup est ANNULÉ (même s'il se déclenche plus tard).
 - Jamais d'entrée sur la bougie de cassure seule : cassure + retest rejeté.
 - Jamais d'ordre limite à l'aveugle : entrée seulement après un déclencheur (rejet 15 min avec mèche + clôture, ou CHoCH 5 min). Après une forte impulsion contre le trade, exiger les DEUX.
 - Rejeté : prix au milieu d'une plage sans niveau ; continuation après plus de 4 ATR d'extension ; entrée qui court après un prix déjà sorti de la zone de plus de 2 ATR.
