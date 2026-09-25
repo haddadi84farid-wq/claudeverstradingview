@@ -36,8 +36,14 @@ f15() =>
     bRej  = low <= bZh and rng > 0 and loW >= wickRatio * rng and close > (bZl + bZh) / 2
     sSin  = ta.barssince(sRej[1])
     bSin  = ta.barssince(bRej[1])
-    [ta.highest(high, 4) >= sZl, not na(sSin) and sSin <= 3, ta.highest(close[1], 16) > sSl,
-     ta.lowest(low, 4) <= bZh, not na(bSin) and bSin <= 3, ta.lowest(close[1], 16) < bSl]
+    // Annulé si la dernière clôture au-delà du stop est plus récente que le dernier retour de l'autre côté
+    // de la zone (un dépassement ancien, suivi d'un retour sous/au-dessus de la zone, n'annule plus le plan)
+    sA    = ta.barssince(close[1] > sSl)
+    sB    = ta.barssince(close[1] < sZl)
+    bA    = ta.barssince(close[1] < bSl)
+    bB    = ta.barssince(close[1] > bZh)
+    [ta.highest(high, 4) >= sZl, not na(sSin) and sSin <= 3, not na(sA) and (na(sB) or sA < sB),
+     ta.lowest(low, 4) <= bZh, not na(bSin) and bSin <= 3, not na(bA) and (na(bB) or bA < bB)]
 [sTouch, sRej, sInv, bTouch, bRej, bInv] = request.security(syminfo.tickerid, "15", f15())
 
 // ---------- Cassure de structure en 5 min (sur bougie clôturée, mémorisée 15 min) ----------
