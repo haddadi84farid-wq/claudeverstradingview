@@ -15,8 +15,11 @@
 // - Entrées de 07:00 à 18:00 UTC, clôture forcée à 20:00 UTC, 3 trades max par jour.
 // Chaque trade risque le même montant : Résultat total ÷ risque par trade = résultat en R.
 // Limites : pas de zones LuxAlgo, pas d'annonces économiques, TP1 fixé à 1 R (et non au premier obstacle).
+// margin_long/short = 1 % : effet de levier de CFD. Sans cela (Pine v6 = 100 % par défaut), les ordres
+// dont la valeur dépasse le capital sont refusés sans message et le test n'affiche aucun trade.
 strategy("Backtest XAU — balayage de liquidité", overlay = true, initial_capital = 10000,
-     default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 10, pyramiding = 0)
+     default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 10, pyramiding = 0,
+     margin_long = 1, margin_short = 1)
 
 riskCash    = input.float(100.0, "Risque par trade ($)", minval = 1)
 spreadPts   = input.float(0.2, "Spread (points)", minval = 0)
