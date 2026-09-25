@@ -80,26 +80,23 @@ if barstate.islast
 
 // ---------- Mini-schéma dans le tableau (lignes 8 à 20) ----------
 // Grille de 11 lignes x 7 colonnes : bougie 1 en col 1, bougie 2 en col 3, bougie 3 en col 5.
-// Lignes 0-2 de la grille = zone de vente, ligne 7 = creux 5 min (pointillés bleus), ligne 10 = numéros.
+// Seul trait horizontal : la limite d'entrée en rouge (ligne 2 de la grille). Ligne 10 = numéros.
 miniCell(int col, int gRow, string txt, color bg, color tc) =>
     table.cell(t, col, 9 + gRow, txt, width = cellW, height = cellH, bgcolor = bg, text_color = tc, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
 
 if barstate.islast and showMini
-    zoneBg = color.new(color.red, 80)
     table.cell(t, 0, 8, "Schéma attendu", text_color = color.white, bgcolor = color.new(color.gray, 20), text_halign = text.align_left, text_size = txtSz)
     for gRow = 0 to 10
         for col = 0 to NCOL - 1
-            bg = gRow <= 2 ? zoneBg : color.white
-            txt = gRow == 7 ? "- -" : ""
-            miniCell(col, gRow, txt, bg, color.blue)
+            miniCell(col, gRow, gRow == 2 ? "──" : "", color.white, color.red)
     // bougie 1 (montée, verte) : mèche lignes 3 et 7, corps lignes 4-6
     miniCell(1, 3, "│", color.white, color.teal)
     for gRow = 4 to 6
         miniCell(1, gRow, "", color.teal, color.teal)
     miniCell(1, 7, "│", color.white, color.teal)
-    // bougie 2 (rejet, rouge) : longue mèche dans la zone lignes 0-2, corps lignes 3-4, mèche basse ligne 5
+    // bougie 2 (rejet, rouge) : longue mèche au-dessus de la limite d'entrée, lignes 0-2, corps lignes 3-4, mèche basse ligne 5
     for gRow = 0 to 2
-        miniCell(3, gRow, "│", zoneBg, color.red)
+        miniCell(3, gRow, "│", color.white, color.red)
     for gRow = 3 to 4
         miniCell(3, gRow, "", color.red, color.red)
     miniCell(3, 5, "│", color.white, color.red)
@@ -112,7 +109,7 @@ if barstate.islast and showMini
     miniCell(1, 10, "1", color.white, color.black)
     miniCell(3, 10, "2", color.white, color.black)
     miniCell(5, 10, "3", color.white, color.black)
-    table.cell(t, 0, 20, "1 monte → 2 mèche dans la zone → 3 cassure du creux : vente", text_halign = text.align_left, text_size = size.tiny)
+    table.cell(t, 0, 20, "1 monte → 2 mèche au-dessus du trait rouge (entrée) → 3 cassure : vente", text_halign = text.align_left, text_size = size.tiny)
 
 // ---------- Schéma des bougies attendues ----------
 var array<box>   sBoxes  = array.new<box>()
