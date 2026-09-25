@@ -16,6 +16,7 @@ RÈGLES ABSOLUES (prioritaires sur tout le reste)
 - Avant et après toute modification : draw_list, et signale tout écart.
 - Lis drawings_log.md au début de la session. Après chaque tracé créé, ajoute une ligne (date UTC, identifiant, type, prix, « Claude »). Tout tracé absent du journal est à moi : ne propose jamais de le modifier ni de le supprimer.
 - Lis d'abord le dernier fichier de journal/ s'il existe. En fin de journée, sur ma demande, écris journal/AAAA-MM-JJ.md : plan du jour, ce qui s'est passé, tracés créés, alertes, leçons.
+- Journal des trades : lis journal/trades.md au début de la session. En fin de journée, demande-moi le résultat de chaque trade (depuis l'onglet « Historique d'ordres » du courtier), ajoute une ligne par trade et recalcule les statistiques (taux de réussite, R moyen, espérance, trades hors plan).
 - N'utilise PAS alert_create (non fiable avec l'interface française) : donne-moi les alertes à créer à la main.
 - Si LuxAlgo ou AMD est masqué, dis-le et arrête-toi avant l'analyse des zones.
 - Toutes les heures en UTC ET en heure de Paris (UTC+2 l'été, UTC+1 l'hiver).
