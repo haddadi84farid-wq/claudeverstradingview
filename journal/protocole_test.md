@@ -23,7 +23,10 @@ But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une es
 - Procédure : choisir une date passée (replay_start), faire l'analyse avec le prompt SANS regarder la suite, noter les setups, puis avancer les bougies (replay_step / replay_autoplay) et noter le résultat.
 - Règle stricte : aucune information postérieure au point de départ du replay ne doit être utilisée.
 - Les trades en replay se notent à part (colonne « Mode » = replay) et ne se mélangent pas aux trades en direct.
-- Autorisations d'avance en mode test : chart_set_timeframe, replay_start, replay_step, replay_autoplay, replay_status, replay_stop et toutes les lectures, sans redemander. Interdits : replay_trade, tout tracé, tout ordre.
+- Autorisations d'avance en mode test : chart_set_timeframe, replay_start, replay_step, replay_autoplay, replay_status, replay_stop, capture_screenshot et toutes les lectures, sans redemander. Interdits : replay_trade, tout ordre.
+- Tracés du test (pour que je VOIE le plan) : juste après avoir figé le plan, trace pour chaque setup proposé la zone d'entrée (rectangle), le stop (ligne rouge), le TP1 et le TP2 (lignes vertes), avec un texte court « TEST AAAA-MM-JJ ». Inscris-les dans drawings_log.md avec l'auteur « Claude (test replay) ». Ne touche à aucun autre tracé.
+- Captures d'écran (capture_screenshot, région « chart ») : (1) plan figé à 07:15, (2) au déclenchement de chaque setup, (3) à la sortie (TP ou stop), (4) à 18:00. Note le chemin de chaque capture dans journal/replay_AAAA-MM-JJ_plan.md.
+- Après la capture de 18:00 : supprime uniquement les tracés « Claude (test replay) » du jour, puis replay_stop.
 - Avancer avec replay_step { count: N } (plusieurs bougies en un appel). Le current_date renvoyé peut retarder d'une bougie : avant les 3 dernières bougies, avancer une par une et vérifier la dernière bougie avec data_get_ohlcv.
 - replay_start remet le graphique en 5 min : repasser en 15 min juste après, puis vérifier le point de replay.
 - Figer le plan dans un fichier (journal/replay_AAAA-MM-JJ_plan.md) AVANT d'avancer.
