@@ -38,8 +38,9 @@ But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une es
 - Espérance ≤ 0 : la méthode ne marche pas en l'état ; analyser les pertes par type d'erreur avant de modifier les règles.
 
 ## Routine du soir (un seul message)
-« Lis journal/protocole_test.md et fais le test replay du jour suivant le dernier testé. Enchaîne tout. »
-- Jour à tester : le jour ouvré (lundi-vendredi) qui suit la dernière date « replay » de journal/trades.md.
+« Lis journal/protocole_test.md et fais le test replay du prochain jour à tester. Enchaîne tout. »
+- Jour à tester : on REMONTE dans le passé. Prendre le jour ouvré (lundi-vendredi) le plus récent, antérieur au 22/09/2026, qui n'a pas encore de ligne « replay » dans journal/trades.md (21/09, puis 18/09, 17/09, 16/09…). Ne jamais tester un jour tradé en direct, un jour pas encore terminé, ni un jour dont on connaît déjà la suite.
+- Avant de commencer : si un replay est déjà actif, faire replay_stop.
 - Analyse à 07:15 UTC, plan figé dans journal/replay_AAAA-MM-JJ_plan.md, avance jusqu'à 18:00 UTC, résultats dans journal/trades.md, replay_stop, graphique remis en 5 min.
 - Commit et push de journal/ uniquement.
 - Si replay_step n'accepte pas count, faire /mcp → tradingview-desktop → Reconnect, ou avancer bougie par bougie.
