@@ -1,0 +1,226 @@
+//@version=6
+// Backtest du cœur mécanique de la méthode : balayage d'une liquidité puis réintégration.
+// À utiliser sur PEPPERSTONE:XAUUSD en 15 min, puis onglet « Testeur de stratégie ».
+//
+// Règles testées (simplification mécanique du prompt v4.3) :
+// - Liquidités : plus haut/plus bas de la veille (PDH/PDL), sommet/creux de l'Asie (00-07 UTC),
+//   sommet/creux de Londres (07-12 UTC). Chaque niveau ne sert qu'une fois par jour.
+// - Balayage : la bougie 15 min dépasse le niveau et CLÔTURE de retour à l'intérieur.
+// - Confirmation : dans les N bougies suivantes, clôture au-delà de l'extrême opposé de la bougie
+//   de balayage (mini cassure de structure). Annulé si le prix clôture au-delà de la mèche.
+// - Stop : au-delà de la mèche du balayage + 0,3 ATR 15 min + spread.
+// - TP1 : 1 R, sortie de 50 %, puis stop au point d'entrée. TP2 : liquidité opposée la plus proche
+//   donnant au moins 1,5 R (plafonnée à 4 R). Pas de liquidité à 1,5 R ou plus : pas de trade.
+// - Filtre H1 (EMA 50) : contre la tendance H1, seulement sur un balayage du PDH/PDL.
+// - Entrées de 07:00 à 18:00 UTC, clôture forcée à 20:00 UTC, 3 trades max par jour.
+// Chaque trade risque le même montant : Résultat total ÷ risque par trade = résultat en R.
+// Limites : pas de zones LuxAlgo, pas d'annonces économiques, TP1 fixé à 1 R (et non au premier obstacle).
+strategy("Backtest XAU — balayage de liquidité", overlay = true, initial_capital = 10000,
+     default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 10, pyramiding = 0)
+
+riskCash    = input.float(100.0, "Risque par trade ($)", minval = 1)
+spreadPts   = input.float(0.2, "Spread (points)", minval = 0)
+atrMult     = input.float(0.3, "Marge du stop (× ATR 15 min)", minval = 0)
+confirmBars = input.int(3, "Bougies max pour la confirmation", minval = 1, maxval = 10)
+minRR       = input.float(1.5, "R:R minimum au TP2", minval = 0.5)
+maxRR       = input.float(4.0, "R:R maximum visé au TP2", minval = 1)
+tp1R        = input.float(1.0, "TP1 partiel (en R)", minval = 0.3)
+useBias     = input.bool(true, "Filtre H1 (EMA 50) : contre-tendance seulement sur PDH/PDL")
+usePD       = input.bool(true, "Niveaux PDH / PDL")
+useAsia     = input.bool(true, "Niveaux Asie")
+useLondon   = input.bool(true, "Niveaux Londres")
+startH      = input.int(7, "Début des entrées (heure UTC)", minval = 0, maxval = 23)
+endH        = input.int(18, "Fin des entrées (heure UTC)", minval = 1, maxval = 24)
+flatH       = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 23)
+maxPerDay   = input.int(3, "Trades max par jour", minval = 1)
+
+atr    = ta.atr(14)
+h      = hour(time, "UTC")
+newDay = ta.change(dayofmonth(time, "UTC")) != 0
+
+// Niveaux de la veille et tendance H1, sans regarder le futur (valeurs de la bougie précédente)
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
+[h1c, h1e] = request.security(syminfo.tickerid, "60", [close[1], ta.ema(close, 50)[1]], lookahead = barmerge.lookahead_on)
+bull = h1c > h1e
+
+// Sommets / creux de séance
+var float asiaH = na
+var float asiaL = na
+var float lonH  = na
+var float lonL  = na
+var bool usedPDH = false
+var bool usedPDL = false
+var bool usedAH  = false
+var bool usedAL  = false
+var bool usedLH  = false
+var bool usedLL  = false
+var int  tradesToday = 0
+
+if newDay
+    asiaH := na
+    asiaL := na
+    lonH  := na
+    lonL  := na
+    usedPDH := false
+    usedPDL := false
+    usedAH  := false
+    usedAL  := false
+    usedLH  := false
+    usedLL  := false
+    tradesToday := 0
+
+if h < 7
+    asiaH := na(asiaH) ? high : math.max(asiaH, high)
+    asiaL := na(asiaL) ? low : math.min(asiaL, low)
+if h >= 7 and h < 12
+    lonH := na(lonH) ? high : math.max(lonH, high)
+    lonL := na(lonL) ? low : math.min(lonL, low)
+
+asiaReady = h >= 7 and not na(asiaH)
+lonReady  = h >= 12 and not na(lonH)
+inWindow  = h >= startH and h < endH
+canTrade  = inWindow and strategy.position_size == 0 and tradesToday < maxPerDay
+
+// État des setups armés (balayage vu, confirmation attendue)
+var bool   armS = false
+var float  armSHigh = na
+var float  armSLow  = na
+var int    armSBar  = 0
+var bool   armL = false
+var float  armLHigh = na
+var float  armLLow  = na
+var int    armLBar  = 0
+
+// Trade en cours
+var float tp1 = na
+var float tp2 = na
+var float sl  = na
+var float initQty = na
+var bool  beDone = false
+var int   nEntries = 0
+
+if newDay
+    armS := false
+    armL := false
+
+// ---------- Détection des balayages (vente sur un sommet, achat sur un creux) ----------
+if canTrade and not armS
+    string nameS = ""
+    if usePD and not usedPDH and high > pdh and close < pdh
+        nameS := "PDH"
+        usedPDH := true
+    else if useAsia and asiaReady and not usedAH and high > asiaH and close < asiaH
+        nameS := "ASIE"
+        usedAH := true
+    else if useLondon and lonReady and not usedLH and high > lonH and close < lonH
+        nameS := "LONDRES"
+        usedLH := true
+    if nameS != "" and (not useBias or not bull or nameS == "PDH")
+        armS := true
+        armSHigh := high
+        armSLow  := low
+        armSBar  := bar_index
+
+if canTrade and not armL
+    string nameL = ""
+    if usePD and not usedPDL and low < pdl and close > pdl
+        nameL := "PDL"
+        usedPDL := true
+    else if useAsia and asiaReady and not usedAL and low < asiaL and close > asiaL
+        nameL := "ASIE"
+        usedAL := true
+    else if useLondon and lonReady and not usedLL and low < lonL and close > lonL
+        nameL := "LONDRES"
+        usedLL := true
+    if nameL != "" and (not useBias or bull or nameL == "PDL")
+        armL := true
+        armLHigh := high
+        armLLow  := low
+        armLBar  := bar_index
+
+// ---------- Confirmation et entrée ----------
+// Vente
+if armS and bar_index > armSBar
+    if bar_index - armSBar > confirmBars or close > armSHigh or not canTrade
+        armS := false
+    else if close < armSLow
+        entry = close
+        stopS = armSHigh + atrMult * atr + spreadPts
+        risk  = stopS - entry
+        float target = na
+        if risk > 0
+            for c in array.from(pdl, asiaReady ? asiaL : na, lonReady ? lonL : na)
+                if not na(c) and entry - c >= minRR * risk
+                    target := na(target) ? c : math.max(target, c)
+        if not na(target)
+            tp2 := math.max(target, entry - maxRR * risk)
+            tp1 := entry - tp1R * risk
+            sl  := stopS
+            qty = riskCash / (risk * syminfo.pointvalue)
+            initQty := qty
+            beDone := false
+            strategy.entry("S", strategy.short, qty = qty)
+            strategy.exit("S1", "S", qty_percent = 50, limit = tp1, stop = sl)
+            strategy.exit("S2", "S", limit = tp2, stop = sl)
+            tradesToday += 1
+            nEntries += 1
+        armS := false
+
+// Achat
+if armL and bar_index > armLBar
+    if bar_index - armLBar > confirmBars or close < armLLow or not canTrade
+        armL := false
+    else if close > armLHigh
+        entry = close
+        stopL = armLLow - atrMult * atr - spreadPts
+        risk  = entry - stopL
+        float target = na
+        if risk > 0
+            for c in array.from(pdh, asiaReady ? asiaH : na, lonReady ? lonH : na)
+                if not na(c) and c - entry >= minRR * risk
+                    target := na(target) ? c : math.min(target, c)
+        if not na(target)
+            tp2 := math.min(target, entry + maxRR * risk)
+            tp1 := entry + tp1R * risk
+            sl  := stopL
+            qty = riskCash / (risk * syminfo.pointvalue)
+            initQty := qty
+            beDone := false
+            strategy.entry("L", strategy.long, qty = qty)
+            strategy.exit("L1", "L", qty_percent = 50, limit = tp1, stop = sl)
+            strategy.exit("L2", "L", limit = tp2, stop = sl)
+            tradesToday += 1
+            nEntries += 1
+        armL := false
+
+// ---------- Stop au point d'entrée après le TP1 ----------
+if strategy.position_size < 0 and not beDone and math.abs(strategy.position_size) < initQty * 0.75
+    beDone := true
+    strategy.exit("S2", "S", limit = tp2, stop = strategy.position_avg_price)
+if strategy.position_size > 0 and not beDone and strategy.position_size < initQty * 0.75
+    beDone := true
+    strategy.exit("L2", "L", limit = tp2, stop = strategy.position_avg_price)
+
+// ---------- Clôture forcée en fin de journée ----------
+if h >= flatH and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de journée")
+
+// ---------- Affichage ----------
+plot(usePD ? pdh : na, "PDH", color.red, 1, plot.style_linebr)
+plot(usePD ? pdl : na, "PDL", color.green, 1, plot.style_linebr)
+plot(useAsia and asiaReady ? asiaH : na, "Sommet Asie", color.orange, 1, plot.style_linebr)
+plot(useAsia and asiaReady ? asiaL : na, "Creux Asie", color.orange, 1, plot.style_linebr)
+plot(useLondon and lonReady ? lonH : na, "Sommet Londres", color.blue, 1, plot.style_linebr)
+plot(useLondon and lonReady ? lonL : na, "Creux Londres", color.blue, 1, plot.style_linebr)
+
+var table stats = table.new(position.top_right, 2, 4, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    totalR = strategy.netprofit / riskCash
+    table.cell(stats, 0, 0, "Entrées", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 3, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
