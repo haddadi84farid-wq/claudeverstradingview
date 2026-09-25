@@ -29,10 +29,13 @@ touchedExpr() => ta.highest(high, 4) >= zLow
 
 // 2. Rejet sur la dernière bougie 15 min CLÔTURÉE : elle a touché la zone,
 //    longue mèche haute, clôture sous le milieu de la zone
+//    La case reste cochée si ce rejet a eu lieu dans la dernière heure (4 bougies 15 min).
 rejectionExpr() =>
-    rng       = high[1] - low[1]
-    upperWick = high[1] - math.max(open[1], close[1])
-    high[1] >= zLow and rng > 0 and upperWick >= wickRatio * rng and close[1] < zLow + (zTop - zLow) / 2
+    rng       = high - low
+    upperWick = high - math.max(open, close)
+    rej       = high >= zLow and rng > 0 and upperWick >= wickRatio * rng and close < zLow + (zTop - zLow) / 2
+    since     = ta.barssince(rej[1])
+    not na(since) and since <= 3
 
 // Invalidation : une clôture 15 min au-dessus du niveau dans les 4 dernières heures
 invalidExpr() => ta.highest(close[1], 16) > invLvl
@@ -41,7 +44,11 @@ invalidExpr() => ta.highest(close[1], 16) > invLvl
 
 // 3. Cassure de structure baissière en 5 min (approximation) : une clôture 5 min
 //    sous le plus bas des 6 bougies 5 min précédentes, après un passage dans la zone
-choch5Expr() => ta.highest(high, 12) >= zLow and close < ta.lowest(low, 6)[1]
+//    Compte dès la clôture de la bougie de cassure ; la case reste cochée 15 min (3 bougies 5 min).
+choch5Expr() =>
+    brk   = ta.highest(high, 12) >= zLow and close < ta.lowest(low, 6)[1]
+    since = ta.barssince(brk[1])   // seulement des bougies 5 min clôturées
+    not na(since) and since <= 2
 choch5 = request.security(syminfo.tickerid, "5", choch5Expr())
 
 expired     = hour(timenow, "UTC") >= endHourUtc
