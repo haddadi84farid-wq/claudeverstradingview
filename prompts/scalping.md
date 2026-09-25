@@ -1,12 +1,12 @@
-# Prompt fixe — plan de scalping (v1)
+# Prompt fixe — plan de scalping 5 min (v2)
 
-Claude PRÉPARE les niveaux avant la séance ; le déclenchement en 1 min se fait par moi
-(ou par un indicateur), pas par Claude, trop lent pour une entrée en 1 min.
-À coller dans une NOUVELLE session locale (mode Manuel), 15 min avant la séance visée.
+Trade construit en 5 min, validé en 1 min. Claude PRÉPARE le plan avant la séance ;
+la validation 1 min se fait par moi (Claude est trop lent pour une entrée en 1 min).
+Mettre le graphique en 5 min, puis coller dans une NOUVELLE session locale (mode Manuel), 15 min avant la séance.
 
 ```
-=== PLAN DE SCALPING — PROMPT FIXE v1 ===
-ACTIF : PEPPERSTONE:XAUUSD        Contexte : 5 min   Déclenchement : 1 min
+=== PLAN DE SCALPING 5 MIN — PROMPT FIXE v2 ===
+ACTIF : PEPPERSTONE:XAUUSD   Contexte : H1 + 15 min   Trade : 5 min   Validation : 1 min
 COMPTE : Pepperstone DEMO, en EUR RISQUE PAR TRADE : ____ € (0,01 lot = 1 $ par point)
 SÉANCE VISÉE : ouverture Londres (09:00-11:00 Paris) / ouverture New York (15:30-17:30 Paris)
 
@@ -15,34 +15,37 @@ RÈGLES ABSOLUES
 - Tu prépares un PLAN pour la séance. Tu ne donnes pas de signal en direct : le déclenchement 1 min est fait par moi.
 
 1. DONNÉES (lecture seule, sans changer l'unité de temps du graphique)
-data_get_ohlcv (max de barres, sans les afficher) : reconstruis le 5 min, le H1 et le H4 à partir des barres disponibles. Si le graphique est en 15 min, dis-le : le 1 min n'est pas lisible sans changer d'unité de temps, donc je le suivrai moi-même.
+chart_get_state : le graphique doit être en 5 min. Sinon, dis-le et arrête-toi (je le change moi-même).
+data_get_ohlcv (max de barres, sans les afficher) : 5 min tel quel ; reconstruis le 15 min, le H1 et le H4. Le 1 min n'est pas lu : je fais la validation moi-même.
 quote_get, data_get_study_values, data_get_pine_* avec study_filter "LuxAlgo" et "AMD".
 
 2. CONTEXTE
-- Biais H1 et H4 (structure du prix), et niveau d'invalidation.
+- Biais H4 puis H1 et 15 min (structure du prix), et niveau d'invalidation.
 - Annonces US du jour : heure UTC + Paris. Pas de scalping de 15 min avant à 15 min après une annonce ; pas de scalping du tout un jour de CPI/NFP/FOMC avant l'annonce.
-- ATR(14) en 5 min et estimation de l'ATR 1 min (≈ ATR 5 min ÷ 2,2).
+- ATR(14) en 5 min et en 15 min.
 - Niveaux de la séance : plus haut/plus bas de la veille, ouverture du jour, plus haut/plus bas Asie et, pour NY, plus haut/plus bas Londres.
-- Liquidité INTACTE vs BALAYÉE en 5 min (plus hauts/plus bas égaux, sommets/creux de séance).
+- Liquidité INTACTE vs BALAYÉE en 5 min et 15 min (plus hauts/plus bas égaux, sommets/creux de séance).
+- Zones d'offre/demande 5 min non consommées (LuxAlgo + prix).
 
 3. SETUPS AUTORISÉS (2 maximum, un dans chaque sens au plus)
-Seul setup autorisé : BALAYAGE + RÉINTÉGRATION sur un niveau de liquidité intacte listé ci-dessus.
-- Déclencheur (à faire par moi en 1 min) : la mèche 1 min dépasse le niveau, une bougie 1 min clôture de retour à l'intérieur, puis CHoCH 1 min (cassure du dernier creux/sommet 1 min).
-- Entrée : au marché après le CHoCH 1 min, ou sur le retest du niveau.
-- Stop : au-delà de la mèche du balayage + 0,3 ATR 1 min + spread ; stop minimum 2,5 points (en dessous, le bruit et le spread le déclenchent).
-- TP1 : premier obstacle en 5 min ; TP2 : liquidité suivante. Liste les obstacles.
+Seul setup autorisé : BALAYAGE + RÉINTÉGRATION en 5 min sur un niveau de liquidité intacte listé ci-dessus, de préférence dans une zone 5 min non consommée.
+- Déclencheur 5 min : la mèche 5 min dépasse le niveau, et la bougie 5 min CLÔTURE de retour à l'intérieur.
+- Validation 1 min (faite par moi) : CHoCH 1 min dans le sens du trade (cassure du dernier creux/sommet 1 min) après cette clôture 5 min. Sans validation 1 min dans les 3 bougies 5 min suivantes : trade annulé.
+- Entrée : au marché après la validation 1 min, ou sur le retest du niveau.
+- Stop : au-delà de la mèche 5 min du balayage + 0,3 ATR 5 min + spread ; stop minimum 3 points.
+- TP1 : premier obstacle en 5 min ; TP2 : liquidité suivante (5 min ou 15 min). Liste les obstacles.
 - R:R ≥ 1,5 au TP1, spread inclus, sinon rejeté. Donne la formule d'entrée maximale selon la profondeur de la mèche.
 - Sens : dans le sens du biais H1 de préférence ; contre-tendance noté « CT », uniquement si le TP1 est un obstacle clair et proche.
 
 4. GESTION ET LIMITES (non négociables, à rappeler en fin de réponse)
 - Taille : lots = risque ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
-- 50 % au TP1 puis stop au point d'entrée ; sortie totale si le trade n'a pas atteint TP1 après 15 bougies 1 min.
+- 50 % au TP1 puis stop au point d'entrée ; sortie totale si le trade n'a pas atteint TP1 après 12 bougies 5 min (1 heure).
 - Maximum 3 trades par séance. Arrêt de la séance après 2 pertes consécutives ou −2 R cumulés. Pas de nouveau trade pour « se refaire ».
 - Stop et TP ACTIVÉS dans le ticket AVANT d'envoyer l'ordre.
 
 5. RÉPONSE
 - 3 lignes : biais, niveaux à balayer, fenêtre horaire (UTC / Paris).
-- Tableau : N° | Sens | Niveau à balayer | Déclencheur 1 min | Stop (formule) | Entrée max pour 1,5 R | TP1 (obstacle) | TP2 | Invalidation | Valable de … à … | Taille
+- Tableau : N° | Sens | Niveau à balayer | Déclencheur 5 min + validation 1 min | Stop (formule) | Entrée max pour 1,5 R | TP1 (obstacle) | TP2 | Invalidation | Valable de … à … | Taille
 - Alertes à créer à la main (valeur avec une VIRGULE) : chaque niveau à balayer.
 - Si aucun setup : « PAS DE SCALP » et pourquoi.
 - Tracés proposés numérotés (une ligne par niveau à balayer, rien d'autre), non exécutés.
