@@ -15,7 +15,10 @@ endHourUtc = input.int(12,        "Fin de validité (heure UTC)", minval = 0, ma
 wickRatio  = input.float(0.5,     "Mèche haute minimale (part de la bougie)", minval = 0.1, maxval = 0.9)
 tablePos   = input.string("En haut à droite", "Position du tableau", options = ["En haut à droite", "En haut à gauche", "En bas à droite", "En bas à gauche", "Au milieu à droite"])
 textSize   = input.string("Petit", "Taille du texte", options = ["Très petit", "Petit", "Normal"])
-showSketch = input.bool(true, "Afficher le schéma des bougies")
+showMini   = input.bool(true, "Mini-schéma sous le tableau")
+cellW      = input.float(0.8, "Mini-schéma : largeur des cases (%)", minval = 0.2, maxval = 5.0, step = 0.1)
+cellH      = input.float(1.0, "Mini-schéma : hauteur des cases (%)", minval = 0.2, maxval = 5.0, step = 0.1)
+showSketch = input.bool(false, "Schéma sur le graphique (à droite des bougies)")
 
 posMap = tablePos == "En haut à gauche" ? position.top_left : tablePos == "En bas à droite" ? position.bottom_right : tablePos == "En bas à gauche" ? position.bottom_left : tablePos == "Au milieu à droite" ? position.middle_right : position.top_right
 txtSz  = textSize == "Très petit" ? size.tiny : textSize == "Normal" ? size.normal : size.small
@@ -41,18 +44,24 @@ signal      = touched and rejection and choch5 and not invalidated and not expir
 alertcondition(signal, "Signal vente XAU", "Les 3 conditions du plan de vente sont réunies")
 
 // ---------- Tableau ----------
-var table t = table.new(posMap, 2, 8, bgcolor = color.white, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.gray, frame_width = 1)
+// 7 colonnes : col 0 = case à cocher, cols 1-6 = texte fusionné ; le mini-schéma utilise les 7 colonnes.
+NCOL = 7
+NROW = showMini ? 21 : 8
+var table t = table.new(posMap, NCOL, NROW, bgcolor = color.white, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.gray, frame_width = 1)
 
 mark(bool c) => c ? "✅" : "⬜"
 px(float v) => str.tostring(v, "#.##")
 
 // Fusion des cellules une seule fois (refusionner à chaque tick provoque une erreur)
 if barstate.isfirst
-    table.merge_cells(t, 0, 0, 1, 0)
-    table.merge_cells(t, 0, 4, 1, 4)
-    table.merge_cells(t, 0, 5, 1, 5)
-    table.merge_cells(t, 0, 6, 1, 6)
-    table.merge_cells(t, 0, 7, 1, 7)
+    table.merge_cells(t, 0, 0, NCOL - 1, 0)
+    for r = 1 to 3
+        table.merge_cells(t, 1, r, NCOL - 1, r)
+    for r = 4 to 7
+        table.merge_cells(t, 0, r, NCOL - 1, r)
+    if showMini
+        table.merge_cells(t, 0, 8, NCOL - 1, 8)
+        table.merge_cells(t, 0, 20, NCOL - 1, 20)
 
 if barstate.islast
     statusTxt = invalidated ? "ANNULÉ : clôture au-dessus de " + px(invLvl) : expired ? "EXPIRÉ : après " + str.tostring(endHourUtc) + ":00 UTC" : signal ? "SIGNAL DE VENTE : à toi de décider" : "EN ATTENTE : ne rien faire"
@@ -68,6 +77,42 @@ if barstate.islast
     table.cell(t, 0, 5, "Stop " + px(stopLvl) + "   TP1 " + px(tp1) + "   TP2 " + px(tp2), text_halign = text.align_left, text_size = txtSz)
     table.cell(t, 0, 6, "Taille : " + str.tostring(lots) + " lot — stop et TP activés", text_halign = text.align_left, text_size = txtSz)
     table.cell(t, 0, 7, "Valable jusqu'à " + str.tostring(endHourUtc) + ":00 UTC — invalidation > " + px(invLvl), text_halign = text.align_left, text_size = txtSz)
+
+// ---------- Mini-schéma dans le tableau (lignes 8 à 20) ----------
+// Grille de 11 lignes x 7 colonnes : bougie 1 en col 1, bougie 2 en col 3, bougie 3 en col 5.
+// Lignes 0-2 de la grille = zone de vente, ligne 7 = creux 5 min (pointillés bleus), ligne 10 = numéros.
+miniCell(int col, int gRow, string txt, color bg, color tc) =>
+    table.cell(t, col, 9 + gRow, txt, width = cellW, height = cellH, bgcolor = bg, text_color = tc, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+
+if barstate.islast and showMini
+    zoneBg = color.new(color.red, 80)
+    table.cell(t, 0, 8, "Schéma attendu", text_color = color.white, bgcolor = color.new(color.gray, 20), text_halign = text.align_left, text_size = txtSz)
+    for gRow = 0 to 10
+        for col = 0 to NCOL - 1
+            bg = gRow <= 2 ? zoneBg : color.white
+            txt = gRow == 7 ? "- -" : ""
+            miniCell(col, gRow, txt, bg, color.blue)
+    // bougie 1 (montée, verte) : mèche lignes 3 et 7, corps lignes 4-6
+    miniCell(1, 3, "│", color.white, color.teal)
+    for gRow = 4 to 6
+        miniCell(1, gRow, "", color.teal, color.teal)
+    miniCell(1, 7, "│", color.white, color.teal)
+    // bougie 2 (rejet, rouge) : longue mèche dans la zone lignes 0-2, corps lignes 3-4, mèche basse ligne 5
+    for gRow = 0 to 2
+        miniCell(3, gRow, "│", zoneBg, color.red)
+    for gRow = 3 to 4
+        miniCell(3, gRow, "", color.red, color.red)
+    miniCell(3, 5, "│", color.white, color.red)
+    // bougie 3 (cassure, rouge) : mèche ligne 4, corps lignes 5-8 (sous le creux), mèche ligne 9
+    miniCell(5, 4, "│", color.white, color.red)
+    for gRow = 5 to 8
+        miniCell(5, gRow, "", color.red, color.red)
+    miniCell(5, 9, "│", color.white, color.red)
+    // numéros
+    miniCell(1, 10, "1", color.white, color.black)
+    miniCell(3, 10, "2", color.white, color.black)
+    miniCell(5, 10, "3", color.white, color.black)
+    table.cell(t, 0, 20, "1 monte → 2 mèche dans la zone → 3 cassure du creux : vente", text_halign = text.align_left, text_size = size.tiny)
 
 // ---------- Schéma des bougies attendues ----------
 var array<box>   sBoxes  = array.new<box>()
