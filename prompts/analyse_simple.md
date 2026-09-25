@@ -1,0 +1,31 @@
+# Prompt simple — analyse XAUUSD (v5)
+
+Un seul message à envoyer. Prérequis : graphique XAUUSD en 15 min, indicateurs « Smart Money Concepts [LuxAlgo] »
+et « Plan XAUUSD — checklist achat / vente » (pine/plan_xau_2sens.pine) sur le graphique.
+Les autorisations sont déjà données dans .claude/settings.json (lectures, unité de temps, réglages de l'indicateur).
+
+```
+ANALYSE XAUUSD — PROMPT SIMPLE v5. Exécute tout sans me poser de question. Mon risque par trade : 7 € (minimum 0,01 lot).
+
+INTERDIT : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_clear ; modifier un autre indicateur que « Plan XAUUSD — checklist achat / vente ».
+
+1. LECTURE : journal/trades.md (leçons). Bougies 15 min (reconstruis H1 et H4), puis passe en 5 min, lis, et repasse en 15 min. Zones et niveaux LuxAlgo. Heure UTC et Paris, annonces US du jour.
+2. ANALYSE :
+   - Biais H4 puis H1. Liquidité intacte au-dessus et en dessous (plus haut/bas de la veille, sommets/creux Asie et Londres, plus hauts/bas égaux) ; une liquidité est un GROUPE de niveaux, pas un prix.
+   - La liquidité intacte vers laquelle va le H1 est un AIMANT : on ne vend pas sous elle, on n'achète pas au-dessus d'elle tant qu'elle n'est pas prise.
+3. PROPOSE AU MAXIMUM 1 VENTE ET 1 ACHAT (le meilleur de chaque sens, ou « aucun ») :
+   - Zone d'entrée APRÈS le balayage de la liquidité (la zone couvre le groupe balayé), à moins de 2 ATR H1 du prix, pas déjà testée 2 fois.
+   - Contre le H1 : seulement après le balayage du plus haut/plus bas de la veille.
+   - Stop au-delà de la zone et du dernier sommet/creux + 0,3 ATR 15 min + spread.
+   - TP1 = premier obstacle (sortie de 50 % puis stop au point d'entrée). TP2 = la liquidité visée.
+   - R:R depuis le milieu de la zone : ≥ 1,5 au TP2 et ≥ 0,8 au TP1, sinon « aucun ».
+   - Taille : lots = 8 $ ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
+   - Validité : jusqu'à 18:00 UTC, ou 30 min avant une annonce majeure.
+4. AFFICHAGE : avec data_get_indicator puis indicator_set_inputs, remplis l'indicateur « Plan XAUUSD — checklist achat / vente » : zone bas, zone haut, stop, TP1, TP2 de chaque sens (0 partout pour un sens « aucun »), heure de fin, taille. S'il n'est pas sur le graphique, dis-le et donne-moi les valeurs. Puis capture_screenshot.
+5. RÉPONSE COURTE :
+   - Biais en une ligne, liquidité visée en une ligne.
+   - Tableau 2 lignes (VENTE / ACHAT) : zone, stop, TP1, TP2, R:R, taille, probabilité (faible/moyenne/forte) et pourquoi en une phrase, valable jusqu'à (UTC et Paris).
+   - Rappel des 3 conditions avant d'entrer (cochées par l'indicateur) : 1. prix dans la zone, 2. bougie 15 min rejetée avec mèche, 3. cassure 5 min. Au déclenchement, R:R réel ≥ 1,5 au TP2, sinon pas d'entrée.
+   - Alertes à créer à la main : « Signal VENTE XAU » et « Signal ACHAT XAU » (condition de l'indicateur).
+C'est moi qui passe les ordres.
+```

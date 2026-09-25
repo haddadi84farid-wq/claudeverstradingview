@@ -1,0 +1,126 @@
+//@version=6
+// Plan XAUUSD — checklist achat / vente.
+// Claude remplit les réglages (zone, stop, TP de chaque sens) ; l'indicateur dessine la zone,
+// le stop et les TP, et coche en direct les 3 conditions d'entrée de chaque sens.
+// Fonctionne sur un graphique 1, 5 ou 15 min. Ne passe aucun ordre. Mettre 0 pour désactiver un sens.
+indicator("Plan XAUUSD — checklist achat / vente", overlay = true, max_boxes_count = 10, max_lines_count = 20, max_labels_count = 20)
+
+gS = "VENTE"
+sZl = input.float(0.0, "Vente : zone bas", group = gS)
+sZh = input.float(0.0, "Vente : zone haut", group = gS)
+sSl = input.float(0.0, "Vente : stop", group = gS)
+sT1 = input.float(0.0, "Vente : TP1", group = gS)
+sT2 = input.float(0.0, "Vente : TP2", group = gS)
+gB = "ACHAT"
+bZl = input.float(0.0, "Achat : zone bas", group = gB)
+bZh = input.float(0.0, "Achat : zone haut", group = gB)
+bSl = input.float(0.0, "Achat : stop", group = gB)
+bT1 = input.float(0.0, "Achat : TP1", group = gB)
+bT2 = input.float(0.0, "Achat : TP2", group = gB)
+gR = "Réglages"
+endHourUtc = input.int(18, "Fin de validité (heure UTC)", minval = 0, maxval = 24, group = gR)
+lots       = input.float(0.01, "Taille (lots)", group = gR)
+wickRatio  = input.float(0.5, "Mèche minimale (part de la bougie)", minval = 0.1, maxval = 0.9, group = gR)
+showDraw   = input.bool(true, "Dessiner zones, stop et TP", group = gR)
+tablePos   = input.string("En haut à droite", "Position du tableau", options = ["En haut à droite", "En haut à gauche", "En bas à droite", "En bas à gauche"], group = gR)
+
+sOn = sZl > 0 and sZh > sZl and sSl > sZh
+bOn = bZl > 0 and bZh > bZl and bSl > 0 and bSl < bZl
+
+// ---------- Conditions calculées en 15 min (quelle que soit l'unité affichée) ----------
+f15() =>
+    rng   = high - low
+    upW   = high - math.max(open, close)
+    loW   = math.min(open, close) - low
+    sRej  = high >= sZl and rng > 0 and upW >= wickRatio * rng and close < (sZl + sZh) / 2
+    bRej  = low <= bZh and rng > 0 and loW >= wickRatio * rng and close > (bZl + bZh) / 2
+    sSin  = ta.barssince(sRej[1])
+    bSin  = ta.barssince(bRej[1])
+    [ta.highest(high, 4) >= sZl, not na(sSin) and sSin <= 3, ta.highest(close[1], 16) > sSl,
+     ta.lowest(low, 4) <= bZh, not na(bSin) and bSin <= 3, ta.lowest(close[1], 16) < bSl]
+[sTouch, sRej, sInv, bTouch, bRej, bInv] = request.security(syminfo.tickerid, "15", f15())
+
+// ---------- Cassure de structure en 5 min (sur bougie clôturée, mémorisée 15 min) ----------
+f5() =>
+    sBrk = ta.highest(high, 12) >= sZl and close < ta.lowest(low, 6)[1]
+    bBrk = ta.lowest(low, 12) <= bZh and close > ta.highest(high, 6)[1]
+    sS   = ta.barssince(sBrk[1])
+    bS   = ta.barssince(bBrk[1])
+    [not na(sS) and sS <= 2, not na(bS) and bS <= 2]
+[sBrk, bBrk] = request.security(syminfo.tickerid, "5", f5())
+
+expired = hour(timenow, "UTC") >= endHourUtc
+sSig = sOn and sTouch and sRej and sBrk and not sInv and not expired
+bSig = bOn and bTouch and bRej and bBrk and not bInv and not expired
+
+alertcondition(sSig, "Signal VENTE XAU", "Plan XAUUSD : les 3 conditions de la VENTE sont réunies")
+alertcondition(bSig, "Signal ACHAT XAU", "Plan XAUUSD : les 3 conditions de l'ACHAT sont réunies")
+
+// ---------- Tableau ----------
+posMap = tablePos == "En haut à gauche" ? position.top_left : tablePos == "En bas à droite" ? position.bottom_right : tablePos == "En bas à gauche" ? position.bottom_left : position.top_right
+var table t = table.new(posMap, 3, 9, bgcolor = color.white, frame_color = color.gray, frame_width = 1, border_color = color.new(color.gray, 80), border_width = 1)
+
+px(float v) => str.tostring(v, "#.##")
+mark(bool on, bool c) => not on ? "—" : c ? "✅" : "⬜"
+stTxt(bool on, bool inv, bool sig) => not on ? "aucun" : inv ? "ANNULÉ" : expired ? "EXPIRÉ" : sig ? "SIGNAL" : "EN ATTENTE"
+stCol(bool on, bool inv, bool sig) => not on or inv or expired ? color.gray : sig ? color.new(color.green, 0) : color.orange
+
+if barstate.isfirst
+    table.merge_cells(t, 0, 8, 2, 8)
+
+if barstate.islast
+    table.cell(t, 0, 0, "PLAN XAUUSD", text_color = color.white, bgcolor = color.new(color.gray, 20), text_size = size.small)
+    table.cell(t, 1, 0, "VENTE", text_color = color.white, bgcolor = color.new(color.red, 15), text_size = size.small)
+    table.cell(t, 2, 0, "ACHAT", text_color = color.white, bgcolor = color.new(color.teal, 15), text_size = size.small)
+    table.cell(t, 0, 1, "Zone", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 1, sOn ? px(sZl) + "–" + px(sZh) : "—", text_size = size.small)
+    table.cell(t, 2, 1, bOn ? px(bZl) + "–" + px(bZh) : "—", text_size = size.small)
+    table.cell(t, 0, 2, "1. Prix dans la zone", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 2, mark(sOn, sTouch), text_size = size.small)
+    table.cell(t, 2, 2, mark(bOn, bTouch), text_size = size.small)
+    table.cell(t, 0, 3, "2. Rejet 15 min (mèche)", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 3, mark(sOn, sRej), text_size = size.small)
+    table.cell(t, 2, 3, mark(bOn, bRej), text_size = size.small)
+    table.cell(t, 0, 4, "3. Cassure 5 min", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 4, mark(sOn, sBrk), text_size = size.small)
+    table.cell(t, 2, 4, mark(bOn, bBrk), text_size = size.small)
+    table.cell(t, 0, 5, "Statut", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 5, stTxt(sOn, sInv, sSig), text_color = color.white, bgcolor = stCol(sOn, sInv, sSig), text_size = size.small)
+    table.cell(t, 2, 5, stTxt(bOn, bInv, bSig), text_color = color.white, bgcolor = stCol(bOn, bInv, bSig), text_size = size.small)
+    table.cell(t, 0, 6, "Stop", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 6, sOn ? px(sSl) : "—", text_size = size.small)
+    table.cell(t, 2, 6, bOn ? px(bSl) : "—", text_size = size.small)
+    table.cell(t, 0, 7, "TP1 / TP2", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 7, sOn ? px(sT1) + " / " + px(sT2) : "—", text_size = size.small)
+    table.cell(t, 2, 7, bOn ? px(bT1) + " / " + px(bT2) : "—", text_size = size.small)
+    table.cell(t, 0, 8, "Taille " + str.tostring(lots) + " lot — stop et TP activés — valable jusqu'à " + str.tostring(endHourUtc) + ":00 UTC — 50 % au TP1 puis stop à l'entrée", text_halign = text.align_left, text_size = size.tiny)
+
+// ---------- Dessins : zone, stop, TP ----------
+var array<box>   bxs = array.new<box>()
+var array<line>  lns = array.new<line>()
+var array<label> lbs = array.new<label>()
+
+hline2(float y, color c, string txt, int w, string st) =>
+    array.push(lns, line.new(bar_index - 40, y, bar_index + 30, y, color = c, width = w, style = st))
+    array.push(lbs, label.new(bar_index + 30, y, txt, style = label.style_label_left, color = color.new(c, 85), textcolor = c, size = size.small))
+
+if barstate.islast
+    for b in bxs
+        box.delete(b)
+    for l in lns
+        line.delete(l)
+    for lb in lbs
+        label.delete(lb)
+    array.clear(bxs)
+    array.clear(lns)
+    array.clear(lbs)
+    if showDraw and sOn
+        array.push(bxs, box.new(bar_index - 40, sZh, bar_index + 30, sZl, border_color = color.red, bgcolor = color.new(color.red, 85), text = "ZONE VENTE", text_color = color.red, text_size = size.small))
+        hline2(sSl, color.red, "SL vente " + px(sSl), 2, line.style_solid)
+        hline2(sT1, color.green, "TP1 vente " + px(sT1), 1, line.style_dashed)
+        hline2(sT2, color.green, "TP2 vente " + px(sT2), 2, line.style_solid)
+    if showDraw and bOn
+        array.push(bxs, box.new(bar_index - 40, bZh, bar_index + 30, bZl, border_color = color.teal, bgcolor = color.new(color.teal, 85), text = "ZONE ACHAT", text_color = color.teal, text_size = size.small))
+        hline2(bSl, color.red, "SL achat " + px(bSl), 2, line.style_solid)
+        hline2(bT1, color.green, "TP1 achat " + px(bT1), 1, line.style_dashed)
+        hline2(bT2, color.green, "TP2 achat " + px(bT2), 2, line.style_solid)
