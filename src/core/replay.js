@@ -45,13 +45,21 @@ export async function start({ date } = {}) {
   return { success: true, replay_started: !!started, date: date || '(first available)', current_date: currentDate };
 }
 
-export async function step() {
+export async function step({ count } = {}) {
+  const n = count === undefined || count === null ? 1 : Number(count);
+  if (!Number.isInteger(n) || n < 1 || n > 500) {
+    throw new Error(`Invalid count: ${JSON.stringify(count)}. Expected an integer between 1 and 500.`);
+  }
   const rp = await getReplayApi();
   const started = await evaluate(wv(`${rp}.isReplayStarted()`));
   if (!started) throw new Error('Replay is not started. Use replay_start first.');
-  await evaluate(`${rp}.doStep()`);
+  for (let i = 0; i < n; i++) {
+    await evaluate(`${rp}.doStep()`);
+    // Let TradingView render each bar before the next step.
+    if (n > 1) await new Promise(r => setTimeout(r, 150));
+  }
   const currentDate = await evaluate(wv(`${rp}.currentDate()`));
-  return { success: true, action: 'step', current_date: currentDate };
+  return { success: true, action: 'step', steps: n, current_date: currentDate };
 }
 
 export async function autoplay({ speed } = {}) {

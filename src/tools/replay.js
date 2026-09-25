@@ -10,8 +10,10 @@ export function registerReplayTools(server) {
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
-  server.tool('replay_step', 'Advance one bar in replay mode', {}, async () => {
-    try { return jsonResult(await core.step()); }
+  server.tool('replay_step', 'Advance one or more bars in replay mode. Note: current_date may lag one bar behind; verify the last bar with data_get_ohlcv.', {
+    count: z.coerce.number().optional().describe('Number of bars to advance (1-500, default 1)'),
+  }, async ({ count }) => {
+    try { return jsonResult(await core.step({ count })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }
   });
 
