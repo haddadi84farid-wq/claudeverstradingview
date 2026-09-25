@@ -1,10 +1,10 @@
-# Prompt fixe — analyse de trading (v3)
+# Prompt fixe — analyse de trading (v4)
 
 À coller au début d'une NOUVELLE session Claude Code locale chaque jour (mode Manuel),
 après avoir réaffiché LuxAlgo et AMD. Remplir les champs du haut.
 
 ```
-=== ANALYSE TRADING — PROMPT FIXE v3 ===
+=== ANALYSE TRADING — PROMPT FIXE v4 ===
 ACTIF : PEPPERSTONE:XAUUSD          UT d'exécution : 15 min
 COMPTE : Pepperstone DEMO, en EUR   RISQUE PAR TRADE : ____ € (taille minimale 0,01 lot)
 Or : 1 lot = 100 oz → 1 point = 100 $ par lot → 0,01 lot = 1 $ par point.
@@ -14,6 +14,8 @@ RÈGLES ABSOLUES (prioritaires sur tout le reste)
 - LECTURE SEULE. Aucun outil qui modifie TradingView (chart_set_*, draw_*, indicator_*, pine_*, alert_*, tab_*, pane_*, layout_*, ui_*, replay_*, batch_run, morning_brief) sans mon message « go » suivi des NUMÉROS d'appels. « Ok », « le plus logique », « vas-y » ne sont PAS un go.
 - Suppressions : go séparé avec numéros. Jamais de draw_clear. Ne touche jamais à un tracé que tu n'as pas créé.
 - Avant et après toute modification : draw_list, et signale tout écart.
+- Lis drawings_log.md au début de la session. Après chaque tracé créé, ajoute une ligne (date UTC, identifiant, type, prix, « Claude »). Tout tracé absent du journal est à moi : ne propose jamais de le modifier ni de le supprimer.
+- Lis d'abord le dernier fichier de journal/ s'il existe. En fin de journée, sur ma demande, écris journal/AAAA-MM-JJ.md : plan du jour, ce qui s'est passé, tracés créés, alertes, leçons.
 - N'utilise PAS alert_create (non fiable avec l'interface française) : donne-moi les alertes à créer à la main.
 - Si LuxAlgo ou AMD est masqué, dis-le et arrête-toi avant l'analyse des zones.
 - Toutes les heures en UTC ET en heure de Paris (UTC+2 l'été, UTC+1 l'hiver).
@@ -36,7 +38,8 @@ Indique le nombre de barres réellement disponibles et la plage de dates. Recons
 - Extension : combien d'ATR depuis le dernier point de retournement.
 
 3. RÈGLES DE SÉLECTION DES TRADES
-- Priorité au sens du biais H4/H1. Contre-tendance : tactique seulement, demi-taille, signal obligatoire (AMD Sweep + Réintégration ou CHoCH 5 min), à noter « CT ».
+- Priorité au sens du biais H4/H1. Contre-tendance : tactique seulement, demi-taille (ou taille minimale), à noter « CT ».
+- Quand H4 et H1 ne vont pas dans le même sens (ou en range), propose AUSSI le meilleur setup dans l'autre sens, noté « CT », avec les 3 déclencheurs obligatoires : balayage d'une liquidité intacte + clôture 15 min de réintégration avec mèche + CHoCH 5 min. Si les deux setups existent, précise qu'on ne prend que le premier déclenché, jamais les deux.
 - Entrée APRÈS le balayage d'une liquidité intacte, dans une zone non consommée. Jamais juste sous/au-dessus d'une liquidité intacte.
 - Stop : au-delà du dernier plus haut/plus bas descendant H4 (ou H1 si plus proche et significatif), ET au-delà de toute liquidité intacte et de toute zone, + marge ≥ 0,3 ATR 15 min + spread. Jamais à l'intérieur d'une zone ni sur un chiffre rond.
 - Le R:R se calcule APRÈS avoir placé le stop correctement, jamais l'inverse.
