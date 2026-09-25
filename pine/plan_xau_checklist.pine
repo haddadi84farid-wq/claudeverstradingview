@@ -47,7 +47,7 @@ alertcondition(signal, "Signal vente XAU", "Les 3 conditions du plan de vente so
 // 7 colonnes : col 0 = case à cocher, cols 1-6 = texte fusionné ; le mini-schéma utilise les 7 colonnes.
 NCOL = 7
 NROW = showMini ? 21 : 8
-var table t = table.new(posMap, NCOL, NROW, bgcolor = color.white, border_color = color.new(color.gray, 60), border_width = 1, frame_color = color.gray, frame_width = 1)
+var table t = table.new(posMap, NCOL, NROW, bgcolor = color.white, border_color = color.white, border_width = 0, frame_color = color.gray, frame_width = 1)
 
 mark(bool c) => c ? "✅" : "⬜"
 px(float v) => str.tostring(v, "#.##")
@@ -80,15 +80,16 @@ if barstate.islast
 
 // ---------- Mini-schéma dans le tableau (lignes 8 à 20) ----------
 // Grille de 11 lignes x 7 colonnes : bougie 1 en col 1, bougie 2 en col 3, bougie 3 en col 5.
-// Seul trait horizontal : la limite d'entrée en rouge (ligne 2 de la grille). Ligne 10 = numéros.
+// Seul trait horizontal : la limite d'entrée, rangée fine rouge (ligne 2 de la grille). Ligne 10 = numéros.
+// La ligne 2 de la grille est le trait rouge : une rangée fine entièrement rouge.
 miniCell(int col, int gRow, string txt, color bg, color tc) =>
-    table.cell(t, col, 9 + gRow, txt, width = cellW, height = cellH, bgcolor = bg, text_color = tc, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
+    table.cell(t, col, 9 + gRow, gRow == 2 ? "" : txt, width = cellW, height = gRow == 2 ? cellH * 0.3 : cellH, bgcolor = gRow == 2 ? color.red : bg, text_color = tc, text_size = size.tiny, text_halign = text.align_center, text_valign = text.align_center)
 
 if barstate.islast and showMini
     table.cell(t, 0, 8, "Schéma attendu", text_color = color.white, bgcolor = color.new(color.gray, 20), text_halign = text.align_left, text_size = txtSz)
     for gRow = 0 to 10
         for col = 0 to NCOL - 1
-            miniCell(col, gRow, gRow == 2 ? "──" : "", color.white, color.red)
+            miniCell(col, gRow, "", color.white, color.red)
     // bougie 1 (montée, verte) : mèche lignes 3 et 7, corps lignes 4-6
     miniCell(1, 3, "│", color.white, color.teal)
     for gRow = 4 to 6
