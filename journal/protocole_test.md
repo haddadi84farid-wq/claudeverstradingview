@@ -3,7 +3,7 @@
 But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une espérance positive.
 
 ## Règles du test
-1. Version figée : on teste le prompt tel quel (v4.2 pour le plan 15 min, scalping v2 pour le 5 min). Toute modification = nouvelle version, et les compteurs repartent à zéro pour cette version.
+1. Version figée : on teste le prompt tel quel (v4.3 pour le plan 15 min, scalping v2 pour le 5 min). Toute modification = nouvelle version, et les compteurs repartent à zéro pour cette version.
 2. On note TOUS les setups proposés, pris ou non. Un setup non pris mais déclenché est suivi « sur le papier » jusqu'au TP ou au stop.
 3. Taille constante : 0,01 lot (ou la taille calculée par le prompt), jamais plus, pour que chaque trade compte pareil.
 4. Exécution mécanique : entrée seulement si le déclencheur est complet, stop et TP du plan, aucune modification pendant le trade (sauf stop au point d'entrée prévu par le plan).
@@ -11,6 +11,7 @@ But : savoir, chiffres à l'appui, si les setups proposés par Claude ont une es
 6. Échantillon minimum : 30 setups déclenchés par version avant de conclure.
 
 ## Ce qu'on mesure (dans journal/trades.md)
+- Sens du jour juste ? (oui/non) : le biais annoncé à l'analyse correspond-il au mouvement principal de 07:15 à 18:00 UTC ? Compté même sans trade.
 - Taux de réussite (% de trades gagnants).
 - Gain moyen et perte moyenne, en R.
 - Espérance = (taux de réussite × gain moyen) − (taux de perte × perte moyenne). Positive = la méthode gagne.

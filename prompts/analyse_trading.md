@@ -1,10 +1,10 @@
-# Prompt fixe — analyse de trading (v4.2)
+# Prompt fixe — analyse de trading (v4.3)
 
 À coller au début d'une NOUVELLE session Claude Code locale chaque jour (mode Manuel),
 après avoir réaffiché LuxAlgo et AMD. Remplir les champs du haut.
 
 ```
-=== ANALYSE TRADING — PROMPT FIXE v4.2 ===
+=== ANALYSE TRADING — PROMPT FIXE v4.3 ===
 ACTIF : PEPPERSTONE:XAUUSD          UT d'exécution : 15 min
 COMPTE : Pepperstone DEMO, en EUR   RISQUE PAR TRADE : ____ € (taille minimale 0,01 lot)
 Or : 1 lot = 100 oz → 1 point = 100 $ par lot → 0,01 lot = 1 $ par point.
@@ -48,15 +48,15 @@ Indique le nombre de barres réellement disponibles et la plage de dates. Recons
 - Stop : au-delà du dernier plus haut/plus bas descendant H4 (ou H1 si plus proche et significatif), ET au-delà de toute liquidité intacte et de toute zone, + marge ≥ 0,3 ATR 15 min + spread. Jamais à l'intérieur d'une zone ni sur un chiffre rond.
 - Exception, trade de BALAYAGE (sweep puis réintégration) : stop sous/au-dessus de la mèche réelle du balayage, − 0,3 ATR 15 min − spread (pas au-delà de toute la liquidité suivante). Le R:R ne peut être calculé qu'au moment du balayage : donne la formule et l'entrée maximale pour 1,5 R, et recalcule quand je te signale que l'alerte a sonné.
 - Le R:R se calcule APRÈS avoir placé le stop correctement, jamais l'inverse.
-- TP1 = PREMIER OBSTACLE sur le chemin (dernier creux/sommet intraday, zone où le prix a déjà réagi), PAS la liquidité finale. TP2 = la liquidité principale. Liste tous les obstacles entre l'entrée et le TP2.
-- R:R ≥ 1,5 au TP1 (depuis le milieu de la zone, spread inclus). Sinon rejeté.
-- AU DÉCLENCHEMENT : recalcule le R:R avec l'entrée réelle (prix après le déclencheur, spread inclus). Sous 1,5 au TP1, on n'entre pas : setup « déclenché mais rejeté », 0 R, non compté comme trade.
-- Si le TP1 est atteint avant l'entrée, le setup est ANNULÉ (même s'il se déclenche plus tard).
+- TP1 = PREMIER OBSTACLE sur le chemin (dernier creux/sommet intraday, zone où le prix a déjà réagi) : on y sort 50 % et on remonte le stop au point d'entrée. TP2 = l'OBJECTIF PRINCIPAL (la liquidité visée). Liste tous les obstacles entre l'entrée et le TP2.
+- R:R ≥ 1,5 au TP2 (objectif principal) ET ≥ 0,8 au TP1, depuis le milieu de la zone, spread inclus. Sinon rejeté.
+- AU DÉCLENCHEMENT : recalcule le R:R avec l'entrée réelle (prix après le déclencheur, spread inclus). Sous 1,5 au TP2 ou sous 0,8 au TP1, on n'entre pas : setup « déclenché mais rejeté », 0 R, non compté comme trade.
+- Si le TP2 (objectif principal) est atteint avant l'entrée, le setup est ANNULÉ (même s'il se déclenche plus tard). Si seul le TP1 est atteint, on recalcule le R:R au déclenchement.
 - Jamais d'entrée sur la bougie de cassure seule : cassure + retest rejeté.
 - Jamais d'ordre limite à l'aveugle : entrée seulement après un déclencheur (rejet 15 min avec mèche + clôture, ou CHoCH 5 min). Après une forte impulsion contre le trade, exiger les DEUX.
 - DEUX TYPES DE SETUP :
   (a) RETOUR EN ZONE : balayage d'une liquidité intacte puis entrée dans une zone non consommée (règles ci-dessus).
-  (b) CONTINUATION : dans le sens du H1, après une cassure de structure (BOS) en 15 min, entrée sur le RETEST du niveau cassé ou d'un FVG 15 min laissé par la cassure, avec déclencheur (rejet 15 min ou CHoCH 5 min). Objectif = prochaine liquidité intacte dans le sens du H1 (ex. plus bas/plus haut de la veille). Stop au-delà du dernier sommet/creux qui a précédé la cassure, + 0,3 ATR 15 min + spread. Mêmes règles de R:R (≥ 1,5 au TP1, recalculé au déclenchement).
+  (b) CONTINUATION : dans le sens du H1, après une cassure de structure (BOS) en 15 min, entrée sur le RETEST du niveau cassé ou d'un FVG 15 min laissé par la cassure, avec déclencheur (rejet 15 min ou CHoCH 5 min). TP2 = prochaine liquidité intacte dans le sens du H1 (ex. plus bas/plus haut de la veille) ; si aucune n'est connue, TP2 = longueur de la jambe de cassure reportée depuis le point de retest (mouvement mesuré). Stop au-delà du sommet/creux du RETEST (pas du sommet d'avant la cassure), + 0,3 ATR 15 min + spread, minimum 1 ATR 15 min. Mêmes règles de R:R (≥ 1,5 au TP2, ≥ 0,8 au TP1, recalculées au déclenchement).
 - Si la zone du setup (a) est à plus de 2 ATR 15 min du prix au moment de l'analyse, propose AUSSI un setup (b) s'il existe. On ne prend que le premier déclenché.
 - Rejeté : prix au milieu d'une plage sans niveau ; continuation après plus de 4 ATR d'extension ; entrée qui court après un prix déjà sorti de la zone de plus de 2 ATR.
 - FENÊTRE DE TRADING : entrées seulement entre 07:00 et 18:00 UTC (Londres + New York). Pas d'entrée en séance asiatique. Flat 30 min avant une annonce majeure ; pas de position pendant une annonce majeure, sauf reliquat déjà sécurisé au point d'entrée.
