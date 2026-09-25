@@ -42,6 +42,7 @@ Indique le nombre de barres réellement disponibles et la plage de dates. Recons
 - Quand H4 et H1 ne vont pas dans le même sens (ou en range), propose AUSSI le meilleur setup dans l'autre sens, noté « CT », avec les 3 déclencheurs obligatoires : balayage d'une liquidité intacte + clôture 15 min de réintégration avec mèche + CHoCH 5 min. Si les deux setups existent, précise qu'on ne prend que le premier déclenché, jamais les deux.
 - Entrée APRÈS le balayage d'une liquidité intacte, dans une zone non consommée. Jamais juste sous/au-dessus d'une liquidité intacte.
 - Stop : au-delà du dernier plus haut/plus bas descendant H4 (ou H1 si plus proche et significatif), ET au-delà de toute liquidité intacte et de toute zone, + marge ≥ 0,3 ATR 15 min + spread. Jamais à l'intérieur d'une zone ni sur un chiffre rond.
+- Exception, trade de BALAYAGE (sweep puis réintégration) : stop sous/au-dessus de la mèche réelle du balayage, − 0,3 ATR 15 min − spread (pas au-delà de toute la liquidité suivante). Le R:R ne peut être calculé qu'au moment du balayage : donne la formule et l'entrée maximale pour 1,5 R, et recalcule quand je te signale que l'alerte a sonné.
 - Le R:R se calcule APRÈS avoir placé le stop correctement, jamais l'inverse.
 - TP1 = PREMIER OBSTACLE sur le chemin (dernier creux/sommet intraday, zone où le prix a déjà réagi), PAS la liquidité finale. TP2 = la liquidité principale. Liste tous les obstacles entre l'entrée et le TP2.
 - R:R ≥ 1,5 au TP1 (depuis le milieu de la zone, spread inclus). Sinon rejeté.
