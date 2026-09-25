@@ -64,7 +64,7 @@ alertcondition(bSig, "Signal ACHAT XAU", "Plan XAUUSD : les 3 conditions de l'AC
 
 // ---------- Tableau ----------
 posMap = tablePos == "En haut à gauche" ? position.top_left : tablePos == "En bas à droite" ? position.bottom_right : tablePos == "En bas à gauche" ? position.bottom_left : position.top_right
-var table t = table.new(posMap, 3, 9, bgcolor = color.white, frame_color = color.gray, frame_width = 1, border_color = color.new(color.gray, 80), border_width = 1)
+var table t = table.new(posMap, 3, 10, bgcolor = color.white, frame_color = color.gray, frame_width = 1, border_color = color.new(color.gray, 80), border_width = 1)
 
 px(float v) => str.tostring(v, "#.##")
 mark(bool on, bool c) => not on ? "—" : c ? "✅" : "⬜"
@@ -72,7 +72,7 @@ stTxt(bool on, bool inv, bool sig) => not on ? "aucun" : inv ? "ANNULÉ" : expir
 stCol(bool on, bool inv, bool sig) => not on or inv or expired ? color.gray : sig ? color.new(color.green, 0) : color.orange
 
 if barstate.isfirst
-    table.merge_cells(t, 0, 8, 2, 8)
+    table.merge_cells(t, 0, 9, 2, 9)
 
 if barstate.islast
     table.cell(t, 0, 0, "PLAN XAUUSD", text_color = color.white, bgcolor = color.new(color.gray, 20), text_size = size.small)
@@ -99,7 +99,10 @@ if barstate.islast
     table.cell(t, 0, 7, "TP1 / TP2", text_halign = text.align_left, text_size = size.small)
     table.cell(t, 1, 7, sOn ? px(sT1) + " / " + px(sT2) : "—", text_size = size.small)
     table.cell(t, 2, 7, bOn ? px(bT1) + " / " + px(bT2) : "—", text_size = size.small)
-    table.cell(t, 0, 8, "Taille " + str.tostring(lots) + " lot — stop et TP activés — valable jusqu'à " + str.tostring(endHourUtc) + ":00 UTC — 50 % au TP1 puis stop à l'entrée", text_halign = text.align_left, text_size = size.tiny)
+    table.cell(t, 0, 8, "Annulé si", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 8, sOn ? "clôture 15 min > " + px(sSl) : "—", text_size = size.small)
+    table.cell(t, 2, 8, bOn ? "clôture 15 min < " + px(bSl) : "—", text_size = size.small)
+    table.cell(t, 0, 9, "Taille " + str.tostring(lots) + " lot — stop et TP activés — expire à " + str.tostring(endHourUtc) + ":00 UTC — annulé aussi si le TP2 est atteint avant l'entrée — 50 % au TP1 puis stop à l'entrée", text_halign = text.align_left, text_size = size.tiny)
 
 // ---------- Dessins : zone, stop, TP ----------
 var array<box>   bxs = array.new<box>()
@@ -122,11 +125,11 @@ if barstate.islast
     array.clear(lbs)
     if showDraw and sOn
         array.push(bxs, box.new(bar_index - 40, sZh, bar_index + 30, sZl, border_color = color.red, bgcolor = color.new(color.red, 85), text = "ZONE VENTE", text_color = color.red, text_size = size.small))
-        hline2(sSl, color.red, "SL vente " + px(sSl), 2, line.style_solid)
+        hline2(sSl, color.red, "SL vente " + px(sSl) + " (annulé si clôture 15 min au-dessus)", 2, line.style_solid)
         hline2(sT1, color.green, "TP1 vente " + px(sT1), 1, line.style_dashed)
         hline2(sT2, color.green, "TP2 vente " + px(sT2), 2, line.style_solid)
     if showDraw and bOn
         array.push(bxs, box.new(bar_index - 40, bZh, bar_index + 30, bZl, border_color = color.teal, bgcolor = color.new(color.teal, 85), text = "ZONE ACHAT", text_color = color.teal, text_size = size.small))
-        hline2(bSl, color.red, "SL achat " + px(bSl), 2, line.style_solid)
+        hline2(bSl, color.red, "SL achat " + px(bSl) + " (annulé si clôture 15 min en dessous)", 2, line.style_solid)
         hline2(bT1, color.green, "TP1 achat " + px(bT1), 1, line.style_dashed)
         hline2(bT2, color.green, "TP2 achat " + px(bT2), 2, line.style_solid)
