@@ -3,7 +3,7 @@
 // Claude remplit les réglages (zone, stop, TP de chaque sens) ; l'indicateur dessine la zone,
 // le stop et les TP, et coche en direct les 3 conditions d'entrée de chaque sens.
 // Fonctionne sur un graphique 1, 5 ou 15 min. Ne passe aucun ordre. Mettre 0 pour désactiver un sens.
-indicator("Plan XAUUSD — checklist achat / vente", overlay = true, max_boxes_count = 10, max_lines_count = 20, max_labels_count = 20)
+indicator("Plan XAUUSD — checklist achat / vente", overlay = true, max_boxes_count = 12, max_lines_count = 12, max_labels_count = 12)
 
 gS = "VENTE"
 sZl = input.float(0.0, "Vente : zone bas", group = gS)
@@ -60,20 +60,38 @@ expired = hour(time, "UTC") >= endHourUtc
 sSig = sOn and sTouch and sRej and sBrk and not sInv and not expired
 bSig = bOn and bTouch and bRej and bBrk and not bInv and not expired
 
+// Entrée de référence : clôture de la bougie où le signal apparaît (remise à zéro chaque jour).
+// Avant le signal, le R:R est calculé depuis le milieu de la zone.
+var float sEntry = na
+var float bEntry = na
+if ta.change(dayofmonth(time, "UTC")) != 0
+    sEntry := na
+    bEntry := na
+if sSig and na(sEntry)
+    sEntry := close
+if bSig and na(bEntry)
+    bEntry := close
+sEp = na(sEntry) ? (sZl + sZh) / 2 : sEntry
+bEp = na(bEntry) ? (bZl + bZh) / 2 : bEntry
+sRR = sSl - sEp > 0 ? (sEp - sT2) / (sSl - sEp) : na
+bRR = bEp - bSl > 0 ? (bT2 - bEp) / (bEp - bSl) : na
+
 alertcondition(sSig, "Signal VENTE XAU", "Plan XAUUSD : les 3 conditions de la VENTE sont réunies")
 alertcondition(bSig, "Signal ACHAT XAU", "Plan XAUUSD : les 3 conditions de l'ACHAT sont réunies")
 
 // ---------- Tableau ----------
 posMap = tablePos == "En haut à gauche" ? position.top_left : tablePos == "En bas à droite" ? position.bottom_right : tablePos == "En bas à gauche" ? position.bottom_left : position.top_right
-var table t = table.new(posMap, 3, 10, bgcolor = color.white, frame_color = color.gray, frame_width = 1, border_color = color.new(color.gray, 80), border_width = 1)
+var table t = table.new(posMap, 3, 11, bgcolor = color.white, frame_color = color.gray, frame_width = 1, border_color = color.new(color.gray, 80), border_width = 1)
 
 px(float v) => str.tostring(v, "#.##")
 mark(bool on, bool c) => not on ? "—" : c ? "✅" : "⬜"
 stTxt(bool on, bool inv, bool sig) => not on ? "aucun" : inv ? "ANNULÉ" : expired ? "EXPIRÉ" : sig ? "SIGNAL" : "EN ATTENTE"
+rrTxt(bool on, float rr, bool real) => not on or na(rr) ? "—" : str.tostring(rr, "#.#") + (real ? (rr < 1.5 ? " réel : PAS D'ENTRÉE" : " réel") : " (milieu zone)")
+rrCol(bool on, float rr) => not on or na(rr) ? color.white : rr >= 1.5 ? color.new(color.green, 70) : color.new(color.red, 60)
 stCol(bool on, bool inv, bool sig) => not on or inv or expired ? color.gray : sig ? color.new(color.green, 0) : color.orange
 
 if barstate.isfirst
-    table.merge_cells(t, 0, 9, 2, 9)
+    table.merge_cells(t, 0, 10, 2, 10)
 
 if barstate.islast
     table.cell(t, 0, 0, "PLAN XAUUSD", text_color = color.white, bgcolor = color.new(color.gray, 20), text_size = size.small)
@@ -103,16 +121,26 @@ if barstate.islast
     table.cell(t, 0, 8, "Annulé si", text_halign = text.align_left, text_size = size.small)
     table.cell(t, 1, 8, sOn ? "clôture 15 min > " + px(sSl) : "—", text_size = size.small)
     table.cell(t, 2, 8, bOn ? "clôture 15 min < " + px(bSl) : "—", text_size = size.small)
-    table.cell(t, 0, 9, "Taille " + str.tostring(lots) + " lot — stop et TP activés — expire à " + str.tostring(endHourUtc) + ":00 UTC — annulé aussi si le TP2 est atteint avant l'entrée — 50 % au TP1 puis stop à l'entrée", text_halign = text.align_left, text_size = size.tiny)
+    table.cell(t, 0, 9, "R:R au TP2", text_halign = text.align_left, text_size = size.small)
+    table.cell(t, 1, 9, rrTxt(sOn, sRR, not na(sEntry)), bgcolor = rrCol(sOn, sRR), text_size = size.small)
+    table.cell(t, 2, 9, rrTxt(bOn, bRR, not na(bEntry)), bgcolor = rrCol(bOn, bRR), text_size = size.small)
+    table.cell(t, 0, 10, "Taille " + str.tostring(lots) + " lot — stop et TP activés — expire à " + str.tostring(endHourUtc) + ":00 UTC — annulé aussi si le TP2 est atteint avant l'entrée — à 0,01 lot : stop à l'entrée à 1R, sortie au TP2", text_halign = text.align_left, text_size = size.tiny)
 
-// ---------- Dessins : zone, stop, TP ----------
+// ---------- Dessins : zone d'entrée (à gauche) + outil « position » (à droite) ----------
+// Même lecture que l'outil Position longue / courte de TradingView : rouge = risque (entrée → stop),
+// vert = objectif (entrée → TP2). L'entrée est le milieu de la zone, puis le prix réel au signal.
 var array<box>   bxs = array.new<box>()
 var array<line>  lns = array.new<line>()
 var array<label> lbs = array.new<label>()
 
-hline2(float y, color c, string txt, int w, string st) =>
-    array.push(lns, line.new(bar_index - 40, y, bar_index + 30, y, color = c, width = w, style = st))
-    array.push(lbs, label.new(bar_index + 30, y, txt, style = label.style_label_left, color = color.new(c, 85), textcolor = c, size = size.small))
+drawPlan(string side, color zc, float zl, float zh, float ep, float sl, float t1, float t2, float rr, bool real, string invTxt) =>
+    array.push(bxs, box.new(bar_index - 40, zh, bar_index, zl, border_color = zc, bgcolor = color.new(zc, 85), text = "ZONE " + side, text_color = zc, text_size = size.small))
+    array.push(bxs, box.new(bar_index, math.max(ep, sl), bar_index + 30, math.min(ep, sl), border_color = color.red, bgcolor = color.new(color.red, 75), text = "SL " + str.tostring(sl, "#.##") + " — " + invTxt, text_color = color.red, text_size = size.small))
+    array.push(bxs, box.new(bar_index, math.max(ep, t2), bar_index + 30, math.min(ep, t2), border_color = color.green, bgcolor = color.new(color.green, 80), text = "TP2 " + str.tostring(t2, "#.##"), text_color = color.green, text_size = size.small))
+    array.push(lns, line.new(bar_index, ep, bar_index + 30, ep, color = color.gray, width = 2))
+    array.push(lns, line.new(bar_index, t1, bar_index + 30, t1, color = color.green, style = line.style_dashed))
+    array.push(lbs, label.new(bar_index + 30, ep, side + (real ? " entrée réelle " : " entrée (milieu zone) ") + str.tostring(ep, "#.##") + " — R:R " + (na(rr) ? "—" : str.tostring(rr, "#.#")), style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small))
+    array.push(lbs, label.new(bar_index + 30, t1, "TP1 " + str.tostring(t1, "#.##"), style = label.style_label_left, color = color.new(color.green, 85), textcolor = color.green, size = size.small))
 
 if barstate.islast
     for b in bxs
@@ -125,12 +153,6 @@ if barstate.islast
     array.clear(lns)
     array.clear(lbs)
     if showDraw and sOn
-        array.push(bxs, box.new(bar_index - 40, sZh, bar_index + 30, sZl, border_color = color.red, bgcolor = color.new(color.red, 85), text = "ZONE VENTE", text_color = color.red, text_size = size.small))
-        hline2(sSl, color.red, "SL vente " + px(sSl) + " (annulé si clôture 15 min au-dessus)", 2, line.style_solid)
-        hline2(sT1, color.green, "TP1 vente " + px(sT1), 1, line.style_dashed)
-        hline2(sT2, color.green, "TP2 vente " + px(sT2), 2, line.style_solid)
+        drawPlan("VENTE", color.red, sZl, sZh, sEp, sSl, sT1, sT2, sRR, not na(sEntry), "annulé si clôture 15 min au-dessus")
     if showDraw and bOn
-        array.push(bxs, box.new(bar_index - 40, bZh, bar_index + 30, bZl, border_color = color.teal, bgcolor = color.new(color.teal, 85), text = "ZONE ACHAT", text_color = color.teal, text_size = size.small))
-        hline2(bSl, color.red, "SL achat " + px(bSl) + " (annulé si clôture 15 min en dessous)", 2, line.style_solid)
-        hline2(bT1, color.green, "TP1 achat " + px(bT1), 1, line.style_dashed)
-        hline2(bT2, color.green, "TP2 achat " + px(bT2), 2, line.style_solid)
+        drawPlan("ACHAT", color.teal, bZl, bZh, bEp, bSl, bT1, bT2, bRR, not na(bEntry), "annulé si clôture 15 min en dessous")
