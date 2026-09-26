@@ -1,6 +1,6 @@
 DATE À TESTER : 2026-09-__   (← je remplace les __ par le jour, ex. 2026-09-17)
 
-TEST REPLAY XAUUSD — PROMPT SIMPLE v5 (début). Exécute tout sans me poser de question. Mon risque par trade : 7 € (minimum 0,01 lot).
+TEST REPLAY XAUUSD — PROMPT v5.1 (début). Exécute tout sans me poser de question. Mon risque par trade : 7 € (minimum 0,01 lot).
 
 MODE REPLAY — RÈGLES ANTI-TRICHE :
 - « Maintenant » = la dernière bougie affichée par le Replay (replay_status + data_get_ohlcv). Pas l'horloge réelle, pas quote_get.
@@ -14,28 +14,33 @@ INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ;
 1. LECTURE : journal/trades.md (leçons). Bougies 15 min (reconstruis H1 et H4), puis passe en 5 min, lis, et repasse en 15 min. Zones et niveaux LuxAlgo. Heure UTC et Paris de la bougie actuelle. Annonces : tu ne peux pas les vérifier en replay, dis-le simplement.
 2. ANALYSE :
    - Le journal donne des LEÇONS (règles), pas des prix : ne cite aucun événement postérieur à la date testée.
-   - Biais H4 puis H1. Liquidité intacte au-dessus et en dessous (plus haut/bas de la veille, sommets/creux Asie et Londres, plus hauts/bas égaux) ; une liquidité est un GROUPE de niveaux, pas un prix.
-   - La liquidité intacte vers laquelle va le H1 est un AIMANT : on ne vend pas sous elle, on n'achète pas au-dessus d'elle tant qu'elle n'est pas prise.
-3. PROPOSE AU MAXIMUM 1 VENTE ET 1 ACHAT (le meilleur de chaque sens, ou « aucun ») :
-   - Zone d'entrée APRÈS le balayage de la liquidité (la zone couvre le groupe balayé), à moins de 2 ATR H1 du prix, pas déjà testée 2 fois.
-   - Contre le H1 : seulement après le balayage du plus haut/plus bas de la veille.
-   - Stop au-delà de la zone et du dernier sommet/creux + 0,3 ATR 15 min + spread.
-   - TP1 = premier obstacle. TP2 = la liquidité visée.
-   - R:R depuis le milieu de la zone : ≥ 1,5 au TP2 et ≥ 0,8 au TP1, sinon « aucun ».
+   - DIRECTION = H4 : structure des bougies H4 clôturées (2 derniers sommets et creux). C'est le sens principal du jour.
+   - H1 : lu sur les bougies H1 CLÔTURÉES des 12 dernières heures au moins. Des sommets descendants dans un H4 haussier (ou montants dans un H4 baissier) = une CORRECTION, pas une tendance : c'est là qu'on cherche l'entrée dans le sens du H4. Ne qualifie jamais le H1 sur 2 à 6 heures de bougies 15 min.
+   - BALAYAGE = mèche au-delà d'un niveau puis clôture 15 min de retour en 1 ou 2 bougies. CASSURE ACCEPTÉE = 2 clôtures H1 au-delà : le niveau change de rôle (une résistance cassée devient un support) ; ce n'est PAS un balayage.
+   - Liquidité intacte au-dessus et en dessous (plus haut/bas de la veille, sommets/creux Asie et Londres, plus hauts/bas égaux) ; une liquidité est un GROUPE de niveaux, pas un prix. L'AIMANT = la liquidité intacte dans le sens du H4.
+3. PROPOSE AU MAXIMUM 1 VENTE ET 1 ACHAT, parmi 3 setups (ou « aucun », qui est un bon résultat) :
+   (a) RETOURNEMENT DE CORRECTION, dans le sens du H4 : la correction H1 vient de balayer une liquidité contre le H4 (ex. bas Asie en H4 haussier). Zone = le groupe balayé.
+   (b) CONTINUATION, dans le sens du H4 : un niveau vient d'être cassé et accepté ; zone = le retest de ce niveau (ex. ancien PDH devenu support).
+   (c) CONTRE LE H4 : seulement après un BALAYAGE (pas une cassure) du plus haut/plus bas de la veille, ET aucune liquidité plus grosse intacte à moins de 1 ATR H1 derrière le stop. Probabilité au mieux « moyenne ».
+   - Zone à moins de 2 ATR H1 du prix, pas déjà testée 2 fois.
+   - ENTRÉE = ordre LIMITE au bord de la zone le plus proche du prix (haut de zone pour un achat, bas de zone pour une vente). Pas de confirmation.
+   - Stop au-delà de la zone et du dernier sommet/creux + 0,3 ATR 15 min + spread, et AU MOINS 1 ATR 15 min depuis l'entrée.
+   - TP1 = premier obstacle. TP2 = la liquidité visée (l'aimant).
+   - R:R depuis l'ENTRÉE : ≥ 1,5 au TP2, sinon « aucun ». Probabilité < 40 % → « aucun ». Ne propose pas un setup pour remplir la case.
    - Taille : lots = 8 $ ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
    - Validité : jusqu'à 18:00 UTC du jour testé.
-4. PLAN FIGÉ : écris le plan dans journal/replay_v5_AAAA-MM-JJ.md (date testée) : heure UTC de la bougie actuelle, prix, biais, liquidité visée, et pour chaque sens zone, stop, TP1, TP2, R:R, taille, probabilité. Ce fichier ne sera plus modifié : c'est la preuve qu'on n'a pas triché.
+4. PLAN FIGÉ : écris le plan dans journal/replay_v51_AAAA-MM-JJ.md (date testée) : heure UTC de la bougie actuelle, prix, biais H4, état du H1 (tendance ou correction), liquidité visée, et pour chaque sens : type de setup (a/b/c), zone, entrée limite, stop, TP1, TP2, R:R, taille, probabilité. Ce fichier ne sera plus modifié : c'est la preuve qu'on n'a pas triché.
 5. DESSIN SUR LE GRAPHIQUE (obligatoire, je dois VOIR le plan) :
    a. Si l'indicateur « Plan XAUUSD — checklist achat / vente » est sur le graphique : data_get_indicator puis indicator_set_inputs (zone bas, zone haut, stop, TP1, TP2 de chaque sens, 0 partout pour un sens « aucun », heure de fin 18, taille).
    b. Sinon, ou si indicator_set_inputs échoue : dessine toi-même avec draw_shape, de l'heure de la bougie actuelle à +3 h (temps en secondes unix) :
       - rectangle de la zone d'entrée ;
-      - façon outil Position : rectangle rouge de l'entrée (milieu de zone) au stop, rectangle vert de l'entrée au TP2 ;
+      - façon outil Position : rectangle rouge de l'entrée (bord de zone) au stop, rectangle vert de l'entrée au TP2 ;
       - ligne horizontale en pointillés au TP1 ;
       - texte « TEST VENTE » / « TEST ACHAT » avec entrée, stop, TP2 et R:R.
       Note chaque tracé dans drawings_log.md (auteur « Claude (test replay) »).
    c. capture_screenshot et VÉRIFIE sur la capture que les dessins apparaissent. S'ils n'apparaissent pas, applique b.
 6. RÉPONSE COURTE :
    - Heure de la bougie actuelle (UTC et Paris). Biais en une ligne, liquidité visée en une ligne.
-   - Tableau 2 lignes (VENTE / ACHAT) : zone, stop, TP1, TP2, R:R, taille, probabilité et pourquoi en une phrase.
-   - Règles d'exécution du test : entrée quand le statut de l'indicateur passe au VERT (3 conditions), au prix de clôture de la bougie 5 min de la cassure ; R:R réel ≥ 1,5 au TP2 sinon pas d'entrée ; annulé si le TP2 est atteint avant l'entrée ; avec 0,01 lot pas de sortie partielle : stop au point d'entrée quand le prix a fait 1R, sortie au TP2 ou au stop ; tout est fermé à 20:00 UTC.
+   - Tableau 2 lignes (VENTE / ACHAT) : setup (a/b/c), zone, entrée limite, stop, TP1, TP2, R:R, taille, probabilité et pourquoi en une phrase.
+   - Règles d'exécution du test : ordre limite à l'entrée, rempli si le prix la touche avant 18:00 UTC ; annulé si le TP2 est atteint ou si une bougie 15 min clôture au-delà du stop avant le remplissage ; avec 0,01 lot pas de sortie partielle : stop au point d'entrée quand le prix a fait 1R, sortie au TP2 ou au stop ; tout est fermé à 20:00 UTC.
 Ensuite, j'avance les bougies moi-même et je reviens avec le prompt « bilan ».

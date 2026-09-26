@@ -61,7 +61,7 @@ sSig = sOn and sTouch and sRej and sBrk and not sInv and not expired
 bSig = bOn and bTouch and bRej and bBrk and not bInv and not expired
 
 // Entrée de référence : clôture de la bougie où le signal apparaît (remise à zéro chaque jour).
-// Avant le signal, le R:R est calculé depuis le milieu de la zone.
+// Avant le signal, l'entrée est l'ordre limite au bord de la zone (bas pour une vente, haut pour un achat).
 var float sEntry = na
 var float bEntry = na
 if ta.change(dayofmonth(time, "UTC")) != 0
@@ -71,8 +71,8 @@ if sSig and na(sEntry)
     sEntry := close
 if bSig and na(bEntry)
     bEntry := close
-sEp = na(sEntry) ? (sZl + sZh) / 2 : sEntry
-bEp = na(bEntry) ? (bZl + bZh) / 2 : bEntry
+sEp = na(sEntry) ? sZl : sEntry
+bEp = na(bEntry) ? bZh : bEntry
 sRR = sSl - sEp > 0 ? (sEp - sT2) / (sSl - sEp) : na
 bRR = bEp - bSl > 0 ? (bT2 - bEp) / (bEp - bSl) : na
 
@@ -86,7 +86,7 @@ var table t = table.new(posMap, 3, 11, bgcolor = color.white, frame_color = colo
 px(float v) => str.tostring(v, "#.##")
 mark(bool on, bool c) => not on ? "—" : c ? "✅" : "⬜"
 stTxt(bool on, bool inv, bool sig) => not on ? "aucun" : inv ? "ANNULÉ" : expired ? "EXPIRÉ" : sig ? "SIGNAL" : "EN ATTENTE"
-rrTxt(bool on, float rr, bool real) => not on or na(rr) ? "—" : str.tostring(rr, "#.#") + (real ? (rr < 1.5 ? " réel : PAS D'ENTRÉE" : " réel") : " (milieu zone)")
+rrTxt(bool on, float rr, bool real) => not on or na(rr) ? "—" : str.tostring(rr, "#.#") + (real ? (rr < 1.5 ? " réel : PAS D'ENTRÉE" : " réel") : " (limite)")
 rrCol(bool on, float rr) => not on or na(rr) ? color.white : rr >= 1.5 ? color.new(color.green, 70) : color.new(color.red, 60)
 stCol(bool on, bool inv, bool sig) => not on or inv or expired ? color.gray : sig ? color.new(color.green, 0) : color.orange
 
@@ -128,7 +128,7 @@ if barstate.islast
 
 // ---------- Dessins : zone d'entrée (à gauche) + outil « position » (à droite) ----------
 // Même lecture que l'outil Position longue / courte de TradingView : rouge = risque (entrée → stop),
-// vert = objectif (entrée → TP2). L'entrée est le milieu de la zone, puis le prix réel au signal.
+// vert = objectif (entrée → TP2). L'entrée est l'ordre limite au bord de la zone, puis le prix réel au signal.
 var array<box>   bxs = array.new<box>()
 var array<line>  lns = array.new<line>()
 var array<label> lbs = array.new<label>()
@@ -139,7 +139,7 @@ drawPlan(string side, color zc, float zl, float zh, float ep, float sl, float t1
     array.push(bxs, box.new(bar_index, math.max(ep, t2), bar_index + 30, math.min(ep, t2), border_color = color.green, bgcolor = color.new(color.green, 80), text = "TP2 " + str.tostring(t2, "#.##"), text_color = color.green, text_size = size.small))
     array.push(lns, line.new(bar_index, ep, bar_index + 30, ep, color = color.gray, width = 2))
     array.push(lns, line.new(bar_index, t1, bar_index + 30, t1, color = color.green, style = line.style_dashed))
-    array.push(lbs, label.new(bar_index + 30, ep, side + (real ? " entrée réelle " : " entrée (milieu zone) ") + str.tostring(ep, "#.##") + " — R:R " + (na(rr) ? "—" : str.tostring(rr, "#.#")), style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small))
+    array.push(lbs, label.new(bar_index + 30, ep, side + (real ? " entrée réelle " : " entrée limite ") + str.tostring(ep, "#.##") + " — R:R " + (na(rr) ? "—" : str.tostring(rr, "#.#")), style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small))
     array.push(lbs, label.new(bar_index + 30, t1, "TP1 " + str.tostring(t1, "#.##"), style = label.style_label_left, color = color.new(color.green, 85), textcolor = color.green, size = size.small))
 
 if barstate.islast
