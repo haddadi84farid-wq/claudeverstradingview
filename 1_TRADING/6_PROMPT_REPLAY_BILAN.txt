@@ -4,6 +4,7 @@ INTERDIT : replay_step, replay_autoplay, replay_trade, tout ordre, modifier le p
 
 1. Lis le plan figé journal/replay_v5_AAAA-MM-JJ.md (le plus récent). Ne change aucun de ses niveaux.
 2. Lis les bougies 15 min et 5 min depuis l'heure du plan jusqu'à la bougie actuelle du Replay (data_get_ohlcv, replay_status).
+   Si la bougie actuelle du Replay est AVANT l'heure du plan (replay relancé en arrière), arrête-toi : dis-moi d'avancer le Replay sans le relancer.
 3. Pour chaque sens proposé, applique les règles mécaniquement, sans interprétation :
    - Annulé ? (clôture 15 min au-delà du stop avant l'entrée, TP2 atteint avant l'entrée, ou 18:00 UTC passé sans signal).
    - Signal ? Les 3 conditions : prix dans la zone ; bougie 15 min rejetée avec mèche (au moins la moitié de la bougie) ; bougie 5 min qui clôture au-delà du plus bas/plus haut des 6 précédentes. Donne l'heure.

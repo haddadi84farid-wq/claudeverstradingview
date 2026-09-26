@@ -3,6 +3,7 @@ TEST REPLAY XAUUSD — PROMPT SIMPLE v5 (début). Le graphique est en mode Repla
 MODE REPLAY — RÈGLES ANTI-TRICHE :
 - « Maintenant » = la dernière bougie affichée par le Replay (replay_status + data_get_ohlcv). Pas l'horloge réelle, pas quote_get.
 - Tu n'as AUCUNE information après cette bougie. N'utilise pas ce que tu sais du marché réel après cette date.
+- CONTRÔLE DE DÉPART : si la bougie actuelle est avant 06:45 UTC ou après 16:00 UTC, ou si l'indicateur « Plan XAUUSD — checklist achat / vente » n'est pas sur le graphique, ARRÊTE-TOI et dis-moi quoi corriger (n'utilise jamais l'ancien « checklist vente »).
 - INTERDIT : replay_step, replay_autoplay, replay_stop, replay_trade, faire défiler le graphique vers la droite. C'est moi qui avance les bougies.
 
 INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_clear ; modifier un autre indicateur que « Plan XAUUSD — checklist achat / vente ».
