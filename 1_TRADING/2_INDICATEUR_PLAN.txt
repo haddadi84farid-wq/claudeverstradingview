@@ -68,8 +68,13 @@ f15() =>
 
 // ---------- Cassure de structure en 5 min (sur bougie clôturée, mémorisée 15 min) ----------
 f5() =>
-    sBrk = ta.highest(high, 12) >= sZl and close < ta.lowest(low, 6)[1]
-    bBrk = ta.lowest(low, 12) <= bZh and close > ta.highest(high, 6)[1]
+    // Calculés à chaque bougie (Pine v6 n'évalue pas la droite d'un « and » si la gauche est fausse)
+    hi12 = ta.highest(high, 12)
+    lo12 = ta.lowest(low, 12)
+    lo6  = ta.lowest(low, 6)[1]
+    hi6  = ta.highest(high, 6)[1]
+    sBrk = hi12 >= sZl and close < lo6
+    bBrk = lo12 <= bZh and close > hi6
     sS   = ta.barssince(sBrk[1])
     bS   = ta.barssince(bBrk[1])
     [not na(sS) and sS <= 2, not na(bS) and bS <= 2]
