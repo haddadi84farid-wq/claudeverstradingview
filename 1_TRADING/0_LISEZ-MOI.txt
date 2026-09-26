@@ -1,0 +1,28 @@
+MON DOSSIER TRADING — tout ce que je copie-colle est ici
+=========================================================
+
+CHAQUE JOUR
+1. Double-clic sur DEMARRER (dossier du dessus, ou raccourci du bureau) -> attendre "PRET".
+2. TradingView : PEPPERSTONE:XAUUSD en 15 min, indicateur "Plan XAUUSD — checklist achat / vente" present.
+3. App Claude : Nouveau -> DESKTOP-H2QVCVL -> mode Manuel -> Ctrl+V -> Entree.
+   (DEMARRER a deja copie le prompt 1_PROMPT_ANALYSE.)
+4. J'attends le statut VERT (SIGNAL) ou l'alerte. Je verifie : R:R reel >= 1,5 au TP2, taille 0,01 lot.
+   C'est moi qui passe l'ordre. Rien avant 07:00 UTC ni apres 18:00 UTC. Vendredi : a plat avant 22:30 Paris.
+
+LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
+- 1_PROMPT_ANALYSE.txt   : le prompt du jour (1 vente + 1 achat max, remplit l'indicateur).
+- 2_INDICATEUR_PLAN.txt  : le code Pine de l'indicateur (script "chatgpt" dans TradingView).
+                           Seulement quand Claude dit qu'il a change : double-clic sur MAJ_INDICATEUR,
+                           puis Editeur Pine -> Ctrl+A, Ctrl+V, Ctrl+S.
+- 3_PROMPT_SCALPING.txt  : plan de scalping 5 min (a completer : risque en euros).
+- 4_BACKTEST_PINE.txt    : strategie de test (Editeur Pine -> nouveau -> coller -> Testeur de strategie).
+- anciens\               : anciennes versions, ne plus utiliser.
+
+LES AUTRES DOSSIERS DU PROJET
+- journal\ : mon journal de trades (Claude le lit et le complete).
+- src, scripts, skills, agents, tests... : la "machine" qui relie Claude a TradingView. Ne pas toucher.
+
+REGLES DE SECURITE
+- Ne jamais ouvrir TradingView avec l'icone normale : toujours DEMARRER (sinon Claude ne voit rien).
+- Ne jamais fermer les fenetres "TRADINGVIEW CDP" et "LIEN CLAUDE".
+- Claude ne passe jamais d'ordre.

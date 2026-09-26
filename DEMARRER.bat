@@ -48,7 +48,7 @@ if not errorlevel 1 (
 
 echo.
 echo [4/4] Copie du prompt d'analyse dans le presse-papiers...
-powershell -NoProfile -Command "$t=Get-Content 'prompts\analyse_simple.md' -Raw -Encoding UTF8; $m=[regex]::Match($t,'(?s)```\r?\n(.*?)```'); Set-Clipboard -Value $m.Groups[1].Value"
+powershell -NoProfile -Command "Get-Content '1_TRADING\1_PROMPT_ANALYSE.txt' -Raw -Encoding UTF8 | Set-Clipboard"
 echo       OK.
 
 echo.

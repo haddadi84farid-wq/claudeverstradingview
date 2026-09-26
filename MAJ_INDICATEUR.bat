@@ -3,7 +3,7 @@ REM Double-clic : met a jour le projet et copie l'indicateur Pine dans le presse
 cd /d "%~dp0"
 title MISE A JOUR PINE
 git pull
-powershell -NoProfile -Command "Get-Content 'pine\plan_xau_2sens.pine' -Raw -Encoding UTF8 | Set-Clipboard"
+powershell -NoProfile -Command "Get-Content '1_TRADING\2_INDICATEUR_PLAN.txt' -Raw -Encoding UTF8 | Set-Clipboard"
 echo.
 echo ================================================================
 echo  Code de l'indicateur copie. Maintenant, dans TradingView :

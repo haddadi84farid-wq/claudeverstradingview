@@ -1,10 +1,3 @@
-# Prompt fixe — plan de scalping 5 min (v2)
-
-Trade construit en 5 min, validé en 1 min. Claude PRÉPARE le plan avant la séance ;
-la validation 1 min se fait par moi (Claude est trop lent pour une entrée en 1 min).
-Mettre le graphique en 5 min, puis coller dans une NOUVELLE session locale (mode Manuel), 15 min avant la séance.
-
-```
 === PLAN DE SCALPING 5 MIN — PROMPT FIXE v2 ===
 ACTIF : PEPPERSTONE:XAUUSD   Contexte : H1 + 15 min   Trade : 5 min   Validation : 1 min
 COMPTE : Pepperstone DEMO, en EUR RISQUE PAR TRADE : ____ € (0,01 lot = 1 $ par point)
@@ -49,4 +42,3 @@ Seul setup autorisé : BALAYAGE + RÉINTÉGRATION en 5 min sur un niveau de liqu
 - Alertes à créer à la main (valeur avec une VIRGULE) : chaque niveau à balayer.
 - Si aucun setup : « PAS DE SCALP » et pourquoi.
 - Tracés proposés numérotés (une ligne par niveau à balayer, rien d'autre), non exécutés.
-```

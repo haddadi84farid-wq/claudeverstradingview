@@ -42,7 +42,7 @@
       "mcp__tradingview-desktop__replay_status",
       "mcp__tradingview-desktop__replay_stop",
       "Read(journal/**)",
-      "Read(prompts/**)",
+      "Read(1_TRADING/**)",
       "Edit(journal/**)",
       "Write(journal/**)",
       "Edit(drawings_log.md)",

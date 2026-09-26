@@ -1,10 +1,3 @@
-# Prompt simple — analyse XAUUSD (v5)
-
-Un seul message à envoyer. Prérequis : graphique XAUUSD en 15 min, indicateurs « Smart Money Concepts [LuxAlgo] »
-et « Plan XAUUSD — checklist achat / vente » (pine/plan_xau_2sens.pine) sur le graphique.
-Les autorisations sont déjà données dans .claude/settings.json (lectures, unité de temps, réglages de l'indicateur).
-
-```
 ANALYSE XAUUSD — PROMPT SIMPLE v5. Exécute tout sans me poser de question. Mon risque par trade : 7 € (minimum 0,01 lot).
 
 INTERDIT : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_clear ; modifier un autre indicateur que « Plan XAUUSD — checklist achat / vente ».
@@ -28,4 +21,3 @@ INTERDIT : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_
    - Rappel des 3 conditions avant d'entrer (cochées par l'indicateur) : 1. prix dans la zone, 2. bougie 15 min rejetée avec mèche, 3. cassure 5 min. Au déclenchement, R:R réel ≥ 1,5 au TP2, sinon pas d'entrée.
    - Alertes à créer à la main : « Signal VENTE XAU » et « Signal ACHAT XAU » (condition de l'indicateur).
 C'est moi qui passe les ordres.
-```
