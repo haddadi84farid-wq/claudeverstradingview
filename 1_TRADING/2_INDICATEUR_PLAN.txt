@@ -55,7 +55,8 @@ f5() =>
     [not na(sS) and sS <= 2, not na(bS) and bS <= 2]
 [sBrk, bBrk] = request.security(syminfo.tickerid, "5", f5())
 
-expired = hour(timenow, "UTC") >= endHourUtc
+// Heure de la bougie (et non de l'horloge) : fonctionne aussi en mode Replay
+expired = hour(time, "UTC") >= endHourUtc
 sSig = sOn and sTouch and sRej and sBrk and not sInv and not expired
 bSig = bOn and bTouch and bRej and bBrk and not bInv and not expired
 

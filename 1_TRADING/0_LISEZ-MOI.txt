@@ -16,6 +16,10 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            puis Editeur Pine -> Ctrl+A, Ctrl+V, Ctrl+S.
 - 3_PROMPT_SCALPING.txt  : plan de scalping 5 min (a completer : risque en euros).
 - 4_BACKTEST_PINE.txt    : strategie de test (Editeur Pine -> nouveau -> coller -> Testeur de strategie).
+- 5_PROMPT_REPLAY_DEBUT.txt : test sur une date passee. TradingView : Replay -> date -> 07:00 UTC (09:00 Paris),
+                           puis coller ce prompt dans une nouvelle session. Claude fige le plan, moi j'avance les bougies.
+- 6_PROMPT_REPLAY_BILAN.txt : apres avoir avance (jusqu'a 18:00 ou 20:00 UTC) : Claude compte le resultat en R
+                           et remplit le journal. En Replay, les alertes ne sonnent pas : je regarde le tableau.
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

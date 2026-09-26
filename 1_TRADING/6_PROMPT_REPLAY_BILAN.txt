@@ -1,0 +1,16 @@
+TEST REPLAY XAUUSD — BILAN v5. J'ai avancé le Replay. Exécute sans me poser de question.
+
+INTERDIT : replay_step, replay_autoplay, replay_trade, tout ordre, modifier le plan figé, toucher à mes tracés.
+
+1. Lis le plan figé journal/replay_v5_AAAA-MM-JJ.md (le plus récent). Ne change aucun de ses niveaux.
+2. Lis les bougies 15 min et 5 min depuis l'heure du plan jusqu'à la bougie actuelle du Replay (data_get_ohlcv, replay_status).
+3. Pour chaque sens proposé, applique les règles mécaniquement, sans interprétation :
+   - Annulé ? (clôture 15 min au-delà du stop avant l'entrée, TP2 atteint avant l'entrée, ou 18:00 UTC passé sans signal).
+   - Signal ? Les 3 conditions : prix dans la zone ; bougie 15 min rejetée avec mèche (au moins la moitié de la bougie) ; bougie 5 min qui clôture au-delà du plus bas/plus haut des 6 précédentes. Donne l'heure.
+   - Entrée = clôture de la bougie 5 min de la cassure. R:R réel au TP2 < 1,5 → « pas d'entrée ».
+   - Sortie : stop ou TP2, le premier touché ; stop au point d'entrée dès que le prix a fait 1R ; fermeture forcée à 20:00 UTC. Si stop et TP dans la même bougie 5 min, compte le stop.
+   - Résultat en R.
+   - Si le Replay n'est pas encore allé assez loin pour conclure, dis « en cours » et ce qu'il reste à voir.
+4. Sens du jour juste ? Le biais annoncé correspond-il au mouvement principal entre l'heure du plan et 18:00 UTC ?
+5. Ajoute une ligne par setup déclenché (ou « aucun setup ») dans journal/trades.md : Mode = Replay, Version = v5, date testée.
+6. capture_screenshot, puis RÉPONSE COURTE : tableau VENTE / ACHAT (signal oui/non + heure, entrée, sortie, R), sens du jour juste oui/non, une leçon en une ligne.
