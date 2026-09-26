@@ -20,6 +20,7 @@
       "mcp__tradingview-desktop__data_get_strategy_results",
       "mcp__tradingview-desktop__data_get_trades",
       "mcp__tradingview-desktop__data_get_equity",
+      "mcp__tradingview-desktop__draw_shape",
       "mcp__tradingview-desktop__draw_list",
       "mcp__tradingview-desktop__draw_get_properties",
       "mcp__tradingview-desktop__alert_list",

@@ -3,7 +3,7 @@ TEST REPLAY XAUUSD — PROMPT SIMPLE v5 (début). Le graphique est en mode Repla
 MODE REPLAY — RÈGLES ANTI-TRICHE :
 - « Maintenant » = la dernière bougie affichée par le Replay (replay_status + data_get_ohlcv). Pas l'horloge réelle, pas quote_get.
 - Tu n'as AUCUNE information après cette bougie. N'utilise pas ce que tu sais du marché réel après cette date.
-- CONTRÔLE DE DÉPART : si la bougie actuelle est avant 06:45 UTC ou après 16:00 UTC, ou si l'indicateur « Plan XAUUSD — checklist achat / vente » n'est pas sur le graphique, ARRÊTE-TOI et dis-moi quoi corriger (n'utilise jamais l'ancien « checklist vente »).
+- CONTRÔLE DE DÉPART : si la bougie actuelle est avant 06:45 UTC ou après 16:00 UTC, ARRÊTE-TOI et dis-moi de placer le Replay sur la bougie de 09:00 Paris. N'utilise jamais l'ancien indicateur « checklist vente ».
 - INTERDIT : replay_step, replay_autoplay, replay_stop, replay_trade, faire défiler le graphique vers la droite. C'est moi qui avance les bougies.
 
 INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_clear ; modifier un autre indicateur que « Plan XAUUSD — checklist achat / vente ».
@@ -21,7 +21,15 @@ INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ;
    - Taille : lots = 8 $ ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
    - Validité : jusqu'à 18:00 UTC du jour testé.
 4. PLAN FIGÉ : écris le plan dans journal/replay_v5_AAAA-MM-JJ.md (date testée) : heure UTC de la bougie actuelle, prix, biais, liquidité visée, et pour chaque sens zone, stop, TP1, TP2, R:R, taille, probabilité. Ce fichier ne sera plus modifié : c'est la preuve qu'on n'a pas triché.
-5. AFFICHAGE : avec data_get_indicator puis indicator_set_inputs, remplis l'indicateur « Plan XAUUSD — checklist achat / vente » (0 partout pour un sens « aucun », heure de fin 18, taille). Puis capture_screenshot.
+5. DESSIN SUR LE GRAPHIQUE (obligatoire, je dois VOIR le plan) :
+   a. Si l'indicateur « Plan XAUUSD — checklist achat / vente » est sur le graphique : data_get_indicator puis indicator_set_inputs (zone bas, zone haut, stop, TP1, TP2 de chaque sens, 0 partout pour un sens « aucun », heure de fin 18, taille).
+   b. Sinon, ou si indicator_set_inputs échoue : dessine toi-même avec draw_shape, de l'heure de la bougie actuelle à +3 h (temps en secondes unix) :
+      - rectangle de la zone d'entrée ;
+      - façon outil Position : rectangle rouge de l'entrée (milieu de zone) au stop, rectangle vert de l'entrée au TP2 ;
+      - ligne horizontale en pointillés au TP1 ;
+      - texte « TEST VENTE » / « TEST ACHAT » avec entrée, stop, TP2 et R:R.
+      Note chaque tracé dans drawings_log.md (auteur « Claude (test replay) »).
+   c. capture_screenshot et VÉRIFIE sur la capture que les dessins apparaissent. S'ils n'apparaissent pas, applique b.
 6. RÉPONSE COURTE :
    - Heure de la bougie actuelle (UTC et Paris). Biais en une ligne, liquidité visée en une ligne.
    - Tableau 2 lignes (VENTE / ACHAT) : zone, stop, TP1, TP2, R:R, taille, probabilité et pourquoi en une phrase.
