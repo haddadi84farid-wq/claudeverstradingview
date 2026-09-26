@@ -43,8 +43,27 @@ f15() =>
     sB    = ta.barssince(close[1] < sZl)
     bA    = ta.barssince(close[1] < bSl)
     bB    = ta.barssince(close[1] > bZh)
-    [ta.highest(high, 4) >= sZl, not na(sSin) and sSin <= 3, not na(sA) and (na(sB) or sA < sB),
-     ta.lowest(low, 4) <= bZh, not na(bSin) and bSin <= 3, not na(bA) and (na(bB) or bA < bB)]
+    // Annulé aussi si le TP2 est atteint AVANT le premier contact avec la zone (à partir de 07:00 UTC, remis à zéro chaque jour)
+    var bool sZoneHit = false
+    var bool bZoneHit = false
+    var bool sTpFirst = false
+    var bool bTpFirst = false
+    if ta.change(dayofmonth(time, "UTC")) != 0
+        sZoneHit := false
+        bZoneHit := false
+        sTpFirst := false
+        bTpFirst := false
+    if hour(time, "UTC") >= 7
+        if sT2 > 0 and low <= sT2 and not sZoneHit
+            sTpFirst := true
+        if bT2 > 0 and high >= bT2 and not bZoneHit
+            bTpFirst := true
+        if high >= sZl
+            sZoneHit := true
+        if low <= bZh
+            bZoneHit := true
+    [ta.highest(high, 4) >= sZl, not na(sSin) and sSin <= 3, (not na(sA) and (na(sB) or sA < sB)) or sTpFirst,
+     ta.lowest(low, 4) <= bZh, not na(bSin) and bSin <= 3, (not na(bA) and (na(bB) or bA < bB)) or bTpFirst]
 [sTouch, sRej, sInv, bTouch, bRej, bInv] = request.security(syminfo.tickerid, "15", f15())
 
 // ---------- Cassure de structure en 5 min (sur bougie clôturée, mémorisée 15 min) ----------
