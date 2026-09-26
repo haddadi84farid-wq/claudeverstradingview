@@ -5,7 +5,7 @@ TEST REPLAY XAUUSD — PROMPT SIMPLE v5 (début). Exécute tout sans me poser de
 MODE REPLAY — RÈGLES ANTI-TRICHE :
 - « Maintenant » = la dernière bougie affichée par le Replay (replay_status + data_get_ohlcv). Pas l'horloge réelle, pas quote_get.
 - Tu n'as AUCUNE information après cette bougie. N'utilise pas ce que tu sais du marché réel après cette date.
-- 0. PLACEMENT (avant toute analyse) : vérifie que le graphique est PEPPERSTONE:XAUUSD (sinon dis-le et arrête-toi) et passe-le en 15 min, puis replay_start avec date = « DATE À TESTER »T07:00 (ex. 2026-09-17T07:00). Vérifie avec replay_status et data_get_ohlcv que la dernière bougie est 07:00 UTC (09:00 Paris) de ce jour. Si le Replay démarre plus tôt, avance avec replay_step (count = nombre de bougies 15 min jusqu'à 07:00) ; s'il démarre plus tard ou sur un autre jour, dis-le et arrête-toi. Pas de date remplie (« __ ») : arrête-toi et demande-la.
+- 0. PLACEMENT (avant toute analyse) : vérifie que le graphique est PEPPERSTONE:XAUUSD (sinon dis-le et arrête-toi) et passe-le en 15 min, puis replay_start avec date = « DATE À TESTER »T07:15 (ex. 2026-09-17T07:15 : la dernière bougie affichée sera celle de 07:00). Vérifie avec replay_status et data_get_ohlcv que la dernière bougie est 07:00 UTC (09:00 Paris) de ce jour. N'utilise PAS replay_step pour te placer (il peut ramener le Replay au début) : si la bougie n'est pas la bonne, relance replay_start une seule fois avec l'heure corrigée, sinon dis-le et arrête-toi. Pas de date remplie (« __ ») : arrête-toi et demande-la.
 - N'utilise jamais l'ancien indicateur « checklist vente ».
 - APRÈS le placement : INTERDIT replay_step, replay_autoplay, replay_stop, replay_start, replay_trade, faire défiler le graphique vers la droite. C'est moi qui avance les bougies.
 
@@ -13,6 +13,7 @@ INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ;
 
 1. LECTURE : journal/trades.md (leçons). Bougies 15 min (reconstruis H1 et H4), puis passe en 5 min, lis, et repasse en 15 min. Zones et niveaux LuxAlgo. Heure UTC et Paris de la bougie actuelle. Annonces : tu ne peux pas les vérifier en replay, dis-le simplement.
 2. ANALYSE :
+   - Le journal donne des LEÇONS (règles), pas des prix : ne cite aucun événement postérieur à la date testée.
    - Biais H4 puis H1. Liquidité intacte au-dessus et en dessous (plus haut/bas de la veille, sommets/creux Asie et Londres, plus hauts/bas égaux) ; une liquidité est un GROUPE de niveaux, pas un prix.
    - La liquidité intacte vers laquelle va le H1 est un AIMANT : on ne vend pas sous elle, on n'achète pas au-dessus d'elle tant qu'elle n'est pas prise.
 3. PROPOSE AU MAXIMUM 1 VENTE ET 1 ACHAT (le meilleur de chaque sens, ou « aucun ») :
