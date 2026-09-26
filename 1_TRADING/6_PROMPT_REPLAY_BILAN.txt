@@ -1,10 +1,11 @@
 TEST REPLAY XAUUSD — BILAN v5.1. J'ai avancé le Replay. Exécute sans me poser de question.
 
-INTERDIT : replay_step, replay_autoplay, replay_trade, tout ordre, modifier le plan figé, toucher à mes tracés.
+INTERDIT : replay_step, replay_autoplay, replay_trade (replay_start seulement pour la lecture 5 min ci-dessous), tout ordre, modifier le plan figé, toucher à mes tracés.
 
 1. Lis le plan figé journal/replay_v51_AAAA-MM-JJ.md (le plus récent). Ne change aucun de ses niveaux.
 2. Lis les bougies 15 min et 5 min depuis l'heure du plan jusqu'à la bougie actuelle du Replay (data_get_ohlcv, replay_status).
    Si la bougie actuelle du Replay est AVANT l'heure du plan (replay relancé en arrière), arrête-toi : dis-moi d'avancer le Replay sans le relancer.
+   Bougies 5 min : en Replay, changer d'unité relance le Replay en arrière. La journée testée étant terminée, c'est autorisé ICI : passe en 5 min, puis replay_start « date testée »T20:15 pour réafficher la journée en 5 min, lis-la, puis repasse en 15 min. Ne lis rien au-delà de 20:15 UTC du jour testé.
 3. Pour chaque sens proposé, applique les règles mécaniquement, sans interprétation :
    - Annulé ? (TP2 atteint, ou clôture 15 min au-delà du stop, AVANT le remplissage ; ou 18:00 UTC passé sans remplissage).
    - Rempli ? L'ordre limite est rempli quand le prix touche l'entrée (bord de zone). Donne l'heure.
