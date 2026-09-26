@@ -31,7 +31,7 @@ INTERDIT aussi : passer, modifier ou annuler un ordre ; toucher à mes tracés ;
    - Validité : jusqu'à 18:00 UTC du jour testé.
 4. PLAN FIGÉ : écris le plan dans journal/replay_v51_AAAA-MM-JJ.md (date testée) : heure UTC de la bougie actuelle, prix, biais H4, état du H1 (tendance ou correction), liquidité visée, et pour chaque sens : type de setup (a/b/c), zone, entrée limite, stop, TP1, TP2, R:R, taille, probabilité. Ce fichier ne sera plus modifié : c'est la preuve qu'on n'a pas triché.
 5. DESSIN SUR LE GRAPHIQUE (obligatoire, je dois VOIR le plan) :
-   a. Si l'indicateur « Plan XAUUSD — checklist achat / vente » est sur le graphique : data_get_indicator puis indicator_set_inputs (zone bas, zone haut, stop, TP1, TP2 de chaque sens, 0 partout pour un sens « aucun », heure de fin 18, taille).
+   a. Si l'indicateur « Plan XAUUSD — checklist achat / vente » est sur le graphique : data_get_indicator puis indicator_set_inputs (zone bas, zone haut, stop, TP1, TP2 de chaque sens, 0 partout pour un sens « aucun », heure de fin 18, taille, « Date du plan » = la date testée au format AAAAMMJJ, « Heure du plan » = 7).
    b. Sinon, ou si indicator_set_inputs échoue : dessine toi-même avec draw_shape, de l'heure de la bougie actuelle à +3 h (temps en secondes unix) :
       - rectangle de la zone d'entrée ;
       - façon outil Position : rectangle rouge de l'entrée (bord de zone) au stop, rectangle vert de l'entrée au TP2 ;

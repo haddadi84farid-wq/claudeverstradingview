@@ -20,6 +20,8 @@ bT2 = input.float(0.0, "Achat : TP2", group = gB)
 gR = "Réglages"
 endHourUtc = input.int(18, "Fin de validité (heure UTC)", minval = 0, maxval = 24, group = gR)
 lots       = input.float(0.01, "Taille (lots)", group = gR)
+planDate   = input.int(0, "Date du plan (AAAAMMJJ, 0 = jour de la dernière bougie)", minval = 0, group = gR)
+planHour   = input.int(7, "Heure du plan (UTC)", minval = 0, maxval = 23, group = gR)
 wickRatio  = input.float(0.5, "Mèche minimale (part de la bougie)", minval = 0.1, maxval = 0.9, group = gR)
 showDraw   = input.bool(true, "Dessiner zones, stop et TP", group = gR)
 txtSize    = input.string("Très petit", "Taille du texte du tableau", options = ["Très petit", "Petit", "Normal"], group = gR)
@@ -159,14 +161,15 @@ var array<box>   bxs = array.new<box>()
 var array<line>  lns = array.new<line>()
 var array<label> lbs = array.new<label>()
 
-drawPlan(string side, color zc, float zl, float zh, float ep, float sl, float t1, float t2, float rr, bool real, string invTxt) =>
-    array.push(bxs, box.new(bar_index - 40, zh, bar_index, zl, border_color = zc, bgcolor = color.new(zc, 85), text = "ZONE " + side, text_color = zc, text_size = size.small))
-    array.push(bxs, box.new(bar_index, math.max(ep, sl), bar_index + 30, math.min(ep, sl), border_color = color.red, bgcolor = color.new(color.red, 75), text = "SL " + str.tostring(sl, "#.##") + " — " + invTxt, text_color = color.red, text_size = size.small))
-    array.push(bxs, box.new(bar_index, math.max(ep, t2), bar_index + 30, math.min(ep, t2), border_color = color.green, bgcolor = color.new(color.green, 80), text = "TP2 " + str.tostring(t2, "#.##"), text_color = color.green, text_size = size.small))
-    array.push(lns, line.new(bar_index, ep, bar_index + 30, ep, color = color.gray, width = 2))
-    array.push(lns, line.new(bar_index, t1, bar_index + 30, t1, color = color.green, style = line.style_dashed))
-    array.push(lbs, label.new(bar_index + 30, ep, side + (real ? " entrée réelle " : " entrée limite ") + str.tostring(ep, "#.##") + " — R:R " + (na(rr) ? "—" : str.tostring(rr, "#.#")), style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small))
-    array.push(lbs, label.new(bar_index + 30, t1, "TP1 " + str.tostring(t1, "#.##"), style = label.style_label_left, color = color.new(color.green, 85), textcolor = color.green, size = size.small))
+// Dessin FIGÉ dans le temps : de l'heure du plan à l'heure de fin, le jour du plan (il ne suit pas les bougies)
+drawPlan(string side, color zc, float zl, float zh, float ep, float sl, float t1, float t2, float rr, bool real, string invTxt, int ta0, int ta1) =>
+    array.push(bxs, box.new(ta0, math.max(ep, sl), ta1, math.min(ep, sl), xloc = xloc.bar_time, border_color = color.red, bgcolor = color.new(color.red, 80), text = "SL " + str.tostring(sl, "#.##") + " — " + invTxt, text_color = color.red, text_size = size.small, text_valign = side == "VENTE" ? text.align_top : text.align_bottom))
+    array.push(bxs, box.new(ta0, math.max(ep, t2), ta1, math.min(ep, t2), xloc = xloc.bar_time, border_color = color.green, bgcolor = color.new(color.green, 85), text = "TP2 " + str.tostring(t2, "#.##"), text_color = color.green, text_size = size.small, text_valign = side == "VENTE" ? text.align_bottom : text.align_top))
+    array.push(bxs, box.new(ta0, zh, ta1, zl, xloc = xloc.bar_time, border_color = zc, border_width = 2, bgcolor = color.new(zc, 90), text = "ZONE " + side, text_color = zc, text_size = size.small, text_halign = text.align_left))
+    array.push(lns, line.new(ta0, ep, ta1, ep, xloc = xloc.bar_time, color = color.gray, width = 2))
+    array.push(lns, line.new(ta0, t1, ta1, t1, xloc = xloc.bar_time, color = color.green, style = line.style_dashed))
+    array.push(lbs, label.new(ta1, ep, side + (real ? " entrée réelle " : " entrée limite ") + str.tostring(ep, "#.##") + " — R:R " + (na(rr) ? "—" : str.tostring(rr, "#.#")), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.gray, 20), textcolor = color.white, size = size.small))
+    array.push(lbs, label.new(ta1, t1, "TP1 " + str.tostring(t1, "#.##"), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.green, 85), textcolor = color.green, size = size.small))
 
 if barstate.islast
     for b in bxs
@@ -178,7 +181,12 @@ if barstate.islast
     array.clear(bxs)
     array.clear(lns)
     array.clear(lbs)
+    pY = planDate > 0 ? int(math.floor(planDate / 10000)) : year(time, "UTC")
+    pM = planDate > 0 ? int(math.floor(planDate / 100)) % 100 : month(time, "UTC")
+    pD = planDate > 0 ? planDate % 100 : dayofmonth(time, "UTC")
+    ta0 = timestamp("UTC", pY, pM, pD, planHour, 0)
+    ta1 = timestamp("UTC", pY, pM, pD, math.max(endHourUtc, planHour + 1), 0)
     if showDraw and sOn
-        drawPlan("VENTE", color.red, sZl, sZh, sEp, sSl, sT1, sT2, sRR, not na(sEntry), "annulé si clôture 15 min au-dessus")
+        drawPlan("VENTE", color.red, sZl, sZh, sEp, sSl, sT1, sT2, sRR, not na(sEntry), "annulé si clôture 15 min au-dessus", ta0, ta1)
     if showDraw and bOn
-        drawPlan("ACHAT", color.teal, bZl, bZh, bEp, bSl, bT1, bT2, bRR, not na(bEntry), "annulé si clôture 15 min en dessous")
+        drawPlan("ACHAT", color.teal, bZl, bZh, bEp, bSl, bT1, bT2, bRR, not na(bEntry), "annulé si clôture 15 min en dessous", ta0, ta1)

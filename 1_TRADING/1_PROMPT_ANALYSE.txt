@@ -14,7 +14,7 @@ INTERDIT : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_
    - R:R depuis le milieu de la zone : ≥ 1,5 au TP2 et ≥ 0,8 au TP1, sinon « aucun ».
    - Taille : lots = 8 $ ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
    - Validité : jusqu'à 18:00 UTC, ou 30 min avant une annonce majeure.
-4. AFFICHAGE : avec data_get_indicator puis indicator_set_inputs, remplis l'indicateur « Plan XAUUSD — checklist achat / vente » : zone bas, zone haut, stop, TP1, TP2 de chaque sens (0 partout pour un sens « aucun »), heure de fin, taille. S'il n'est pas sur le graphique, dis-le et donne-moi les valeurs. Puis capture_screenshot.
+4. AFFICHAGE : avec data_get_indicator puis indicator_set_inputs, remplis l'indicateur « Plan XAUUSD — checklist achat / vente » : zone bas, zone haut, stop, TP1, TP2 de chaque sens (0 partout pour un sens « aucun »), heure de fin, taille, « Date du plan » = 0, « Heure du plan » = l'heure UTC actuelle. S'il n'est pas sur le graphique, dis-le et donne-moi les valeurs. Puis capture_screenshot.
 5. RÉPONSE COURTE :
    - Biais en une ligne, liquidité visée en une ligne.
    - Tableau 2 lignes (VENTE / ACHAT) : zone, stop, TP1, TP2, R:R, taille, probabilité (faible/moyenne/forte) et pourquoi en une phrase, valable jusqu'à (UTC et Paris).
