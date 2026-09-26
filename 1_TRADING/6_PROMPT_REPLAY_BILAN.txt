@@ -12,6 +12,10 @@ INTERDIT : replay_step, replay_autoplay, replay_trade, tout ordre, modifier le p
    - Sortie : stop ou TP2, le premier touché ; stop au point d'entrée dès que le prix a fait 1R ; fermeture forcée à 20:00 UTC. Si stop et TP dans la même bougie 5 min, compte le stop.
    - Résultat en R.
    - Si le Replay n'est pas encore allé assez loin pour conclure, dis « en cours » et ce qu'il reste à voir.
+3bis. VARIANTES (mêmes niveaux du plan figé, seule l'entrée change ; calcule-les TOUJOURS, même si la règle officielle n'a rien déclenché) :
+   - B « limite » : ordre limite au bord de la zone le plus proche du prix au moment du plan, sans confirmation. Rempli si le prix touche ce bord avant 18:00 UTC.
+   - C « cassure 5 min seule » : après un contact avec la zone, première bougie 5 min qui clôture au-delà du plus bas/plus haut des 6 précédentes (sans la condition de mèche 15 min). Entrée à sa clôture, R:R réel ≥ 1,5 exigé.
+   Même gestion de sortie que la règle officielle (stop, stop au point d'entrée à 1R, TP2, fermeture 20:00 UTC ; stop et TP dans la même bougie = stop). Lis les bougies 5 min pour ça.
 4. Sens du jour juste ? Le biais annoncé correspond-il au mouvement principal entre l'heure du plan et 18:00 UTC ?
-5. Ajoute une ligne par setup déclenché (ou « aucun setup ») dans journal/trades.md : Mode = Replay, Version = v5, date testée.
-6. capture_screenshot, puis RÉPONSE COURTE : tableau VENTE / ACHAT (signal oui/non + heure, entrée, sortie, R), sens du jour juste oui/non, une leçon en une ligne.
+5. Ajoute une ligne par setup déclenché (ou « aucun setup ») dans journal/trades.md : Mode = Replay, Version = v5, date testée. Dans la colonne Note, ajoute « B : x R / C : y R » pour chaque sens.
+6. capture_screenshot, puis RÉPONSE COURTE : tableau VENTE / ACHAT (signal oui/non + heure, entrée, sortie, R officiel, R variante B, R variante C), total cumulé en R des 3 versions sur tous les jours Replay v5 du journal, sens du jour juste oui/non, une leçon en une ligne.
