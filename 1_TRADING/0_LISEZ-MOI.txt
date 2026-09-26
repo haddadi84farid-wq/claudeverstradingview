@@ -21,6 +21,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            et dessine. Ensuite c'est moi qui avance les bougies.
 - 6_PROMPT_REPLAY_BILAN.txt : apres avoir avance (jusqu'a 18:00 ou 20:00 UTC) : Claude compte le resultat en R
                            et remplit le journal. En Replay, les alertes ne sonnent pas : je regarde le tableau.
+- 7_PROMPT_REPLAY_SERIE.txt : LE PLUS SIMPLE pour tester plusieurs jours. Je mets les dates en haut, je colle
+                           une seule fois dans une nouvelle session. Ensuite je tape seulement « bilan »
+                           apres avoir avance jusqu'a 22:00 Paris : Claude fait le bilan et prepare le jour suivant.
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
