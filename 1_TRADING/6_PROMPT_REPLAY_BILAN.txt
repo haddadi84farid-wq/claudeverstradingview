@@ -10,6 +10,7 @@ INTERDIT : replay_step, replay_autoplay, replay_trade, tout ordre, modifier le p
    - Rempli ? L'ordre limite est rempli quand le prix touche l'entrée (bord de zone). Donne l'heure.
    - Sortie : stop ou TP2, le premier touché ; stop au point d'entrée dès que le prix a fait 1R ; fermeture forcée à 20:00 UTC. Si stop et TP dans la même bougie 5 min, compte le stop. Lis les bougies 5 min pour ça.
    - Résultat en R.
+   - ANNONCES : si une bougie 15 min à 12:30, 14:00 ou 18:00 UTC fait plus de 3 ATR 15 min (annonce probable : NFP le 1er vendredi du mois, CPI, FOMC…), et qu'une position est ouverte à ce moment, calcule AUSSI le R en fermant la position au prix de 12:00 / 13:30 / 17:30 UTC (règle du direct : à plat 30 min avant une annonce). Note les deux : « R brut » et « R hors annonce ». Le total officiel utilise le R hors annonce.
    - Si le Replay n'est pas encore allé assez loin pour conclure, dis « en cours » et ce qu'il reste à voir.
 3bis. VARIANTES (mêmes niveaux du plan figé, seule l'entrée change ; calcule-les TOUJOURS) :
    - A « confirmation » : prix dans la zone, bougie 15 min rejetée avec mèche ≥ moitié, puis bougie 5 min qui clôture au-delà du plus bas/plus haut des 6 précédentes. Entrée à sa clôture, R:R réel ≥ 1,5 exigé.
