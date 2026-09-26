@@ -9,7 +9,7 @@ function wv(path) {
 }
 
 export async function start({ date } = {}) {
-  if (date) validate.date(date);
+  const when = date ? validate.dateTime(date) : null;
   const rp = await getReplayApi();
   const available = await evaluate(wv(`${rp}.isReplayAvailable()`));
   if (!available) throw new Error('Replay is not available for the current symbol/timeframe');
@@ -17,7 +17,7 @@ export async function start({ date } = {}) {
   await evaluate(`${rp}.showReplayToolbar()`);
   await new Promise(r => setTimeout(r, 500));
 
-  if (date) await evaluate(`${rp}.selectDate(new Date(${JSON.stringify(date)}))`);
+  if (when) await evaluate(`${rp}.selectDate(new Date(${JSON.stringify(when)}))`);
   else await evaluate(`${rp}.selectFirstAvailableDate()`);
   await new Promise(r => setTimeout(r, 1000));
 

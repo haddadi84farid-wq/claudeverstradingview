@@ -4,7 +4,7 @@ import * as core from '../core/replay.js';
 
 export function registerReplayTools(server) {
   server.tool('replay_start', 'Start bar replay mode, optionally at a specific date', {
-    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().describe('Date to start replay from (YYYY-MM-DD format). If omitted, selects first available date.'),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/).optional().describe('Date to start replay from: YYYY-MM-DD, or YYYY-MM-DDTHH:MM in UTC to start at a given bar. If omitted, selects first available date.'),
   }, async ({ date }) => {
     try { return jsonResult(await core.start({ date })); }
     catch (err) { return jsonResult({ success: false, error: err.message }, true); }

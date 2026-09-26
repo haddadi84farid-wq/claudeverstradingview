@@ -9,6 +9,7 @@ const SYMBOL_RE = /^[A-Za-z0-9:._!^-]{1,64}$/;          // BTCUSD, NYMEX:CL1!, B
 const TIMEFRAME_RE = /^(\d{1,4}[SDWMH]?|[SDWM])$/i;      // 1, 15, 240, D, 1D, W, 1M, 15S
 const ENTITY_ID_RE = /^[A-Za-z0-9_$.-]{1,64}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;                   // YYYY-MM-DD
+const DATETIME_RE = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/;   // YYYY-MM-DD or YYYY-MM-DDTHH:MM (UTC)
 const FILENAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 export const SHAPES = ['horizontal_line', 'vertical_line', 'trend_line', 'rectangle', 'text'];
@@ -36,6 +37,14 @@ export function date(value) {
   check(DATE_RE, value, 'date', 'YYYY-MM-DD');
   if (isNaN(Date.parse(value))) throw new Error(`Invalid date: ${JSON.stringify(value)}.`);
   return value;
+}
+
+/** YYYY-MM-DD or YYYY-MM-DDTHH:MM (UTC). Returns a string safe for new Date(). */
+export function dateTime(value) {
+  check(DATETIME_RE, value, 'date', 'YYYY-MM-DD or YYYY-MM-DDTHH:MM (UTC)');
+  const iso = value.includes('T') ? `${value}:00Z` : value;
+  if (isNaN(Date.parse(iso))) throw new Error(`Invalid date: ${JSON.stringify(value)}.`);
+  return iso;
 }
 
 export function filename(value) {
