@@ -56,3 +56,26 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - 2026-09-25 : non testable en replay (journée tradée en direct, suite connue).
 - Série Replay v5.1 07→11/09 : les deux entrées limites (07 et 08/09) ont été remplies aussitôt puis stoppées en 15 à 30 min, sans jamais faire 1R ; le biais H4 lu sur les seules bougies clôturées a été faux 3 jours sur 5. Les 08 et 09/09, la bougie H4 en cours cassait déjà le dernier creux / sommet H4 au moment du plan et avait raison contre le biais. Piste à discuter (pas de changement de version sans décision) : attendre la clôture de la bougie H4 de 08:00 quand la bougie en cours casse le dernier sommet ou creux H4.
 - Série Replay v5 02→04/09 : la cassure 5 min de confirmation arrive souvent trop loin de la zone (02/09 R:R 1,25 ; 03/09 R:R 1,06 : pas d'entrée), alors que la limite au bord de zone (variante B) fait +8,10 R contre +1,53 R pour la règle officielle. Piste à discuter (pas de changement de version sans décision) : entrée limite, ou cassure 5 min mesurée sur moins de bougies.
+
+## Backtests Pine (PEPPERSTONE:XAUUSD, 1 R = 100 $ fictifs) — 27/09/2026
+| Stratégie | Unité / période | Entrées | Résultat (R) | Espérance (R) | Pire baisse (R) | Note |
+|---|---|---|---|---|---|---|
+| Balayage de liquidité, réglages d'origine (4_BACKTEST_PINE) | 15 min, 01/04 → 25/09/2026 | 41 | −5,09 | −0,124 | 8,32 | 35,5 % gagnants, facteur de profit 0,76 |
+| Balayage, filtre H1 désactivé | 15 min | 100 | −5,77 | −0,058 | 9,52 | le filtre H1 ne protège pas |
+| Balayage, PDH/PDL seulement | 15 min | 26 | −10,35 | −0,398 | 11,49 | contrer un PDH/PDL perd |
+| Balayage, Asie seulement | 15 min | 6 | +3,42 | +0,571 | 2,05 | échantillon trop petit |
+| Balayage, Londres seulement | 15 min | 9 | +1,84 | +0,204 | 1,73 | échantillon trop petit |
+| Balayage, R:R minimum 2 | 15 min | 33 | −6,88 | −0,209 | 8,67 | pire |
+| Balayage, confirmation 1 bougie | 15 min | 26 | −2,91 | −0,112 | 5,23 | moins mauvais, toujours négatif |
+| Balayage Asie + Londres, confirmation 1 bougie | 15 min, 6 mois | 9 | +5,59 | +0,621 | 1,90 | |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 31 | +5,77 | +0,186 | 4,78 | seule piste positive, non significative (≈ 1,5 trade/mois) |
+| idem | 1 h, 02/01/2025 → 25/09/2026 | 12 | +5,64 | +0,470 | 2,24 | |
+| Cassure PDH/PDL en continuation (8_BACKTEST) | 15 min, 6 mois | 31 | −5,14 | −0,166 | 7,79 | facteur de profit 0,75 : suivre le PDH/PDL perd aussi |
+| Continuation après annonce US (9_BACKTEST) | 15 min, 6 mois | 6 | +1,33 | +0,22 | 1,35 | 4/6 gagnants, trop peu |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 24 | −5,79 | −0,24 | 6,64 | 25 % gagnants, facteur de profit 0,27 : rejeté |
+
+### Conclusion (27/09/2026)
+- Aucune idée « price action intraday » testée n'a d'avantage mesurable sur l'or (balayage, cassure PDH/PDL, continuation après annonce). Replay v5/v5.1 : pas d'avantage non plus, sens du jour juste environ 1 fois sur 2.
+- ≈ 12 tests réalisés : un résultat positif isolé est attendu par hasard. « Balayage Asie + Londres, confirmation 1 bougie » reste à valider SUR DES DONNÉES FUTURES (test papier 3 mois) avant tout argent réel.
+- Piste suivante proposée : suivi de tendance en journalier (cassure des plus hauts/bas sur 20 jours, stop ATR), testable sur 20 ans.
+- Pas d'argent réel sur ces méthodes intraday.
