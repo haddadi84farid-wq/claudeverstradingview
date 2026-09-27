@@ -1,0 +1,88 @@
+//@version=6
+// Backtest de l'indicateur « Premium GOLD Signal » (9 EMA + RSI, SL + 3 TP) — mêmes signaux, mêmes niveaux,
+// mais transformé en STRATÉGIE pour mesurer le résultat réel (l'indicateur d'origine efface les trades passés
+// à chaque nouveau signal : on ne voit jamais son historique de pertes).
+// Règles identiques : achat quand la clôture passe au-dessus de l'EMA 9 avec RSI > 50 (vente : l'inverse),
+// stop = plus bas (plus haut) des 4 bougies précédentes, TP1/TP2/TP3 = entrée ± 10 / 20 / 30 $.
+// Gestion : 1/3 de la position à chaque TP, stop inchangé (comme l'indicateur). Un signal inverse ferme et retourne.
+// Frais inclus (glissement 15 ticks, commission 0,035 $ par once et par ordre), risque fixe (1 R), marge 1 %.
+// À tester sur XAUUSD en 15 min, puis 30 min.
+strategy("Backtest — Premium GOLD Signal (EMA9 + RSI)", overlay = true, pyramiding = 0,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 15, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.035)
+
+riskCash   = input.float(100.0, "Risque par trade ($)", minval = 1)
+emaLen     = input.int(9, "EMA Length", minval = 1)
+rsiLen     = input.int(14, "RSI Length", minval = 1)
+rsiLevel   = input.float(50, "RSI Level")
+slLookback = input.int(4, "SL Lookback", minval = 1)
+slBuffer   = input.float(0.0, "SL Buffer (price)", minval = 0, step = 0.1)
+tpStep     = input.float(10.0, "TP Step (price)", minval = 0.01, step = 0.5)
+reverseOn  = input.bool(true, "Un signal inverse ferme et retourne la position (comme l'indicateur)")
+
+emaVal = ta.ema(close, emaLen)
+rsiVal = ta.rsi(close, rsiLen)
+prevLow  = ta.lowest(low, slLookback)[1]
+prevHigh = ta.highest(high, slLookback)[1]
+bullCond = close > emaVal and rsiVal > rsiLevel
+bearCond = close < emaVal and rsiVal < rsiLevel
+buySignal  = bullCond and not bullCond[1]
+sellSignal = bearCond and not bearCond[1]
+
+var int nEntries = 0
+
+enterLong() =>
+    risk = close - prevLow + slBuffer
+    if risk > 0
+        q = riskCash / (risk * syminfo.pointvalue)
+        strategy.entry("L", strategy.long, qty = q)
+        sl = prevLow - slBuffer
+        strategy.exit("L1", "L", qty_percent = 33.33, stop = sl, limit = close + tpStep)
+        strategy.exit("L2", "L", qty_percent = 50, stop = sl, limit = close + 2 * tpStep)
+        strategy.exit("L3", "L", stop = sl, limit = close + 3 * tpStep)
+        true
+    else
+        false
+
+enterShort() =>
+    risk = prevHigh + slBuffer - close
+    if risk > 0
+        q = riskCash / (risk * syminfo.pointvalue)
+        strategy.entry("S", strategy.short, qty = q)
+        sl = prevHigh + slBuffer
+        strategy.exit("S1", "S", qty_percent = 33.33, stop = sl, limit = close - tpStep)
+        strategy.exit("S2", "S", qty_percent = 50, stop = sl, limit = close - 2 * tpStep)
+        strategy.exit("S3", "S", stop = sl, limit = close - 3 * tpStep)
+        true
+    else
+        false
+
+canLong  = reverseOn or strategy.position_size == 0
+canShort = reverseOn or strategy.position_size == 0
+if buySignal and canLong and strategy.position_size <= 0
+    if enterLong()
+        nEntries += 1
+if sellSignal and canShort and strategy.position_size >= 0
+    if enterShort()
+        nEntries += 1
+
+plot(emaVal, "EMA", color.blue, 2)
+
+var table stats = table.new(position.top_right, 2, 6, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    n = strategy.closedtrades
+    totalR = strategy.netprofit / riskCash
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    table.cell(stats, 0, 0, "Entrées", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R, frais inclus)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Sorties gagnantes", text_halign = text.align_left)
+    table.cell(stats, 1, 3, n > 0 ? str.tostring(100.0 * strategy.wintrades / n, "#.#") + " %" : "—")
+    table.cell(stats, 0, 4, "Facteur de profit", text_halign = text.align_left)
+    table.cell(stats, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.##"))
+    table.cell(stats, 0, 5, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 5, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
