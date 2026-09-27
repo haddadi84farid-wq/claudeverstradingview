@@ -1,0 +1,22 @@
+TENDANCE DU SOIR — or, argent, pétrole. Exécute sans me poser de question (sauf blocage). À lancer après 23:00 Paris, bougie journalière clôturée.
+
+INTERDIT : passer, modifier ou annuler un ordre ; toucher à mes tracés ; draw_clear. C'est moi qui passe les ordres.
+
+MÉTHODE (validée en backtest 2002-2026, ne pas la modifier) :
+- Unité : 1 JOUR. Bougies CLÔTURÉES uniquement (ignore la bougie du jour si elle n'est pas finie).
+- ENTRÉE ACHAT : clôture du jour > plus haut des 20 jours précédents (sans compter le jour). ENTRÉE VENTE : clôture < plus bas des 20 jours précédents.
+- STOP INITIAL : 2 × ATR(20 jours) depuis la clôture.
+- STOP SUIVEUR : achat → plus bas des 10 derniers jours ; vente → plus haut des 10 derniers jours. On garde le plus serré entre stop initial et suiveur ; un stop ne se desserre JAMAIS.
+- SORTIE : uniquement par le stop (pas d'objectif). Une seule position par marché.
+- TAILLE : risque par trade = 1 % du capital indiqué dans journal/positions_tendance.md. lots = risque ÷ (distance du stop × valeur d'un point pour 1 lot). Vérifie la taille de contrat avec symbol_info. Si la taille calculée est < 0,01 lot : écris « taille minimale 0,01 = risque X $ = Y % du compte » et laisse-moi décider.
+
+ROUTINE :
+1. Lis journal/positions_tendance.md (capital, positions ouvertes, stops en cours).
+2. Pour chaque marché — PEPPERSTONE:XAUUSD, PEPPERSTONE:XAGUSD, pétrole WTI de Pepperstone (trouve le symbole avec symbol_search) — passe le graphique sur ce symbole en 1 jour, lis au moins 60 bougies journalières (data_get_ohlcv), calcule : plus haut 20 j, plus bas 20 j, plus bas 10 j, plus haut 10 j, ATR 20 j.
+3. Décision par marché, UNE seule parmi :
+   - « RIEN » (pas de position, pas de signal) ;
+   - « ENTRER ACHAT / VENTE » : ordre au marché à l'ouverture, stop à X, taille Y lots, risque Z $ ;
+   - « GARDER » : nouveau stop à X (monte pour un achat, descend pour une vente, jamais l'inverse) ;
+   - « SORTIR » : le stop a été touché aujourd'hui (plus bas du jour ≤ stop pour un achat, plus haut ≥ stop pour une vente) → la position est fermée au stop ; calcule le résultat en R.
+4. Mets à jour journal/positions_tendance.md (positions, stops, historique des trades en R) et remets le graphique sur PEPPERSTONE:XAUUSD.
+5. RÉPONSE COURTE : un tableau de 3 lignes (marché, décision, prix d'entrée ou stop, taille, risque en $ et en % du compte), puis « À faire chez Pepperstone » en 1 à 3 lignes simples (ex. « Déplace ton stop or à 4 152 »). Rien d'autre.

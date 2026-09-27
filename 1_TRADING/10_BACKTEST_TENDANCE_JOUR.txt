@@ -1,0 +1,90 @@
+//@version=6
+// Backtest : SUIVI DE TENDANCE EN JOURNALIER sur l'or (famille « Turtle » / cassure de Donchian).
+// À mettre sur un graphique XAUUSD en UNITÉ « 1 jour » (D). Pour plus d'historique : OANDA:XAUUSD ou TVC:GOLD.
+// Règles :
+// - Achat : clôture au-dessus du plus haut des N derniers jours (N = 20). Vente : clôture sous le plus bas des N jours.
+//   Entrée à l'ouverture suivante.
+// - Stop initial : « stop ATR » × ATR (2 × ATR 20 jours). Stop suiveur : plus bas des M derniers jours (M = 10)
+//   pour un achat, plus haut des M jours pour une vente (on garde le plus serré des deux).
+// - Pas d'objectif : on laisse courir tant que la tendance tient.
+// - Chaque trade risque le même montant (1 R = « risque par trade »). Résultat ÷ risque = résultat en R.
+// - « Début / Fin du test » : pour régler sur une période et VÉRIFIER sur une autre (ex. réglage 2005-2018, contrôle 2019-2026).
+strategy("Backtest XAU — tendance journalière", overlay = true, initial_capital = 100000,
+     default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 20, pyramiding = 0,
+     margin_long = 1, margin_short = 1)
+
+riskCash   = input.float(100.0, "Risque par trade ($)", minval = 1)
+entryLen   = input.int(20, "Cassure : plus haut/bas sur N jours", minval = 5)
+exitLen    = input.int(10, "Stop suiveur : plus bas/haut sur M jours", minval = 2)
+atrLen     = input.int(20, "ATR (jours)", minval = 5)
+stopATR    = input.float(2.0, "Stop initial (× ATR)", minval = 0.5)
+allowShort = input.bool(true, "Autoriser la vente")
+useMA      = input.bool(false, "Filtre moyenne 200 jours (achat au-dessus, vente en dessous)")
+maLen      = input.int(200, "Longueur de la moyenne", minval = 20)
+startT     = input.time(timestamp("2000-01-01T00:00:00"), "Début du test")
+endT       = input.time(timestamp("2099-01-01T00:00:00"), "Fin du test")
+
+inRange = time >= startT and time <= endT
+atr  = ta.atr(atrLen)
+hiN  = ta.highest(high, entryLen)[1]
+loN  = ta.lowest(low, entryLen)[1]
+exLo = ta.lowest(low, exitLen)
+exHi = ta.highest(high, exitLen)
+ma   = ta.sma(close, maLen)
+
+var float initStop = na
+var float firstT = na
+
+flat = strategy.position_size == 0
+
+if inRange and na(firstT)
+    firstT := time
+
+if inRange and flat and not na(atr) and atr > 0
+    riskPts = stopATR * atr
+    qty = riskCash / (riskPts * syminfo.pointvalue)
+    if close > hiN and (not useMA or close > ma)
+        initStop := close - riskPts
+        strategy.entry("L", strategy.long, qty = qty)
+        strategy.exit("LX", "L", stop = initStop)
+    else if allowShort and close < loN and (not useMA or close < ma)
+        initStop := close + riskPts
+        strategy.entry("S", strategy.short, qty = qty)
+        strategy.exit("SX", "S", stop = initStop)
+
+// Stop : le plus serré entre le stop initial et le stop suiveur (jamais desserré)
+if strategy.position_size > 0
+    initStop := math.max(initStop, exLo)
+    strategy.exit("LX", "L", stop = initStop)
+if strategy.position_size < 0
+    initStop := math.min(initStop, exHi)
+    strategy.exit("SX", "S", stop = initStop)
+
+if not inRange and strategy.position_size != 0
+    strategy.close_all(comment = "Hors période")
+
+plot(hiN, "Plus haut N jours", color.new(color.green, 40))
+plot(loN, "Plus bas N jours", color.new(color.red, 40))
+plot(strategy.position_size != 0 ? initStop : na, "Stop", color.orange, 2, plot.style_linebr)
+
+var table stats = table.new(position.top_right, 2, 8, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    n = strategy.closedtrades
+    totalR = strategy.netprofit / riskCash
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    table.cell(stats, 0, 0, "Période", text_halign = text.align_left)
+    table.cell(stats, 1, 0, na(firstT) ? "—" : str.format_time(int(firstT), "yyyy-MM-dd", "UTC") + " → " + str.format_time(time, "yyyy-MM-dd", "UTC"))
+    table.cell(stats, 0, 1, "Trades", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(n))
+    table.cell(stats, 0, 2, "Résultat total (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 3, "Espérance par trade (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 3, n > 0 ? str.tostring(totalR / n, "#.###") : "—")
+    table.cell(stats, 0, 4, "Trades gagnants", text_halign = text.align_left)
+    table.cell(stats, 1, 4, n > 0 ? str.tostring(100.0 * strategy.wintrades / n, "#.#") + " %" : "—")
+    table.cell(stats, 0, 5, "Facteur de profit", text_halign = text.align_left)
+    table.cell(stats, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"))
+    table.cell(stats, 0, 6, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 6, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
+    table.cell(stats, 0, 7, "Position ouverte (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 7, str.tostring(strategy.openprofit / riskCash, "#.##"))

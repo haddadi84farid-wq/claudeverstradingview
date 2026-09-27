@@ -59,3 +59,65 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - Série Replay v5.1 07→11/09 : les deux entrées limites (07 et 08/09) ont été remplies aussitôt puis stoppées en 15 à 30 min, sans jamais faire 1R ; le biais H4 lu sur les seules bougies clôturées a été faux 3 jours sur 5. Les 08 et 09/09, la bougie H4 en cours cassait déjà le dernier creux / sommet H4 au moment du plan et avait raison contre le biais. Piste à discuter (pas de changement de version sans décision) : attendre la clôture de la bougie H4 de 08:00 quand la bougie en cours casse le dernier sommet ou creux H4.
 - 2026-09-08 (replay, trade de l'utilisateur, +2,44 R) : quand le H1 casse une liquidité basse (bas égaux 4421 puis creux 4415-4417), la zone cassée devient un plafond. Une vente limite juste sous elle, avec objectif sur la liquidité intacte suivante (PDL), a été remplie sur le balayage des sommets du range, puis TP en 3 h sans jamais être menacée. À retenir pour les prochaines analyses : proposer ce setup (retest de liquidité cassée + objectif = liquidité suivante). Faiblesses : entrée à un prix exact (remplie à 0,09 pt près) → préférer une petite zone ; TP touché à 0,49 pt près → placer le TP au bord de la liquidité côté prix, pas au niveau exact. Vérifier les réglages de l'outil position (1 lot XAUUSD = 100 onces). Confirme la piste « entrée limite » (variante B) sur un cas de plus.
 - Série Replay v5 02→04/09 : la cassure 5 min de confirmation arrive souvent trop loin de la zone (02/09 R:R 1,25 ; 03/09 R:R 1,06 : pas d'entrée), alors que la limite au bord de zone (variante B) fait +8,10 R contre +1,53 R pour la règle officielle. Piste à discuter (pas de changement de version sans décision) : entrée limite, ou cassure 5 min mesurée sur moins de bougies.
+
+## Backtests Pine (PEPPERSTONE:XAUUSD, 1 R = 100 $ fictifs) — 27/09/2026
+| Stratégie | Unité / période | Entrées | Résultat (R) | Espérance (R) | Pire baisse (R) | Note |
+|---|---|---|---|---|---|---|
+| Balayage de liquidité, réglages d'origine (4_BACKTEST_PINE) | 15 min, 01/04 → 25/09/2026 | 41 | −5,09 | −0,124 | 8,32 | 35,5 % gagnants, facteur de profit 0,76 |
+| Balayage, filtre H1 désactivé | 15 min | 100 | −5,77 | −0,058 | 9,52 | le filtre H1 ne protège pas |
+| Balayage, PDH/PDL seulement | 15 min | 26 | −10,35 | −0,398 | 11,49 | contrer un PDH/PDL perd |
+| Balayage, Asie seulement | 15 min | 6 | +3,42 | +0,571 | 2,05 | échantillon trop petit |
+| Balayage, Londres seulement | 15 min | 9 | +1,84 | +0,204 | 1,73 | échantillon trop petit |
+| Balayage, R:R minimum 2 | 15 min | 33 | −6,88 | −0,209 | 8,67 | pire |
+| Balayage, confirmation 1 bougie | 15 min | 26 | −2,91 | −0,112 | 5,23 | moins mauvais, toujours négatif |
+| Balayage Asie + Londres, confirmation 1 bougie | 15 min, 6 mois | 9 | +5,59 | +0,621 | 1,90 | |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 31 | +5,77 | +0,186 | 4,78 | seule piste positive, non significative (≈ 1,5 trade/mois) |
+| idem | 1 h, 02/01/2025 → 25/09/2026 | 12 | +5,64 | +0,470 | 2,24 | |
+| Cassure PDH/PDL en continuation (8_BACKTEST) | 15 min, 6 mois | 31 | −5,14 | −0,166 | 7,79 | facteur de profit 0,75 : suivre le PDH/PDL perd aussi |
+| Continuation après annonce US (9_BACKTEST) | 15 min, 6 mois | 6 | +1,33 | +0,22 | 1,35 | 4/6 gagnants, trop peu |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 24 | −5,79 | −0,24 | 6,64 | 25 % gagnants, facteur de profit 0,27 : rejeté |
+
+### Conclusion (27/09/2026)
+- Aucune idée « price action intraday » testée n'a d'avantage mesurable sur l'or (balayage, cassure PDH/PDL, continuation après annonce). Replay v5/v5.1 : pas d'avantage non plus, sens du jour juste environ 1 fois sur 2.
+- ≈ 12 tests réalisés : un résultat positif isolé est attendu par hasard. « Balayage Asie + Londres, confirmation 1 bougie » reste à valider SUR DES DONNÉES FUTURES (test papier 3 mois) avant tout argent réel.
+- Piste suivante proposée : suivi de tendance en journalier (cassure des plus hauts/bas sur 20 jours, stop ATR), testable sur 20 ans.
+- Pas d'argent réel sur ces méthodes intraday.
+
+## Backtest suivi de tendance journalier (10_BACKTEST_TENDANCE_JOUR) — 27/09/2026
+| Réglages | Symbole / période | Trades | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Cassure 20 j, stop 2 ATR + suiveur 10 j, achat et vente, sans filtre | PEPPERSTONE:XAUUSD 1D, 19/06/2012 → 24/09/2026 | 127 | +17,82 | +0,14 | 39,4 % | 1,33 | 6,67 |
+- Courbe en hausse sur toute la période, y compris 2013-2018 (or baissier puis plat) : premier résultat positif sur 14 ans et 127 trades.
+- Limites : ≈ 9 trades par an, ≈ +1,3 R par an ; positions tenues des jours ou des semaines.
+
+| Réglages | Symbole / période | Trades | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Même stratégie | XAGUSD 1D (Pepperstone), 2002 → 2026 | 216 | +20,93 | +0,097 | 35,6 % | 1,21 | 11,1 |
+| Même stratégie | US500 1D (Pepperstone), 2008 → 2026 | 181 | −10,61 | −0,059 | 35,9 % | 0,87 | 23,77 |
+| Même stratégie | EURUSD 1D (Pepperstone), 2000 → 2026 | 250 | −3,85 | −0,015 | 32,8 % | 0,97 | 27,16 |
+| Même stratégie | OANDA:WTICOUSD 1D, 2003 → 2026 | 215 | +34,87 | +0,162 | 39,5 % | 1,39 | 10,13 |
+| Cassure 55 j / suiveur 20 j | XAUUSD 1D, 2012 → 2026 | 60 | +32,38 | +0,54 | 35 % | 2,07 | 9,95 |
+| Cassure 30 j / suiveur 15 j | XAUUSD 1D, 2012 → 2026 | 84 | +21,79 | +0,259 | 35,7 % | 1,57 | 8,97 |
+- Conclusion : le suivi de tendance journalier est positif sur les 3 matières premières (or, argent, pétrole) avec les mêmes réglages, et sur l'or avec 3 réglages différents (20/10, 30/15, 55/20). Il ne marche pas sur le S&P 500 ni sur l'EUR/USD (surtout depuis 2015).
+- Réglage retenu : 20/10 (le classique, non optimisé). Une grande partie du gain récent sur l'or vient de 2024-2025 ; prévoir des années plates.
+- Contrainte : à 0,01 lot, un stop de 2 ATR journaliers vaut environ 50 à 150 $ par trade selon le marché. Avec ≈ 1 400 € de capital, c'est 4 à 10 % du compte par trade : trop. Démo ou capital adapté (≈ 1 % par trade) avant l'argent réel.
+
+## Scalping et filtre tendance journalière (frais inclus) — 27/09/2026
+| Stratégie | Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Scalping cassure d'ouverture Londres/NY + tendance journalière (11_BACKTEST) | 5 min, 03/08 → 25/09/2026 | 41 | −2,93 | −0,07 | 36,6 % | 0,87 | 9,2 |
+| idem | 15 min, 01/04 → 25/09/2026 | 134 | +9,29 | +0,069 | 40,3 % | 1,15 | 7,43 |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 346 | −21,44 | −0,062 | 34,7 % | 0,87 | 41,51 |
+| Balayage 15 min + filtre tendance journalière (4_BACKTEST) | 15 min, 01/04 → 25/09/2026 | 26 | −3,54 | −0,136 | 32 % | 0,75 | 5,69 |
+- Le filtre journalier ne sauve pas le balayage. Le scalping d'ouverture filtré est légèrement positif en 15 min (+0,07 R par trade, sous le seuil de +0,1 R) mais négatif en 5 min sur août-septembre et nettement négatif en 30 min sur 21 mois (346 trades, −21 R) : REJETÉ. Le +9 R en 15 min venait de la forte hausse de l'or en 2026.
+- Conclusion scalping : aucun scalping testé n'a d'avantage une fois les frais payés. Seul avantage mesuré : la tendance journalière sur les matières premières.
+
+## Scalping V4 de l'utilisateur (sweep M15 + cassure M5 + TP premier obstacle) — 27/09/2026
+- Version d'origine (quantité fixe 1 lot, sans frais, marge 100 %) : 15 min, 01/04 → 25/09/2026 : +2 961 $ sur 131 trades, facteur de profit 1,17, avec un appel de marge → résultat NON FIABLE.
+- Version corrigée (13_BACKTEST_SCALP_V4_CORRIGE : risque fixe en R, frais inclus, marge 1 %) :
+
+| Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|
+| 15 min, 01/04 → 25/09/2026, sans filtre H4 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
+| 30 min, 02/01/2025 → 25/09/2026, filtre H4 activé | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
+- Conclusion : ≈ 0 R après frais, avec des baisses de 12 à 17 R. Pas d'avantage exploitable.

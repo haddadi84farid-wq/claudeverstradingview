@@ -291,12 +291,12 @@ export async function compile() {
       var fallback = null;
       var saveBtn = null;
       for (var i = 0; i < btns.length; i++) {
-        var text = btns[i].textContent.trim();
-        if (/save and add to chart/i.test(text)) {
+        var text = (btns[i].textContent.trim() || btns[i].getAttribute('aria-label') || btns[i].getAttribute('title') || '').trim();
+        if (/save and add to chart|enregistrer et ajouter au graphique/i.test(text)) {
           btns[i].click();
           return 'Save and add to chart';
         }
-        if (!fallback && /^(Add to chart|Update on chart)/i.test(text)) {
+        if (!fallback && /^(Add to chart|Update on chart|Ajouter au graphique|Mettre à jour sur le graphique)/i.test(text)) {
           fallback = btns[i];
         }
         if (!saveBtn && btns[i].className.indexOf('saveButton') !== -1 && btns[i].offsetParent !== null) {
@@ -447,13 +447,13 @@ export async function smartCompile() {
       var updateBtn = null;
       var saveBtn = null;
       for (var i = 0; i < btns.length; i++) {
-        var text = btns[i].textContent.trim();
-        if (/save and add to chart/i.test(text)) {
+        var text = (btns[i].textContent.trim() || btns[i].getAttribute('aria-label') || btns[i].getAttribute('title') || '').trim();
+        if (/save and add to chart|enregistrer et ajouter au graphique/i.test(text)) {
           btns[i].click();
           return 'Save and add to chart';
         }
-        if (!addBtn && /^add to chart$/i.test(text)) addBtn = btns[i];
-        if (!updateBtn && /^update on chart$/i.test(text)) updateBtn = btns[i];
+        if (!addBtn && /^(add to chart|ajouter au graphique)$/i.test(text)) addBtn = btns[i];
+        if (!updateBtn && /^(update on chart|mettre à jour sur le graphique)$/i.test(text)) updateBtn = btns[i];
         if (!saveBtn && btns[i].className.indexOf('saveButton') !== -1 && btns[i].offsetParent !== null) saveBtn = btns[i];
       }
       if (addBtn) { addBtn.click(); return 'Add to chart'; }

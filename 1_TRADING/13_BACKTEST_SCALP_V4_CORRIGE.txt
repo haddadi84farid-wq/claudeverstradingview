@@ -1,0 +1,150 @@
+//@version=6
+// XAU Scalping V4 (ta version) — CORRIGÉE pour un test honnête. Même logique d'entrée, mais :
+// 1. Même risque à chaque trade (1 R = « risque par trade ») au lieu d'une quantité fixe → résultat en R.
+// 2. Frais inclus : glissement 15 ticks par ordre (≈ spread + glissement) et commission 0,035 $ par once et par ordre.
+// 3. Marge 1 % (CFD) : plus d'appel de marge (« Margin call ») qui fausse les résultats.
+// 4. Options (désactivées par défaut, pour comparer) : filtre H4 réel, fenêtre horaire 07-18 UTC.
+// À mettre sur XAUUSD en 15 MIN (la structure « M15 » est calculée sur les bougies du graphique).
+strategy("XAU Scalping V4 corrigé — R, frais inclus",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 15, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.035)
+
+riskCash     = input.float(100.0, "Risque par trade ($)", minval = 1)
+m15Swing     = input.int(4, "Swing M15", minval = 2)
+h4Swing      = input.int(3, "Swing H4", minval = 2)
+m5Swing      = input.int(3, "Swing M5", minval = 2)
+maxSetupBars = input.int(8, "Durée validité sweep M15", minval = 2)
+minRR        = input.float(1.20, "R:R minimum", minval = 0.5, step = 0.1)
+slATR        = input.float(0.10, "Buffer SL ATR", minval = 0, step = 0.05)
+tpATR        = input.float(0.10, "Buffer TP ATR", minval = 0, step = 0.05)
+useH4        = input.bool(false, "Filtre H4 (achat seulement si H4 haussier, vente si H4 baissier)")
+useWindow    = input.bool(false, "Entrées seulement 07:00-18:00 UTC")
+
+atr = ta.atr(14)
+h   = hour(time, "UTC")
+inWindow = not useWindow or (h >= 7 and h < 18)
+
+// ---------- H4 (bougies H4 clôturées : lookahead + [1], pas de regard vers le futur) ----------
+h4Piv() =>
+    ph = ta.pivothigh(high, h4Swing, h4Swing)
+    pl = ta.pivotlow(low, h4Swing, h4Swing)
+    [ta.valuewhen(not na(ph), ph, 0), ta.valuewhen(not na(ph), ph, 1), ta.valuewhen(not na(pl), pl, 0), ta.valuewhen(not na(pl), pl, 1)]
+[h4H1, h4H2, h4L1, h4L2] = request.security(syminfo.tickerid, "240", h4Piv(), lookahead = barmerge.lookahead_on)
+h4High1 = h4H1[1]
+h4High2 = h4H2[1]
+h4Low1  = h4L1[1]
+h4Low2  = h4L2[1]
+h4Bull = not na(h4High2) and not na(h4Low2) and h4High1 > h4High2 and h4Low1 > h4Low2
+h4Bear = not na(h4High2) and not na(h4Low2) and h4High1 < h4High2 and h4Low1 < h4Low2
+
+// ---------- Structure M15 ----------
+ph15 = ta.pivothigh(high, m15Swing, m15Swing)
+pl15 = ta.pivotlow(low, m15Swing, m15Swing)
+m15High1 = ta.valuewhen(not na(ph15), ph15, 0)
+m15High2 = ta.valuewhen(not na(ph15), ph15, 1)
+m15High3 = ta.valuewhen(not na(ph15), ph15, 2)
+m15Low1  = ta.valuewhen(not na(pl15), pl15, 0)
+m15Low2  = ta.valuewhen(not na(pl15), pl15, 1)
+m15Low3  = ta.valuewhen(not na(pl15), pl15, 2)
+
+bullSweep15 = not na(m15Low1) and low < m15Low1 and close > m15Low1
+bearSweep15 = not na(m15High1) and high > m15High1 and close < m15High1
+
+var bool  bullSetup = false
+var bool  bearSetup = false
+var float sweepLow  = na
+var float sweepHigh = na
+var int   bullSweepBar = na
+var int   bearSweepBar = na
+
+if bullSweep15
+    bullSetup := true
+    bearSetup := false
+    sweepLow := low
+    bullSweepBar := bar_index
+if bearSweep15
+    bearSetup := true
+    bullSetup := false
+    sweepHigh := high
+    bearSweepBar := bar_index
+if bullSetup and not na(bullSweepBar) and bar_index - bullSweepBar > maxSetupBars
+    bullSetup := false
+if bearSetup and not na(bearSweepBar) and bar_index - bearSweepBar > maxSetupBars
+    bearSetup := false
+
+// ---------- Déclencheur M5 (calculé en 5 min, lu à la clôture de la bougie 15 min) ----------
+m5Piv() =>
+    ph = ta.pivothigh(high, m5Swing, m5Swing)
+    pl = ta.pivotlow(low, m5Swing, m5Swing)
+    [ta.valuewhen(not na(ph), ph, 0), ta.valuewhen(not na(pl), pl, 0), close]
+[m5LastHigh, m5LastLow, m5Close] = request.security(syminfo.tickerid, "5", m5Piv())
+
+m5BullBreak = bullSetup and not na(m5LastHigh) and m5Close > m5LastHigh
+m5BearBreak = bearSetup and not na(m5LastLow) and m5Close < m5LastLow
+m5BullTrigger = m5BullBreak and not m5BullBreak[1]
+m5BearTrigger = m5BearBreak and not m5BearBreak[1]
+
+// ---------- Stop, TP, R:R ----------
+buySL  = sweepLow - atr * slATR
+sellSL = sweepHigh + atr * slATR
+buyRisk  = close - buySL
+sellRisk = sellSL - close
+
+float buyObstacle = na
+if not na(m15High1) and m15High1 > close
+    buyObstacle := m15High1
+else if not na(m15High2) and m15High2 > close
+    buyObstacle := m15High2
+else if not na(m15High3) and m15High3 > close
+    buyObstacle := m15High3
+float sellObstacle = na
+if not na(m15Low1) and m15Low1 < close
+    sellObstacle := m15Low1
+else if not na(m15Low2) and m15Low2 < close
+    sellObstacle := m15Low2
+else if not na(m15Low3) and m15Low3 < close
+    sellObstacle := m15Low3
+
+buyTP  = not na(buyObstacle) ? buyObstacle - atr * tpATR : na
+sellTP = not na(sellObstacle) ? sellObstacle + atr * tpATR : na
+buyRR  = not na(buyTP) and buyRisk > 0 ? (buyTP - close) / buyRisk : na
+sellRR = not na(sellTP) and sellRisk > 0 ? (close - sellTP) / sellRisk : na
+
+validBuy  = m5BullTrigger and buyRisk > 0 and not na(buyTP) and buyTP > close and buyRR >= minRR and inWindow and (not useH4 or h4Bull)
+validSell = m5BearTrigger and sellRisk > 0 and not na(sellTP) and sellTP < close and sellRR >= minRR and inWindow and (not useH4 or h4Bear)
+
+var int nEntries = 0
+if validBuy and strategy.position_size == 0
+    strategy.entry("BUY", strategy.long, qty = riskCash / (buyRisk * syminfo.pointvalue))
+    strategy.exit("BUY EXIT", "BUY", stop = buySL, limit = buyTP)
+    bullSetup := false
+    nEntries += 1
+if validSell and strategy.position_size == 0
+    strategy.entry("SELL", strategy.short, qty = riskCash / (sellRisk * syminfo.pointvalue))
+    strategy.exit("SELL EXIT", "SELL", stop = sellSL, limit = sellTP)
+    bearSetup := false
+    nEntries += 1
+
+plot(m15High1, "Résistance M15", color.red, 1, plot.style_stepline)
+plot(m15Low1, "Support M15", color.green, 1, plot.style_stepline)
+bgcolor(h4Bull ? color.new(color.green, 95) : h4Bear ? color.new(color.red, 95) : na)
+
+var table stats = table.new(position.top_right, 2, 6, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    n = strategy.closedtrades
+    totalR = strategy.netprofit / riskCash
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    table.cell(stats, 0, 0, "Entrées", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R, frais inclus)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Trades gagnants", text_halign = text.align_left)
+    table.cell(stats, 1, 3, n > 0 ? str.tostring(100.0 * strategy.wintrades / n, "#.#") + " %" : "—")
+    table.cell(stats, 0, 4, "Facteur de profit", text_halign = text.align_left)
+    table.cell(stats, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.##"))
+    table.cell(stats, 0, 5, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 5, str.tostring(strategy.max_drawdown / riskCash, "#.##"))

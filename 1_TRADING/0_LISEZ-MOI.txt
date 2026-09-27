@@ -27,6 +27,13 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 8_BACKTEST_CASSURE_PDH_PDL.txt : strategie de test, suivre la cassure du plus haut/bas de la veille.
 - 9_BACKTEST_APRES_ANNONCE.txt   : strategie de test, suivre la bougie d'annonce US sur le repli.
                            (a creer comme NOUVEAU script Strategie : Editeur Pine -> Creer nouveau -> Strategie)
+- 10_BACKTEST_TENDANCE_JOUR.txt  : strategie de test, suivi de tendance en 1 JOUR (cassure 20 jours, stop ATR).
+- 11_BACKTEST_SCALP_OUVERTURE.txt : scalping 5 min, cassure de la 1re demi-heure Londres / New York, dans le sens de la tendance journaliere, frais inclus.
+- 12_PROMPT_TENDANCE_SOIR.txt : LA METHODE QUI FONCTIONNE. Chaque soir apres 23:00 Paris, coller dans une session :
+                           Claude dit pour l'or, l'argent et le petrole : rien / entrer / garder (nouveau stop) / sortir.
+- 13_BACKTEST_SCALP_V4_CORRIGE.txt : ta strategie V4 (sweep M15 + cassure M5) corrigee : risque fixe en R, frais, marge 1 %, options H4 et horaires.
+- 14_PROMPT_DESSIN.txt  : assistant de dessin (Replay ou direct). Coller une fois, puis envoyer : tendance, fvg, ob,
+                           liquidite, structure, tout, efface, mise a jour. Claude dessine, c'est moi qui trade.
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
