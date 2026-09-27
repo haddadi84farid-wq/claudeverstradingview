@@ -131,3 +131,11 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | 15 min, 01/04 → 25/09/2026, sans filtre H4 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
 | 30 min, 02/01/2025 → 25/09/2026, filtre H4 activé | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
 - Conclusion : ≈ 0 R après frais, avec des baisses de 12 à 17 R. Pas d'avantage exploitable.
+
+## Stratégie « Liquidity Sweep Mean Reversion » (LS-MR) corrigée (15_BACKTEST) — 27/09/2026
+| Mode / réglages | Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Balanced, tampon 0,5 % (original) | 15 min, 01/04 → 25/09/2026 | 0 | — | — | — | — | — |
+| Aggressive, tampon 0,3 ATR | 15 min, 01/04 → 25/09/2026 | 449 | −12,93 | −0,029 | 43,5 % | 0,91 | 37,35 |
+- Balanced ne déclenche jamais (balayage des plus bas + prix au-dessus du VWAP sur la même bougie, stop à 0,5 % trop large). Aggressive : perdant après frais.
+- Avec un capital de 1 400 € et 100 $ de risque par trade, le testeur montre −92 % : illustration du risque de ruine quand le risque par trade dépasse 1-2 % du compte.
