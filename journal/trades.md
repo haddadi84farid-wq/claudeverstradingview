@@ -104,5 +104,7 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 |---|---|---|---|---|---|---|---|
 | Scalping cassure d'ouverture Londres/NY + tendance journalière (11_BACKTEST) | 5 min, 03/08 → 25/09/2026 | 41 | −2,93 | −0,07 | 36,6 % | 0,87 | 9,2 |
 | idem | 15 min, 01/04 → 25/09/2026 | 134 | +9,29 | +0,069 | 40,3 % | 1,15 | 7,43 |
+| idem | 30 min, 02/01/2025 → 25/09/2026 | 346 | −21,44 | −0,062 | 34,7 % | 0,87 | 41,51 |
 | Balayage 15 min + filtre tendance journalière (4_BACKTEST) | 15 min, 01/04 → 25/09/2026 | 26 | −3,54 | −0,136 | 32 % | 0,75 | 5,69 |
-- Le filtre journalier ne sauve pas le balayage. Le scalping d'ouverture filtré est légèrement positif en 15 min (+0,07 R par trade, sous le seuil de +0,1 R) mais négatif en 5 min sur août-septembre : à confirmer en 30 min (historique depuis 2025).
+- Le filtre journalier ne sauve pas le balayage. Le scalping d'ouverture filtré est légèrement positif en 15 min (+0,07 R par trade, sous le seuil de +0,1 R) mais négatif en 5 min sur août-septembre et nettement négatif en 30 min sur 21 mois (346 trades, −21 R) : REJETÉ. Le +9 R en 15 min venait de la forte hausse de l'or en 2026.
+- Conclusion scalping : aucun scalping testé n'a d'avantage une fois les frais payés. Seul avantage mesuré : la tendance journalière sur les matières premières.
