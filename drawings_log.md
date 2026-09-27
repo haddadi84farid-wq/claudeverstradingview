@@ -91,6 +91,16 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-27 (replay 08/09) | oNMCoc | rectangle | 4415,0 – 4417,0 (liquidité basse n°4, creux 00:00-01:00, violet) | Claude |
 | 2026-09-27 (replay 08/09) | ZZjldE | rectangle | 4402,9 – 4406,0 (liquidité basse n°5, creux 07/09 18:15 + 23:15, violet) | Claude |
 | 2026-09-27 (replay 08/09) | Y0G8uq | rectangle | 4380,9 – 4385,3 (liquidité basse n°6, PDL, violet) | Claude |
+| 2026-09-27 (replay 23/09) | ECu4Ni | horizontal_line | 4347,3 (résistance, hauts égaux, rouge) | Claude |
+| 2026-09-27 (replay 23/09) | HwwUdf | horizontal_line | 4322,6 (support, haut de l'aimant, vert) | Claude |
+| 2026-09-27 (replay 23/09) | 2oNw9m | rectangle | 4345,3 – 4350,0 (VENTE zone d'entrée, bleu, 06:00 → 18:00) | Claude |
+| 2026-09-27 (replay 23/09) | vomTsx | rectangle | 4347,65 – 4351,8 (VENTE risque, rouge) | Claude |
+| 2026-09-27 (replay 23/09) | DCoixJ | rectangle | 4323,0 – 4347,65 (VENTE objectif TP2, vert) | Claude |
+| 2026-09-27 (replay 23/09) | wP2qHK | trend_line | 4342,0 (VENTE TP1, pointillés) | Claude |
+| 2026-09-27 (replay 01/07) | X5mr3P | rectangle | 4032,7 – 4039,5 (VENTE zone d'entrée, bleu, 30/06 22:00 → 01/07 18:00) | Claude |
+| 2026-09-27 (replay 01/07) | Lkdu3A | rectangle | 4036,1 – 4041,3 (VENTE risque, rouge) | Claude |
+| 2026-09-27 (replay 01/07) | VQXZgI | rectangle | 4021,5 – 4036,1 (VENTE objectif TP1, vert) | Claude |
+| 2026-09-27 (replay 01/07) | ZHxH3p | trend_line | 4005,2 (VENTE TP2 / aimant, pointillés) | Claude |
 
 ## Tracés retirés
 
@@ -106,4 +116,5 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-26 | lLv6P5, jrtM1K, qNUNoj, HyAz4x, jseav3, rf7YyW (tracés TEST replay 17/09) | Claude, sur go 1-6 |
 | 2026-09-26 | B21HND, QoIAdk (rectangles de l'utilisateur) | Claude, sur demande explicite de l'utilisateur (go 1 2) |
 | 2026-09-27 (constaté) | aY3uuM, 1qA1R9, 2TYa1q (tracés TEST replay 04/09) | hors Claude (disparus du graphique) |
+| 2026-09-27 (constaté, bilan replay 01/07) | mdMq3B, Y002gl, FjXNIc, vmdYKC, qVeX2M, PLrbZn, RuUB8t (anciens tracés), W5bCOZ, 1w2ore, WPB5Y2, oNMCoc, ZZjldE, Y0G8uq (liquidité 08/09), ECu4Ni, HwwUdf, 2oNw9m, vomTsx, DCoixJ, wP2qHK (vente 23/09) | hors Claude (disparus du graphique) |
 | 2026-09-27 | jPoMcO, Y3URgu, 2K6Kiq, ehZPNw, 6aWlU9, myfGrn, tbRmhg (supports / résistances replay 03/09) | Claude, sur demande explicite (« efface tout ce que tu as fait là ») |
