@@ -6,8 +6,8 @@ Exécute sans me poser de question. Tes règles sont dans deux fichiers, à lire
 - 1_TRADING/6_PROMPT_REPLAY_BILAN.txt (bilan officiel + variantes A et C).
 
 DÉROULÉ :
-1. Applique le prompt 5 à la PREMIÈRE date de la liste (« DATE À TESTER » = cette date). Puis arrête-toi : j'avance les bougies.
-2. Quand j'écris « bilan » : applique le prompt 6 à la date en cours, PUIS enchaîne directement le prompt 5 sur la date suivante de la liste (le replay_start de placement est autorisé à ce moment-là, uniquement vers une date postérieure). Arrête-toi ensuite : j'avance les bougies.
+1. Applique le prompt 5 à la PREMIÈRE date de la liste (« DATE À TESTER » = cette date). Puis arrête-toi (je peux avancer les bougies pour regarder, ce n'est pas obligatoire).
+2. Quand j'écris « bilan » : applique le prompt 6 à la date en cours, PUIS enchaîne directement le prompt 5 sur la date suivante de la liste (le replay_start de placement est autorisé à ce moment-là, uniquement vers une date postérieure). Arrête-toi ensuite.
 3. Après le bilan de la dernière date : tableau récapitulatif de la série (une ligne par jour : sens juste oui/non, R officiel (limite), R variante A, R variante C, puis les totaux) et c'est fini.
 
 Si j'écris « stop » : arrête la série, sans rien modifier.
