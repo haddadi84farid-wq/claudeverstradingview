@@ -24,6 +24,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 7_PROMPT_REPLAY_SERIE.txt : LE PLUS SIMPLE pour tester plusieurs jours. Je mets les dates en haut, je colle
                            une seule fois dans une nouvelle session. Ensuite je tape seulement « bilan »
                            apres avoir avance jusqu'a 22:00 Paris : Claude fait le bilan et prepare le jour suivant.
+- 8_BACKTEST_CASSURE_PDH_PDL.txt : strategie de test, suivre la cassure du plus haut/bas de la veille.
+- 9_BACKTEST_APRES_ANNONCE.txt   : strategie de test, suivre la bougie d'annonce US sur le repli.
+                           (a creer comme NOUVEAU script Strategie : Editeur Pine -> Creer nouveau -> Strategie)
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

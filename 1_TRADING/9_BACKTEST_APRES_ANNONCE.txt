@@ -1,0 +1,107 @@
+//@version=6
+// Backtest : CONTINUATION APRÈS UNE ANNONCE US (NFP, CPI, FOMC…).
+// Idée : dans les Replay, la bougie d'annonce a décidé du sens de la journée 4 jours sur 5. On suit ce sens.
+// Règles (graphique 15 ou 30 min : en 1 h, les annonces de xx:30 ne sont pas vues) :
+// - Bougie d'annonce : bougie qui s'ouvre à 12:30/13:30, 14:00/15:00 ou 18:00/19:00 UTC (été/hiver), dont l'amplitude dépasse « seuil » × ATR
+//   (ATR mesuré AVANT la bougie) et dont le corps fait au moins « corps min » de l'amplitude.
+// - Entrée : ordre limite sur le repli, à « repli » de l'amplitude depuis la clôture (0,5 = milieu de la bougie),
+//   valable N bougies.
+// - Stop : au-delà de l'extrême opposé de la bougie d'annonce + 0,3 ATR + spread. TP en R, stop au point d'entrée à 1 R.
+// - Clôture forcée à 20:00 UTC. Une entrée maximum par jour.
+strategy("Backtest XAU — continuation après annonce", overlay = true, initial_capital = 10000,
+     default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 10, pyramiding = 0,
+     margin_long = 1, margin_short = 1)
+
+riskCash  = input.float(100.0, "Risque par trade ($)", minval = 1)
+spreadPts = input.float(0.3, "Spread (points)", minval = 0)
+thr       = input.float(3.0, "Seuil bougie d'annonce (× ATR)", minval = 1)
+minBody   = input.float(0.5, "Corps min (part de la bougie)", minval = 0.1, maxval = 1)
+pullback  = input.float(0.5, "Repli pour l'entrée (part de la bougie)", minval = 0, maxval = 0.9)
+waitBars  = input.int(8, "Bougies max pour le repli", minval = 1, maxval = 32)
+tpR       = input.float(2.0, "TP en R", minval = 0.5)
+beR       = input.float(1.0, "Stop au point d'entrée à (R)", minval = 0.3)
+flatH     = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 23)
+
+atr    = ta.atr(14)
+atrPre = atr[1]
+h      = hour(time, "UTC")
+mi     = minute(time, "UTC")
+newDay = ta.change(dayofmonth(time, "UTC")) != 0
+// Heures des annonces US (été : 12:30, 14:00, 18:00 UTC ; hiver : 13:30, 15:00, 19:00 UTC)
+slot   = mi == 30 and (h == 12 or h == 13) or mi == 0 and (h == 14 or h == 15 or h == 18 or h == 19)
+rng    = high - low
+body   = math.abs(close - open)
+news   = slot and rng > thr * atrPre and body >= minBody * rng
+
+var bool  doneDay = false
+var float armDir = 0.0
+var int   armBar = 0
+var float ent = na
+var float sl  = na
+var float tp  = na
+var bool  beDone = false
+var int   nEntries = 0
+
+if newDay
+    doneDay := false
+    armDir := 0.0
+
+flat = strategy.position_size == 0
+
+if news and not doneDay and flat
+    armBar := bar_index
+    if close > open
+        armDir := 1.0
+        ent := close - pullback * rng
+        sl  := low - 0.3 * atrPre - spreadPts
+        tp  := ent + tpR * (ent - sl)
+    else
+        armDir := -1.0
+        ent := close + pullback * rng
+        sl  := high + 0.3 * atrPre + spreadPts
+        tp  := ent - tpR * (sl - ent)
+    beDone := false
+    riskPts = math.abs(ent - sl)
+    if riskPts > 0
+        strategy.entry(armDir > 0 ? "L" : "S", armDir > 0 ? strategy.long : strategy.short, qty = riskCash / (riskPts * syminfo.pointvalue), limit = pullback > 0 ? ent : na)
+        strategy.exit(armDir > 0 ? "LX" : "SX", armDir > 0 ? "L" : "S", stop = sl, limit = tp)
+
+// Annulation si le repli ne vient pas à temps
+if armDir != 0 and flat and bar_index - armBar > waitBars
+    strategy.cancel("L")
+    strategy.cancel("S")
+    armDir := 0.0
+
+// Entrée remplie
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    doneDay := true
+    armDir := 0.0
+    nEntries += 1
+
+// Stop au point d'entrée à beR
+if strategy.position_size > 0 and not beDone and high >= ent + beR * (ent - sl)
+    beDone := true
+    strategy.exit("LX", "L", stop = ent, limit = tp)
+if strategy.position_size < 0 and not beDone and low <= ent - beR * (sl - ent)
+    beDone := true
+    strategy.exit("SX", "S", stop = ent, limit = tp)
+
+if h >= flatH and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de journée")
+if h >= flatH and flat
+    strategy.cancel("L")
+    strategy.cancel("S")
+
+bgcolor(news ? color.new(color.orange, 80) : na, title = "Bougie d'annonce")
+
+var table stats = table.new(position.top_right, 2, 4, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    totalR = strategy.netprofit / riskCash
+    table.cell(stats, 0, 0, "Entrées", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 3, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
