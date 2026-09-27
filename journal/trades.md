@@ -79,3 +79,10 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - ≈ 12 tests réalisés : un résultat positif isolé est attendu par hasard. « Balayage Asie + Londres, confirmation 1 bougie » reste à valider SUR DES DONNÉES FUTURES (test papier 3 mois) avant tout argent réel.
 - Piste suivante proposée : suivi de tendance en journalier (cassure des plus hauts/bas sur 20 jours, stop ATR), testable sur 20 ans.
 - Pas d'argent réel sur ces méthodes intraday.
+
+## Backtest suivi de tendance journalier (10_BACKTEST_TENDANCE_JOUR) — 27/09/2026
+| Réglages | Symbole / période | Trades | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Cassure 20 j, stop 2 ATR + suiveur 10 j, achat et vente, sans filtre | PEPPERSTONE:XAUUSD 1D, 19/06/2012 → 24/09/2026 | 127 | +17,82 | +0,14 | 39,4 % | 1,33 | 6,67 |
+- Courbe en hausse sur toute la période, y compris 2013-2018 (or baissier puis plat) : premier résultat positif sur 14 ans et 127 trades.
+- Limites : ≈ 9 trades par an, ≈ +1,3 R par an ; positions tenues des jours ou des semaines.
