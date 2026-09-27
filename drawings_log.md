@@ -101,6 +101,9 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-27 (replay 01/07) | Lkdu3A | rectangle | 4036,1 – 4041,3 (VENTE risque, rouge) | Claude |
 | 2026-09-27 (replay 01/07) | VQXZgI | rectangle | 4021,5 – 4036,1 (VENTE objectif TP1, vert) | Claude |
 | 2026-09-27 (replay 01/07) | ZHxH3p | trend_line | 4005,2 (VENTE TP2 / aimant, pointillés) | Claude |
+| 2026-09-27 (replay 05/08) | n2eyo6 | rectangle | 4136,2 – 4142,3 (ACHAT zone de retest, bleu, 06:00 → 11:45) | Claude |
+| 2026-09-27 (replay 05/08) | xPryRe | rectangle | 4123,4 – 4140,0 (ACHAT risque, rouge) | Claude |
+| 2026-09-27 (replay 05/08) | iBklxj | rectangle | 4140,0 – 4172,5 (ACHAT objectif, vert) | Claude |
 
 ## Tracés retirés
 
