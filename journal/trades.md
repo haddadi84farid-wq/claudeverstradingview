@@ -108,3 +108,13 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | Balayage 15 min + filtre tendance journalière (4_BACKTEST) | 15 min, 01/04 → 25/09/2026 | 26 | −3,54 | −0,136 | 32 % | 0,75 | 5,69 |
 - Le filtre journalier ne sauve pas le balayage. Le scalping d'ouverture filtré est légèrement positif en 15 min (+0,07 R par trade, sous le seuil de +0,1 R) mais négatif en 5 min sur août-septembre et nettement négatif en 30 min sur 21 mois (346 trades, −21 R) : REJETÉ. Le +9 R en 15 min venait de la forte hausse de l'or en 2026.
 - Conclusion scalping : aucun scalping testé n'a d'avantage une fois les frais payés. Seul avantage mesuré : la tendance journalière sur les matières premières.
+
+## Scalping V4 de l'utilisateur (sweep M15 + cassure M5 + TP premier obstacle) — 27/09/2026
+- Version d'origine (quantité fixe 1 lot, sans frais, marge 100 %) : 15 min, 01/04 → 25/09/2026 : +2 961 $ sur 131 trades, facteur de profit 1,17, avec un appel de marge → résultat NON FIABLE.
+- Version corrigée (13_BACKTEST_SCALP_V4_CORRIGE : risque fixe en R, frais inclus, marge 1 %) :
+
+| Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|
+| 15 min, 01/04 → 25/09/2026 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
+| 30 min, 02/01/2025 → 25/09/2026 | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
+- Conclusion : ≈ 0 R après frais, avec des baisses de 12 à 17 R. Pas d'avantage exploitable.
