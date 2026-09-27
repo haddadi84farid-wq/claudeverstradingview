@@ -115,6 +115,6 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 
 | Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
 |---|---|---|---|---|---|---|
-| 15 min, 01/04 → 25/09/2026 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
-| 30 min, 02/01/2025 → 25/09/2026 | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
+| 15 min, 01/04 → 25/09/2026, sans filtre H4 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
+| 30 min, 02/01/2025 → 25/09/2026, filtre H4 activé | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
 - Conclusion : ≈ 0 R après frais, avec des baisses de 12 à 17 R. Pas d'avantage exploitable.
