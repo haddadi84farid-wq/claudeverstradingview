@@ -19,7 +19,7 @@
 // dont la valeur dépasse le capital sont refusés sans message et le test n'affiche aucun trade.
 strategy("Backtest XAU — balayage de liquidité", overlay = true, initial_capital = 10000,
      default_qty_type = strategy.fixed, default_qty_value = 1, slippage = 10, pyramiding = 0,
-     margin_long = 1, margin_short = 1)
+     margin_long = 1, margin_short = 1, commission_type = strategy.commission.cash_per_contract, commission_value = 0.035)
 
 riskCash    = input.float(100.0, "Risque par trade ($)", minval = 1)
 spreadPts   = input.float(0.2, "Spread (points)", minval = 0)
@@ -36,6 +36,7 @@ startH      = input.int(7, "Début des entrées (heure UTC)", minval = 0, maxval
 endH        = input.int(18, "Fin des entrées (heure UTC)", minval = 1, maxval = 24)
 flatH       = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 23)
 maxPerDay   = input.int(3, "Trades max par jour", minval = 1)
+useDaily    = input.bool(false, "Filtre tendance journalière (cassure 20 j / sortie 10 j) : seulement dans son sens")
 
 atr    = ta.atr(14)
 h      = hour(time, "UTC")
@@ -45,6 +46,20 @@ newDay = ta.change(dayofmonth(time, "UTC")) != 0
 [pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead = barmerge.lookahead_on)
 [h1c, h1e] = request.security(syminfo.tickerid, "60", [close[1], ta.ema(close, 50)[1]], lookahead = barmerge.lookahead_on)
 bull = h1c > h1e
+
+// Tendance journalière (même règle que 10_BACKTEST_TENDANCE_JOUR), valeur de la veille : 1 achat, -1 vente, 0 neutre
+dayTrend() =>
+    var int st = 0
+    if close > ta.highest(high, 20)[1]
+        st := 1
+    else if close < ta.lowest(low, 20)[1]
+        st := -1
+    else if st == 1 and close < ta.lowest(low, 10)[1]
+        st := 0
+    else if st == -1 and close > ta.highest(high, 10)[1]
+        st := 0
+    st
+dTrend = request.security(syminfo.tickerid, "D", dayTrend()[1], lookahead = barmerge.lookahead_on)
 
 // Sommets / creux de séance
 var float asiaH = na
@@ -118,7 +133,7 @@ if canTrade and not armS
     else if useLondon and lonReady and not usedLH and high > lonH and close < lonH
         nameS := "LONDRES"
         usedLH := true
-    if nameS != "" and (not useBias or not bull or nameS == "PDH")
+    if nameS != "" and (not useBias or not bull or nameS == "PDH") and (not useDaily or dTrend == -1)
         armS := true
         armSHigh := high
         armSLow  := low
@@ -135,7 +150,7 @@ if canTrade and not armL
     else if useLondon and lonReady and not usedLL and low < lonL and close > lonL
         nameL := "LONDRES"
         usedLL := true
-    if nameL != "" and (not useBias or bull or nameL == "PDL")
+    if nameL != "" and (not useBias or bull or nameL == "PDL") and (not useDaily or dTrend == 1)
         armL := true
         armLHigh := high
         armLLow  := low
