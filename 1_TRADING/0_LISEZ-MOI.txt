@@ -27,6 +27,7 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 8_BACKTEST_CASSURE_PDH_PDL.txt : strategie de test, suivre la cassure du plus haut/bas de la veille.
 - 9_BACKTEST_APRES_ANNONCE.txt   : strategie de test, suivre la bougie d'annonce US sur le repli.
                            (a creer comme NOUVEAU script Strategie : Editeur Pine -> Creer nouveau -> Strategie)
+- 10_BACKTEST_TENDANCE_JOUR.txt  : strategie de test, suivi de tendance en 1 JOUR (cassure 20 jours, stop ATR).
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
