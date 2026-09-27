@@ -78,6 +78,19 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-26 (replay 04/09 v5) | e9q88V | rectangle | 4456,5 – 4487,0 (TEST VENTE 04/09 objectif TP2, vert) | Claude (test replay) |
 | 2026-09-26 (replay 04/09 v5) | 3C63la | horizontal_line | 4481,5 (TEST VENTE 04/09 TP1, pointillés) | Claude (test replay) |
 | 2026-09-26 (replay 04/09 v5) | 2TYa1q | text | 4494,5 (TEST VENTE 04/09 libellé) | Claude (test replay) |
+| 2026-09-27 09:15 (replay 03/09) | jPoMcO | rectangle | 4470,5 – 4472,0 (R3, rouge, 02/09 00:00 → 03/09 18:00) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | Y3URgu | rectangle | 4461,7 – 4464,3 (R2, rouge) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | 2K6Kiq | rectangle | 4438,6 – 4440,5 (R1, rouge) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | ehZPNw | rectangle | 4419,3 – 4420,6 (S1, vert) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | 6aWlU9 | rectangle | 4396,6 – 4397,8 (S2 PDH, vert) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | myfGrn | rectangle | 4381,1 – 4383,4 (S3, vert) | Claude |
+| 2026-09-27 09:15 (replay 03/09) | tbRmhg | rectangle | 4322,5 – 4326,0 (S4, vert) | Claude |
+| 2026-09-27 (replay 08/09) | W5bCOZ | rectangle | 4446,6 – 4449,0 (liquidité haute n°1, sommets 04/09, orange, → 08/09 18:00) | Claude |
+| 2026-09-27 (replay 08/09) | 1w2ore | rectangle | 4440,2 – 4443,1 (liquidité haute n°2, EQH nuit, AIMANT, orange foncé) | Claude |
+| 2026-09-27 (replay 08/09) | WPB5Y2 | rectangle | 4421,0 – 4421,4 (liquidité basse n°3, EQL 02:30/02:45, violet) | Claude |
+| 2026-09-27 (replay 08/09) | oNMCoc | rectangle | 4415,0 – 4417,0 (liquidité basse n°4, creux 00:00-01:00, violet) | Claude |
+| 2026-09-27 (replay 08/09) | ZZjldE | rectangle | 4402,9 – 4406,0 (liquidité basse n°5, creux 07/09 18:15 + 23:15, violet) | Claude |
+| 2026-09-27 (replay 08/09) | Y0G8uq | rectangle | 4380,9 – 4385,3 (liquidité basse n°6, PDL, violet) | Claude |
 
 ## Tracés retirés
 
@@ -92,3 +105,5 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-26 (constaté) | 6ytLwk, P0gTcW, BYzytj, mHIOnY, J2UQK6, 5HxDrQ, Cu92Y5 (tracés TEST replay 17/09) | hors Claude (disparus du graphique) |
 | 2026-09-26 | lLv6P5, jrtM1K, qNUNoj, HyAz4x, jseav3, rf7YyW (tracés TEST replay 17/09) | Claude, sur go 1-6 |
 | 2026-09-26 | B21HND, QoIAdk (rectangles de l'utilisateur) | Claude, sur demande explicite de l'utilisateur (go 1 2) |
+| 2026-09-27 (constaté) | aY3uuM, 1qA1R9, 2TYa1q (tracés TEST replay 04/09) | hors Claude (disparus du graphique) |
+| 2026-09-27 | jPoMcO, Y3URgu, 2K6Kiq, ehZPNw, 6aWlU9, myfGrn, tbRmhg (supports / résistances replay 03/09) | Claude, sur demande explicite (« efface tout ce que tu as fait là ») |
