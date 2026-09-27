@@ -1,0 +1,161 @@
+//@version=6
+// Liquidity Sweep Mean Reversion (LS-MR) — ta version, CORRIGÉE pour un test honnête.
+// MÊME logique (modes, sweeps 20/50, MSS, VWAP, SMMA 9/13, SL au-delà de la mèche, TP au plus haut/bas 20 bougies,
+// R:R minimum, sortie partielle à la SMMA). Seuls changent :
+// 1. Même risque à chaque trade (1 R = « risque par trade ») au lieu de 2 % du capital en valeur → résultat en R.
+// 2. Frais réalistes : glissement 15 ticks par ordre (≈ spread + glissement) et commission 0,035 $ par once et par ordre.
+//    (L'original comptait 0,03 % de la valeur, soit ≈ 1,3 $ par once : 35 fois trop, et un glissement de 0,02 : trop peu.)
+// 3. Marge 1 % (CFD).
+// 4. Tampon du stop au choix : % du prix (original, 0,5 % ≈ 21 points sur l'or !) ou × ATR.
+// À tester sur XAUUSD en 15 min et en 30 min, en mode Balanced puis Conservative puis Aggressive.
+strategy("LS-MR corrigé — R, frais inclus", shorttitle = "LS-MR R", overlay = true, pyramiding = 0,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 15, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.035)
+
+riskCash      = input.float(100.0, "Risque par trade ($)", minval = 1)
+i_mode        = input.string("Balanced", "Strategy Mode", options = ["Conservative", "Balanced", "Aggressive"])
+i_lb1         = input.int(20, "Lookback Short", minval = 5, maxval = 200)
+i_lb2         = input.int(50, "Lookback Long", minval = 10, maxval = 500)
+i_sweepFilter = input.string("All Sweeps", "Sweep Filter", options = ["All Sweeps", "VWAP Filtered"])
+i_emaFast     = input.int(9, "SMMA Fast", minval = 3, maxval = 50)
+i_emaSlow     = input.int(13, "SMMA Slow", minval = 5, maxval = 100)
+i_vwapAnchor  = input.string("Session", "VWAP Anchor", options = ["Session", "Week", "Month"])
+i_minRR       = input.float(1.5, "Min RRR", minval = 1.0, step = 0.1)
+i_bufMode     = input.string("% du prix (original)", "Tampon du stop", options = ["% du prix (original)", "× ATR"])
+i_slBuffer    = input.float(0.5, "Tampon SL (%)", minval = 0.0, step = 0.1)
+i_slBufATR    = input.float(0.3, "Tampon SL (× ATR)", minval = 0.0, step = 0.1)
+i_partialTP   = input.bool(true, "Partial TP: Close 50% at SMMA")
+i_partialPct  = input.float(50.0, "Partial Close Size (%)", minval = 10.0, maxval = 90.0, step = 5.0)
+i_useTime     = input.bool(true, "Time Filter Active")
+i_startHour   = input.int(8, "Start Hour (UTC)", minval = 0, maxval = 23)
+i_endHour     = input.int(20, "End Hour (UTC)", minval = 0, maxval = 23)
+
+curMin = hour(time, "UTC") * 60 + minute(time, "UTC")
+inSession = i_useTime ? (curMin >= i_startHour * 60 and curMin <= i_endHour * 60) : true
+
+smmaFast = ta.rma(close, i_emaFast)
+smmaSlow = ta.rma(close, i_emaSlow)
+vwapNew = i_vwapAnchor == "Week" ? timeframe.change("W") : i_vwapAnchor == "Month" ? timeframe.change("M") : timeframe.change("D")
+[vwapVal, _ub, _lb] = ta.vwap(hlc3, vwapNew, 1.0)
+aboveVWAP = close > vwapVal
+belowVWAP = close < vwapVal
+
+highLB1 = ta.highest(high, i_lb1)
+lowLB1  = ta.lowest(low, i_lb1)
+highLB2 = ta.highest(high, i_lb2)
+lowLB2  = ta.lowest(low, i_lb2)
+smmaCrossBull = ta.crossover(smmaFast, smmaSlow)
+smmaCrossBear = ta.crossunder(smmaFast, smmaSlow)
+atr14 = ta.atr(14)
+crossUpF = ta.crossover(close, smmaFast)
+crossDnF = ta.crossunder(close, smmaFast)
+
+sweepBull = (low < lowLB1[1] and close > lowLB1[1]) or (low < lowLB2[1] and close > lowLB2[1])
+sweepBear = (high > highLB1[1] and close < highLB1[1]) or (high > highLB2[1] and close < highLB2[1])
+sweepBullF = i_sweepFilter == "VWAP Filtered" ? sweepBull and aboveVWAP : sweepBull
+sweepBearF = i_sweepFilter == "VWAP Filtered" ? sweepBear and belowVWAP : sweepBear
+
+var float lastBullSweepWick = na
+var float lastBearSweepWick = na
+var int   lastBullSweepBar  = na
+var int   lastBearSweepBar  = na
+if sweepBull
+    lastBullSweepWick := low
+    lastBullSweepBar  := bar_index
+if sweepBear
+    lastBearSweepWick := high
+    lastBearSweepBar  := bar_index
+bullSweepActive = not na(lastBullSweepBar) and (bar_index - lastBullSweepBar) <= 5
+bearSweepActive = not na(lastBearSweepBar) and (bar_index - lastBearSweepBar) <= 5
+
+ph = ta.pivothigh(high, 3, 3)
+pl = ta.pivotlow(low, 3, 3)
+var float lastSwingHigh = na
+var float lastSwingLow  = na
+if not na(ph)
+    lastSwingHigh := ph
+if not na(pl)
+    lastSwingLow := pl
+mssBull = bullSweepActive and not na(lastSwingHigh) and close > lastSwingHigh
+mssBear = bearSweepActive and not na(lastSwingLow) and close < lastSwingLow
+
+longCons  = bullSweepActive and mssBull and (smmaCrossBull or close > smmaFast) and aboveVWAP and inSession
+shortCons = bearSweepActive and mssBear and (smmaCrossBear or close < smmaFast) and belowVWAP and inSession
+longBal   = bullSweepActive and sweepBullF and (smmaCrossBull or (close > smmaFast and close[1] <= smmaFast[1])) and aboveVWAP and inSession
+shortBal  = bearSweepActive and sweepBearF and (smmaCrossBear or (close < smmaFast and close[1] >= smmaFast[1])) and belowVWAP and inSession
+longAgg   = sweepBullF and inSession
+shortAgg  = sweepBearF and inSession
+longSignal  = i_mode == "Conservative" ? longCons : i_mode == "Aggressive" ? longAgg : longBal
+shortSignal = i_mode == "Conservative" ? shortCons : i_mode == "Aggressive" ? shortAgg : shortBal
+
+useAtrBuf = i_bufMode == "× ATR"
+longSL_cur  = not na(lastBullSweepWick) ? (useAtrBuf ? lastBullSweepWick - i_slBufATR * atr14 : lastBullSweepWick * (1.0 - i_slBuffer / 100.0)) : close - atr14 * 1.5
+shortSL_cur = not na(lastBearSweepWick) ? (useAtrBuf ? lastBearSweepWick + i_slBufATR * atr14 : lastBearSweepWick * (1.0 + i_slBuffer / 100.0)) : close + atr14 * 1.5
+longTP_cur  = highLB1
+shortTP_cur = lowLB1
+longRisk  = close - longSL_cur
+shortRisk = shortSL_cur - close
+longCRV  = longRisk > 0 ? (longTP_cur - close) / longRisk : 0.0
+shortCRV = shortRisk > 0 ? (close - shortTP_cur) / shortRisk : 0.0
+
+var float longSL = na
+var float longTP = na
+var float shortSL = na
+var float shortTP = na
+var bool partialLongDone = false
+var bool partialShortDone = false
+var int nEntries = 0
+if strategy.position_size == 0
+    partialLongDone := false
+    partialShortDone := false
+
+noOpen = strategy.position_size == 0
+if longSignal and longCRV >= i_minRR and longRisk > 0 and noOpen
+    longSL := longSL_cur
+    longTP := longTP_cur
+    strategy.entry("Long", strategy.long, qty = riskCash / (longRisk * syminfo.pointvalue))
+    strategy.exit("Long Exit", from_entry = "Long", stop = longSL, limit = longTP)
+    nEntries += 1
+if shortSignal and shortCRV >= i_minRR and shortRisk > 0 and noOpen
+    shortSL := shortSL_cur
+    shortTP := shortTP_cur
+    strategy.entry("Short", strategy.short, qty = riskCash / (shortRisk * syminfo.pointvalue))
+    strategy.exit("Short Exit", from_entry = "Short", stop = shortSL, limit = shortTP)
+    nEntries += 1
+
+if i_partialTP
+    if not partialLongDone and strategy.position_size > 0 and crossUpF
+        partialLongDone := true
+        strategy.cancel("Long Exit")
+        strategy.close("Long", qty_percent = i_partialPct, comment = "Partial TP Long")
+        strategy.exit("Long Exit Rem", from_entry = "Long", stop = longSL, limit = longTP)
+    if not partialShortDone and strategy.position_size < 0 and crossDnF
+        partialShortDone := true
+        strategy.cancel("Short Exit")
+        strategy.close("Short", qty_percent = i_partialPct, comment = "Partial TP Short")
+        strategy.exit("Short Exit Rem", from_entry = "Short", stop = shortSL, limit = shortTP)
+
+plot(smmaFast, "SMMA Fast", color.orange)
+plot(smmaSlow, "SMMA Slow", color.yellow)
+plot(vwapVal, "VWAP", color.aqua, 2)
+plotshape(sweepBullF, "Bull Sweep", shape.xcross, location.belowbar, color.lime, size = size.small)
+plotshape(sweepBearF, "Bear Sweep", shape.xcross, location.abovebar, color.red, size = size.small)
+
+var table stats = table.new(position.top_right, 2, 6, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    n = strategy.closedtrades
+    totalR = strategy.netprofit / riskCash
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    table.cell(stats, 0, 0, "Entrées (" + i_mode + ")", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R, frais inclus)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Trades gagnants", text_halign = text.align_left)
+    table.cell(stats, 1, 3, n > 0 ? str.tostring(100.0 * strategy.wintrades / n, "#.#") + " %" : "—")
+    table.cell(stats, 0, 4, "Facteur de profit", text_halign = text.align_left)
+    table.cell(stats, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.##"))
+    table.cell(stats, 0, 5, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 5, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
