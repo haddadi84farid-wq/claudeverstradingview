@@ -98,3 +98,11 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - Conclusion : le suivi de tendance journalier est positif sur les 3 matières premières (or, argent, pétrole) avec les mêmes réglages, et sur l'or avec 3 réglages différents (20/10, 30/15, 55/20). Il ne marche pas sur le S&P 500 ni sur l'EUR/USD (surtout depuis 2015).
 - Réglage retenu : 20/10 (le classique, non optimisé). Une grande partie du gain récent sur l'or vient de 2024-2025 ; prévoir des années plates.
 - Contrainte : à 0,01 lot, un stop de 2 ATR journaliers vaut environ 50 à 150 $ par trade selon le marché. Avec ≈ 1 400 € de capital, c'est 4 à 10 % du compte par trade : trop. Démo ou capital adapté (≈ 1 % par trade) avant l'argent réel.
+
+## Scalping et filtre tendance journalière (frais inclus) — 27/09/2026
+| Stratégie | Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Scalping cassure d'ouverture Londres/NY + tendance journalière (11_BACKTEST) | 5 min, 03/08 → 25/09/2026 | 41 | −2,93 | −0,07 | 36,6 % | 0,87 | 9,2 |
+| idem | 15 min, 01/04 → 25/09/2026 | 134 | +9,29 | +0,069 | 40,3 % | 1,15 | 7,43 |
+| Balayage 15 min + filtre tendance journalière (4_BACKTEST) | 15 min, 01/04 → 25/09/2026 | 26 | −3,54 | −0,136 | 32 % | 0,75 | 5,69 |
+- Le filtre journalier ne sauve pas le balayage. Le scalping d'ouverture filtré est légèrement positif en 15 min (+0,07 R par trade, sous le seuil de +0,1 R) mais négatif en 5 min sur août-septembre : à confirmer en 30 min (historique depuis 2025).
