@@ -86,6 +86,9 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | Cassure 20 j, stop 2 ATR + suiveur 10 j, achat et vente, sans filtre | PEPPERSTONE:XAUUSD 1D, 19/06/2012 → 24/09/2026 | 127 | +17,82 | +0,14 | 39,4 % | 1,33 | 6,67 |
 - Courbe en hausse sur toute la période, y compris 2013-2018 (or baissier puis plat) : premier résultat positif sur 14 ans et 127 trades.
 - Limites : ≈ 9 trades par an, ≈ +1,3 R par an ; positions tenues des jours ou des semaines.
+
+| Réglages | Symbole / période | Trades | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
 | Même stratégie | XAGUSD 1D (Pepperstone), 2002 → 2026 | 216 | +20,93 | +0,097 | 35,6 % | 1,21 | 11,1 |
 | Même stratégie | US500 1D (Pepperstone), 2008 → 2026 | 181 | −10,61 | −0,059 | 35,9 % | 0,87 | 23,77 |
 | Même stratégie | EURUSD 1D (Pepperstone), 2000 → 2026 | 250 | −3,85 | −0,015 | 32,8 % | 0,97 | 27,16 |
