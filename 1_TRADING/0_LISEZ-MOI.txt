@@ -36,6 +36,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            liquidite, structure, tout, efface, mise a jour. Claude dessine, c'est moi qui trade.
 - 15_BACKTEST_LSMR_CORRIGE.txt : strategie « Liquidity Sweep Mean Reversion » corrigee (risque fixe en R, frais realistes, marge 1 %).
 - 16_BACKTEST_EMA_RSI.txt : indicateur « Premium GOLD Signal » (EMA 9 + RSI, SL + 3 TP) transforme en strategie mesurable.
+- 17_PROMPT_DAYTRADING_MATIN.txt : MA METHODE DE TRAVAIL (day trading). Vers 08:30 Paris : direction autorisee du jour
+                           (tendance 20/10), niveaux dessines, annonces, limites. Puis « trade : ... » apres chaque trade.
 - anciens\               : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

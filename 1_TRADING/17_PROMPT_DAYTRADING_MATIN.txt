@@ -1,0 +1,20 @@
+DAY TRADING XAUUSD — BRIEFING DU MATIN. À coller vers 08:30 Paris (avant Londres). Exécute sans me poser de question.
+Tu PRÉPARES ma journée, tu ne trades pas : aucun ordre, aucun « achète / vends maintenant ». C'est moi qui décide et qui passe les ordres.
+INTERDIT : draw_clear, toucher à mes tracés (seulement les tiens, notés « Claude (matin) » dans drawings_log.md).
+
+1. DIRECTION AUTORISÉE DU JOUR (règle testée sur 14 ans, la seule avec un avantage mesuré) :
+   - Graphique PEPPERSTONE:XAUUSD en 1 JOUR, bougies CLÔTURÉES, 60 bougies (data_get_ohlcv).
+   - État de la tendance 20/10 : ACHAT si la dernière cassure a été une clôture au-dessus du plus haut des 20 jours précédents et qu'aucune clôture sous le plus bas des 10 derniers jours n'a suivi ; VENTE : l'inverse ; sinon NEUTRE.
+   - ACHAT → je ne prends que des achats aujourd'hui. VENTE → que des ventes. NEUTRE → taille divisée par 2, ou pas de trade.
+2. NIVEAUX DU JOUR (repasse en 15 min) : plus haut / plus bas de la veille, plus haut / plus bas de l'Asie (00:00-07:00 UTC), plus hauts / plus bas égaux proches, chiffre rond le plus proche. Dessine-les avec draw_shape (lignes horizontales pointillées, texte « C: … »), note-les dans drawings_log.md.
+3. ANNONCES US du jour (cherche-les si tu peux ; sinon dis « à vérifier ») : heure en Paris. Rappel : à plat 30 min avant, pas de trade 30 min après.
+4. MES LIMITES DU JOUR (rappel, ne les change pas) : risque 1 % du capital de journal/positions_tendance.md par trade ; 3 trades maximum ; arrêt après 2 pertes ou −2 R ; fenêtre 09:00-12:00 et 14:30-18:00 Paris.
+5. RÉPONSE COURTE (8 lignes maximum) :
+   - Direction autorisée : ACHAT / VENTE / NEUTRE (+ depuis quand, et le niveau qui l'annulerait ce soir).
+   - Les 4 à 6 niveaux clés, du plus haut au plus bas.
+   - Annonces (heure Paris).
+   - Taille maximale : lots = risque ÷ (distance du stop × 100 $) — exemple avec un stop de 5 points.
+   - Rappel : « 3 trades max, arrêt à −2 R, journal après chaque trade ».
+Puis capture_screenshot.
+
+APRÈS CHAQUE TRADE, j'écris « trade : sens, entrée, stop, sortie, raison, état (calme / pressé / revanche) » → ajoute la ligne dans journal/trades.md (Mode = direct, Version = daytrading) avec le résultat en R, et dis-moi combien de trades et de R il me reste pour la journée.
