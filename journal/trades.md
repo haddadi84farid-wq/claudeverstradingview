@@ -86,3 +86,12 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | Cassure 20 j, stop 2 ATR + suiveur 10 j, achat et vente, sans filtre | PEPPERSTONE:XAUUSD 1D, 19/06/2012 → 24/09/2026 | 127 | +17,82 | +0,14 | 39,4 % | 1,33 | 6,67 |
 - Courbe en hausse sur toute la période, y compris 2013-2018 (or baissier puis plat) : premier résultat positif sur 14 ans et 127 trades.
 - Limites : ≈ 9 trades par an, ≈ +1,3 R par an ; positions tenues des jours ou des semaines.
+| Même stratégie | XAGUSD 1D (Pepperstone), 2002 → 2026 | 216 | +20,93 | +0,097 | 35,6 % | 1,21 | 11,1 |
+| Même stratégie | US500 1D (Pepperstone), 2008 → 2026 | 181 | −10,61 | −0,059 | 35,9 % | 0,87 | 23,77 |
+| Même stratégie | EURUSD 1D (Pepperstone), 2000 → 2026 | 250 | −3,85 | −0,015 | 32,8 % | 0,97 | 27,16 |
+| Même stratégie | OANDA:WTICOUSD 1D, 2003 → 2026 | 215 | +34,87 | +0,162 | 39,5 % | 1,39 | 10,13 |
+| Cassure 55 j / suiveur 20 j | XAUUSD 1D, 2012 → 2026 | 60 | +32,38 | +0,54 | 35 % | 2,07 | 9,95 |
+| Cassure 30 j / suiveur 15 j | XAUUSD 1D, 2012 → 2026 | 84 | +21,79 | +0,259 | 35,7 % | 1,57 | 8,97 |
+- Conclusion : le suivi de tendance journalier est positif sur les 3 matières premières (or, argent, pétrole) avec les mêmes réglages, et sur l'or avec 3 réglages différents (20/10, 30/15, 55/20). Il ne marche pas sur le S&P 500 ni sur l'EUR/USD (surtout depuis 2015).
+- Réglage retenu : 20/10 (le classique, non optimisé). Une grande partie du gain récent sur l'or vient de 2024-2025 ; prévoir des années plates.
+- Contrainte : à 0,01 lot, un stop de 2 ATR journaliers vaut environ 50 à 150 $ par trade selon le marché. Avec ≈ 1 400 € de capital, c'est 4 à 10 % du compte par trade : trop. Démo ou capital adapté (≈ 1 % par trade) avant l'argent réel.
