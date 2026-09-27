@@ -506,32 +506,12 @@ export async function smartCompile() {
 }
 
 export async function newScript({ type }) {
-  const editorReady = await ensurePineEditorOpen();
-  if (!editorReady) throw new Error('Could not open Pine Editor.');
-
-  const typeMap = { indicator: 'indicator', strategy: 'strategy', library: 'library' };
-  const templates = {
-    indicator: '//@version=6\nindicator("My script")\nplot(close)',
-    strategy: '//@version=6\nstrategy("My strategy", overlay=true)\n',
-    library: '//@version=6\n// @description TODO: add library description here\nlibrary("MyLibrary")\n',
-  };
-
-  const template = templates[type] || templates.indicator;
-
-  // Simply set the source to a new template — this is the most reliable approach
-  const escaped = JSON.stringify(template);
-  const set = await evaluate(`
-    (function() {
-      var m = ${FIND_MONACO};
-      if (!m) return false;
-      m.editor.setValue(${escaped});
-      return true;
-    })()
-  `);
-
-  if (!set) throw new Error('Monaco editor not found. Ensure Pine Editor is open.');
-
-  return { success: true, type, action: 'new_script_created', template: typeMap[type] };
+  // Replacing the editor text is NOT creating a script: the next save would overwrite whatever
+  // script is open (this destroyed a user's indicator). Refuse until a real "Create new" flow exists.
+  throw new Error(
+    `pine_new cannot create a separate ${type || 'indicator'} script safely: it would overwrite the script open in the Pine Editor. ` +
+    'Ask the user to create it (Pine Editor → script name → "Create new"), then use pine_set_source.'
+  );
 }
 
 export async function openScript({ name }) {
