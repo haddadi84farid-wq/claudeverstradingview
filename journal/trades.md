@@ -151,3 +151,5 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - Diagnostic v2 (15 min) : 132 setups LH/HL → 69 cassures → refusés : horaires 45, position 0, stop trop large 21, obstacle 0 → 3 entrées.
 - v3 : stop maximum = 0,25 ATR journalier (au lieu de 1,5 ATR 15 min, trop serré dès que l'entrée se fait en 15 min). Horaires 07-16 UTC conservés (liquidité).
 - Règle fixée AVANT le test : v3 jugée en 30 min (≈ 21 mois d'historique). < 100 trades ou PF < 1,2 → abandon, plus aucun réglage.
+| v3 (stop max 0,25 ATR journalier) | 30 min, 02/01/2025 → 28/09/2026 | 3 | −2,99 | −1,0 | 0 % (0/3) | 0 | 2,99 |
+- Verdict (règle fixée avant le test) : 3 trades en 21 mois < 100 → stratégie Trend Pullback ABANDONNÉE, plus aucun réglage.
