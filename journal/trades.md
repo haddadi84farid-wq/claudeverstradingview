@@ -139,3 +139,11 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | Aggressive, tampon 0,3 ATR | 15 min, 01/04 → 25/09/2026 | 449 | −12,93 | −0,029 | 43,5 % | 0,91 | 37,35 |
 - Balanced ne déclenche jamais (balayage des plus bas + prix au-dessus du VWAP sur la même bougie, stop à 0,5 % trop large). Aggressive : perdant après frais.
 - Avec un capital de 1 400 € et 100 $ de risque par trade, le testeur montre −92 % : illustration du risque de ruine quand le risque par trade dépasse 1-2 % du compte.
+
+### Backtest — XAU Trend Pullback (19_BACKTEST_TREND_PULLBACK, v1)
+
+| Réglage | Unité, période | Entrées | R total | R / entrée | Gagnants | PF | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Par défaut (sommet/creux H4 compté comme obstacle) | 5 min, 03/08 → 28/09/2026 | 6 | −4,11 | −0,685 | 16,7 % (1/6) | 0,20 | 4,11 |
+- 6 trades : aucune conclusion possible (il en faut ≥ 100). Filtres trop serrés + historique 5 min limité à 2 mois.
+- v2 : le dernier sommet/creux H4 n'est plus un obstacle (en continuation il est fait pour être cassé) + compteurs de diagnostic. À tester en 15 min (historique long) et 5 min.

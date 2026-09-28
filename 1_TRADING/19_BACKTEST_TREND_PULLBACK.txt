@@ -26,6 +26,7 @@ dLong     = input.int(20, "Daily : cassure (jours)", minval = 2, group = gT)
 dShort    = input.int(10, "Daily : sortie (jours)", minval = 2, group = gT)
 htfPiv    = input.int(3, "Pivot H4", minval = 1, group = gT)
 useH4     = input.bool(true, "H4 ne doit pas aller contre le Daily", group = gT)
+useSwObs  = input.bool(false, "Dernier sommet / creux H4 = obstacle (non : en continuation, il est fait pour être cassé)", group = gT)
 gE = "Entrée"
 pivLen    = input.int(3, "Pivot de l'unité d'entrée", minval = 1, group = gE)
 minImpAtr = input.float(1.0, "Impulsion minimale (× ATR 15 min)", minval = 0, step = 0.1, group = gE)
@@ -124,7 +125,7 @@ nearestBelow(float p) =>
         o := fvgBelow
     if not na(pdl) and pdl < p and (na(o) or pdl > o)
         o := pdl
-    if not na(h4Low) and h4Low < p and (na(o) or h4Low > o)
+    if useSwObs and not na(h4Low) and h4Low < p and (na(o) or h4Low > o)
         o := h4Low
     o
 nearestAbove(float p) =>
@@ -133,7 +134,7 @@ nearestAbove(float p) =>
         o := fvgAbove
     if not na(pdh) and pdh > p and (na(o) or pdh < o)
         o := pdh
-    if not na(h4High) and h4High > p and (na(o) or h4High < o)
+    if useSwObs and not na(h4High) and h4High > p and (na(o) or h4High < o)
         o := h4High
     o
 tgtSell = not na(fvgBelow) and fvgBelow < close ? "FVG H4 " + str.tostring(fvgBelow, format.mintick) :
@@ -153,6 +154,12 @@ var float lastPhV = na
 var int   lastPhI = na
 var float lastPlV = na
 var int   lastPlI = na
+var int   nArm = 0
+var int   nBos = 0
+var int   kSess = 0
+var int   kPos = 0
+var int   kWide = 0
+var int   kRoom = 0
 var int   sState = 0
 var float sLH = na
 var float sTrig = na
@@ -169,6 +176,7 @@ if not na(ph)
         ret = imp > 0 ? (ph - lastPlV) / imp : 0.0
         if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and lowN > lastPlV
             sState := 1
+            nArm += 1
             sLH := ph
             sTrig := lowN
             sArm := bar_index
@@ -181,6 +189,7 @@ if not na(pl)
         ret = imp > 0 ? (lastPhV - pl) / imp : 0.0
         if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and highN < lastPhV
             bState := 1
+            nArm += 1
             bHL := pl
             bTrig := highN
             bArm := bar_index
@@ -199,18 +208,23 @@ if sState == 1 and bar_index > sArm
         sState := 0
     else if close < sTrig
         sState := 0
+        nBos += 1
         stopP = math.max(sLH + buf, close + minStopA * atr15)
         risk = stopP - close
         obst = nearestBelow(close)
         tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, close - obst)
         if not inSession
             lastSkip := "hors horaires"
+            kSess += 1
         else if strategy.position_size != 0
             lastSkip := "position déjà ouverte"
+            kPos += 1
         else if risk > maxStopA * atr15
             lastSkip := "stop trop large"
+            kWide += 1
         else if tpDist < minTpR * risk
             lastSkip := "obstacle trop proche"
+            kRoom += 1
         else
             strategy.entry("SELL", strategy.short, qty = riskCash / (risk * syminfo.pointvalue))
             strategy.exit("SELL X", "SELL", stop = stopP, limit = close - tpDist)
@@ -222,18 +236,23 @@ if bState == 1 and bar_index > bArm
         bState := 0
     else if close > bTrig
         bState := 0
+        nBos += 1
         stopP = math.min(bHL - buf, close - minStopA * atr15)
         risk = close - stopP
         obst = nearestAbove(close)
         tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, obst - close)
         if not inSession
             lastSkip := "hors horaires"
+            kSess += 1
         else if strategy.position_size != 0
             lastSkip := "position déjà ouverte"
+            kPos += 1
         else if risk > maxStopA * atr15
             lastSkip := "stop trop large"
+            kWide += 1
         else if tpDist < minTpR * risk
             lastSkip := "obstacle trop proche"
+            kRoom += 1
         else
             strategy.entry("BUY", strategy.long, qty = riskCash / (risk * syminfo.pointvalue))
             strategy.exit("BUY X", "BUY", stop = stopP, limit = close + tpDist)
@@ -276,7 +295,7 @@ if barstate.islast
     info := label.new(bar_index + 3, close, txt, style = label.style_label_left, color = col, textcolor = color.white, size = size.normal)
 
 // ---------- Résultats ----------
-var table stats = table.new(position.top_right, 2, 6, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+var table stats = table.new(position.top_right, 2, 8, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
 if barstate.islast
     n = strategy.closedtrades
     totalR = strategy.netprofit / riskCash
@@ -293,3 +312,7 @@ if barstate.islast
     table.cell(stats, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.##"))
     table.cell(stats, 0, 5, "Pire baisse (R)", text_halign = text.align_left)
     table.cell(stats, 1, 5, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
+    table.cell(stats, 0, 6, "Setups LH/HL → cassures (BOS)", text_halign = text.align_left)
+    table.cell(stats, 1, 6, str.tostring(nArm) + " → " + str.tostring(nBos))
+    table.cell(stats, 0, 7, "Refusés : horaires / position / stop large / obstacle", text_halign = text.align_left)
+    table.cell(stats, 1, 7, str.tostring(kSess) + " / " + str.tostring(kPos) + " / " + str.tostring(kWide) + " / " + str.tostring(kRoom))
