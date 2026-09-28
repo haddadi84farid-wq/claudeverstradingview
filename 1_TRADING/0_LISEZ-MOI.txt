@@ -42,7 +42,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            stop au-dela du LH/HL). A tester en 5 min puis en 1 min.
 - 18_INDICATEUR_DAYTRADING.txt : indicateur qui dessine tout proprement (niveaux, FVG, OB, direction, position VENTE/ACHAT avec Stop, Entree, TP1-3).
                            A creer comme NOUVEAU script Indicateur, nom « Day trading XAUUSD ». Le prompt 17 le remplit.
-- anciens\               : anciennes versions, ne plus utiliser.
+- 20_PROMPT_AVIS_TRADE.txt : JE PROPOSE MON TRADE, CLAUDE DONNE SON AVIS. Coller une fois, puis « avis : vente 4148 stop 4180 tp 4080 ».
+                           Verdict BON / A AMELIORER / NON, version corrigee, taille. Puis « trade : ... » et « bilan ».
+- anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
 - journal\ : mon journal de trades (Claude le lit et le complete).
