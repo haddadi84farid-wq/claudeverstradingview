@@ -38,6 +38,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 16_BACKTEST_EMA_RSI.txt : indicateur « Premium GOLD Signal » (EMA 9 + RSI, SL + 3 TP) transforme en strategie mesurable.
 - 17_PROMPT_DAYTRADING_MATIN.txt : MA METHODE DE TRAVAIL (day trading). Vers 08:30 Paris : direction autorisee du jour, plan (entree, stop, TP)
                            (tendance 20/10), niveaux dessines, annonces, limites. Puis « trade : ... » apres chaque trade.
+- 19_BACKTEST_TREND_PULLBACK.txt : strategie Trend Pullback (flux Daily/H4, cible H4, retracement + LH/HL + BOS,
+                           stop au-dela du LH/HL). A tester en 5 min puis en 1 min.
 - 18_INDICATEUR_DAYTRADING.txt : indicateur qui dessine tout proprement (niveaux, FVG, OB, direction, position VENTE/ACHAT avec Stop, Entree, TP1-3).
                            A creer comme NOUVEAU script Indicateur, nom « Day trading XAUUSD ». Le prompt 17 le remplit.
 - anciens\               : anciennes versions, ne plus utiliser.

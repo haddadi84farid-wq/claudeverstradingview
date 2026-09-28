@@ -1,0 +1,295 @@
+//@version=6
+// XAU Trend Pullback — règles verrouillées (continuation de tendance, entrée sur retracement + BOS).
+// 1. FLUX : Daily = état 20/10 (clôtures) ; H4 = structure (sommets / creux) qui ne doit PAS aller contre. Sinon NEUTRE.
+// 2. CIBLE : 1re FVG H4 non comblée dans le sens du flux, sinon plus haut / bas de la veille, sinon dernier sommet / creux H4.
+//    Elle sert de filtre : TP = 2 R, ou le 1er obstacle contraire s'il est plus proche ; pas de trade si l'espace < 1,5 R.
+// 3. ENTRÉE (unité du graphique, 5 min puis 1 min) — VENTE : impulsion baissière (sommet H0 → creux L1, ≥ 1 ATR 15 min),
+//    retracement 38-79 % qui forme un LH confirmé, puis CLÔTURE sous le micro-creux formé après le LH → entrée à
+//    l'ouverture suivante. Annulé si le prix dépasse le LH ou après N bougies. ACHAT : exactement l'inverse.
+// 4. STOP : au-delà du LH (HL) + max(0,2 ATR, spread) ; au moins 0,5 ATR 15 min (élargi), au plus 1,5 ATR 15 min (sinon pas de trade).
+// Aucune gestion (pas de break-even, pas de partiel). Entrées 07:00-16:00 UTC, clôture forcée à 20:00 UTC.
+// Anti-regard vers le futur : données HTF = bougies CLÔTURÉES (lookahead_on + [1]), pivots utilisés une fois confirmés.
+// Frais : glissement 15 ticks par ordre, commission 0,035 $ par once et par ordre, marge 1 %. Résultat en R (risque fixe).
+// Les annonces ne sont pas filtrées (impossible dans le testeur) : on regardera leur effet dans la liste des trades.
+strategy("XAU Trend Pullback — R, frais inclus", shorttitle = "XAU TP", overlay = true, pyramiding = 0,
+     initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 15, margin_long = 1, margin_short = 1, process_orders_on_close = false,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.035,
+     max_labels_count = 50)
+
+gR = "Risque"
+riskCash  = input.float(100.0, "Risque par trade ($)", minval = 1, group = gR)
+tpR       = input.float(2.0, "TP (R)", minval = 0.5, step = 0.1, group = gR)
+minTpR    = input.float(1.5, "Espace minimal jusqu'à l'obstacle (R)", minval = 0.5, step = 0.1, group = gR)
+gT = "Flux"
+dLong     = input.int(20, "Daily : cassure (jours)", minval = 2, group = gT)
+dShort    = input.int(10, "Daily : sortie (jours)", minval = 2, group = gT)
+htfPiv    = input.int(3, "Pivot H4", minval = 1, group = gT)
+useH4     = input.bool(true, "H4 ne doit pas aller contre le Daily", group = gT)
+gE = "Entrée"
+pivLen    = input.int(3, "Pivot de l'unité d'entrée", minval = 1, group = gE)
+minImpAtr = input.float(1.0, "Impulsion minimale (× ATR 15 min)", minval = 0, step = 0.1, group = gE)
+retMin    = input.float(0.382, "Retracement minimum", minval = 0, maxval = 1, step = 0.01, group = gE)
+retMax    = input.float(0.786, "Retracement maximum", minval = 0, maxval = 1, step = 0.01, group = gE)
+maxWait   = input.int(20, "Attente maximale du BOS (bougies)", minval = 1, group = gE)
+slBufAtr  = input.float(0.2, "Tampon du stop (× ATR de l'unité)", minval = 0, step = 0.05, group = gE)
+spreadPts = input.float(0.3, "Tampon minimal = spread (points)", minval = 0, step = 0.05, group = gE)
+minStopA  = input.float(0.5, "Stop minimum (× ATR 15 min, élargi)", minval = 0, step = 0.1, group = gE)
+maxStopA  = input.float(1.5, "Stop maximum (× ATR 15 min, sinon pas de trade)", minval = 0.1, step = 0.1, group = gE)
+startH    = input.int(7, "Entrées à partir de (heure UTC)", minval = 0, maxval = 23, group = gE)
+endH      = input.int(16, "Entrées jusqu'à (heure UTC)", minval = 1, maxval = 24, group = gE)
+closeH    = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 24, group = gE)
+
+cRed   = #F23645
+cGreen = #089981
+cGray  = #787B86
+
+// ---------- Daily : état 20/10 + veille ----------
+dayData() =>
+    var int st = 0
+    hiL = ta.highest(high, dLong)[1]
+    loL = ta.lowest(low, dLong)[1]
+    hiS = ta.highest(high, dShort)[1]
+    loS = ta.lowest(low, dShort)[1]
+    if close > hiL
+        st := 1
+    else if close < loL
+        st := -1
+    else if st == 1 and close < loS
+        st := 0
+    else if st == -1 and close > hiS
+        st := 0
+    [st[1], high[1], low[1]]
+[dSt, pdh, pdl] = request.security(syminfo.tickerid, "D", dayData(), lookahead = barmerge.lookahead_on)
+
+// ---------- H4 : structure + FVG non comblées (la plus proche de chaque côté) ----------
+h4Data() =>
+    ph = ta.pivothigh(high, htfPiv, htfPiv)
+    pl = ta.pivotlow(low, htfPiv, htfPiv)
+    hA = ta.valuewhen(not na(ph), ph, 0)
+    hB = ta.valuewhen(not na(ph), ph, 1)
+    lA = ta.valuewhen(not na(pl), pl, 0)
+    lB = ta.valuewhen(not na(pl), pl, 1)
+    st = hA > hB and lA > lB ? 1 : hA < hB and lA < lB ? -1 : 0
+    var array<float> uTop = array.new<float>()
+    var array<float> uBot = array.new<float>()
+    var array<float> dTop = array.new<float>()
+    var array<float> dBot = array.new<float>()
+    if array.size(uTop) > 0
+        for i = array.size(uTop) - 1 to 0
+            if low <= array.get(uBot, i)
+                array.remove(uTop, i)
+                array.remove(uBot, i)
+    if array.size(dTop) > 0
+        for i = array.size(dTop) - 1 to 0
+            if high >= array.get(dTop, i)
+                array.remove(dTop, i)
+                array.remove(dBot, i)
+    if low > high[2]
+        array.push(uTop, low)
+        array.push(uBot, high[2])
+    if high < low[2]
+        array.push(dTop, low[2])
+        array.push(dBot, high)
+    if array.size(uTop) > 60
+        array.shift(uTop)
+        array.shift(uBot)
+    if array.size(dTop) > 60
+        array.shift(dTop)
+        array.shift(dBot)
+    // FVG haussière non comblée sous le prix (aimant des ventes) : son haut ; FVG baissière au-dessus : son bas
+    float below = na
+    float above = na
+    for t in uTop
+        if t < close and (na(below) or t > below)
+            below := t
+    for b in dBot
+        if b > close and (na(above) or b < above)
+            above := b
+    [st[1], lA[1], hA[1], below[1], above[1]]
+[h4St, h4Low, h4High, fvgBelow, fvgAbove] = request.security(syminfo.tickerid, "240", h4Data(), lookahead = barmerge.lookahead_on)
+
+atr15 = request.security(syminfo.tickerid, "15", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
+atr   = ta.atr(14)
+
+flux = dSt == 1 and (not useH4 or h4St != -1) ? 1 : dSt == -1 and (not useH4 or h4St != 1) ? -1 : 0
+
+hUtc = hour(time, "UTC")
+inSession = hUtc >= startH and hUtc < endH
+
+// Obstacle contraire le plus proche et cible affichée
+nearestBelow(float p) =>
+    float o = na
+    if not na(fvgBelow) and fvgBelow < p
+        o := fvgBelow
+    if not na(pdl) and pdl < p and (na(o) or pdl > o)
+        o := pdl
+    if not na(h4Low) and h4Low < p and (na(o) or h4Low > o)
+        o := h4Low
+    o
+nearestAbove(float p) =>
+    float o = na
+    if not na(fvgAbove) and fvgAbove > p
+        o := fvgAbove
+    if not na(pdh) and pdh > p and (na(o) or pdh < o)
+        o := pdh
+    if not na(h4High) and h4High > p and (na(o) or h4High < o)
+        o := h4High
+    o
+tgtSell = not na(fvgBelow) and fvgBelow < close ? "FVG H4 " + str.tostring(fvgBelow, format.mintick) :
+     not na(pdl) and pdl < close ? "PDL " + str.tostring(pdl, format.mintick) :
+     not na(h4Low) and h4Low < close ? "creux H4 " + str.tostring(h4Low, format.mintick) : "aucune"
+tgtBuy = not na(fvgAbove) and fvgAbove > close ? "FVG H4 " + str.tostring(fvgAbove, format.mintick) :
+     not na(pdh) and pdh > close ? "PDH " + str.tostring(pdh, format.mintick) :
+     not na(h4High) and h4High > close ? "sommet H4 " + str.tostring(h4High, format.mintick) : "aucune"
+
+// ---------- Structure de l'unité d'entrée ----------
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+lowN  = ta.lowest(low, pivLen)
+highN = ta.highest(high, pivLen)
+
+var float lastPhV = na
+var int   lastPhI = na
+var float lastPlV = na
+var int   lastPlI = na
+var int   sState = 0
+var float sLH = na
+var float sTrig = na
+var int   sArm = na
+var int   bState = 0
+var float bHL = na
+var float bTrig = na
+var int   bArm = na
+
+if not na(ph)
+    phI = bar_index - pivLen
+    if flux == -1 and not na(lastPhV) and not na(lastPlV) and lastPhI < lastPlI and lastPlI < phI
+        imp = lastPhV - lastPlV
+        ret = imp > 0 ? (ph - lastPlV) / imp : 0.0
+        if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and lowN > lastPlV
+            sState := 1
+            sLH := ph
+            sTrig := lowN
+            sArm := bar_index
+    lastPhV := ph
+    lastPhI := phI
+if not na(pl)
+    plI = bar_index - pivLen
+    if flux == 1 and not na(lastPhV) and not na(lastPlV) and lastPlI < lastPhI and lastPhI < plI
+        imp = lastPhV - lastPlV
+        ret = imp > 0 ? (lastPhV - pl) / imp : 0.0
+        if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and highN < lastPhV
+            bState := 1
+            bHL := pl
+            bTrig := highN
+            bArm := bar_index
+    lastPlV := pl
+    lastPlI := plI
+
+// ---------- Déclenchement (BOS à la clôture) ----------
+var int   nEntries = 0
+var float curStop = na
+var float curTp = na
+var string lastSkip = ""
+buf = math.max(slBufAtr * atr, spreadPts)
+
+if sState == 1 and bar_index > sArm
+    if high > sLH or flux != -1 or bar_index - sArm > maxWait
+        sState := 0
+    else if close < sTrig
+        sState := 0
+        stopP = math.max(sLH + buf, close + minStopA * atr15)
+        risk = stopP - close
+        obst = nearestBelow(close)
+        tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, close - obst)
+        if not inSession
+            lastSkip := "hors horaires"
+        else if strategy.position_size != 0
+            lastSkip := "position déjà ouverte"
+        else if risk > maxStopA * atr15
+            lastSkip := "stop trop large"
+        else if tpDist < minTpR * risk
+            lastSkip := "obstacle trop proche"
+        else
+            strategy.entry("SELL", strategy.short, qty = riskCash / (risk * syminfo.pointvalue))
+            strategy.exit("SELL X", "SELL", stop = stopP, limit = close - tpDist)
+            curStop := stopP
+            curTp := close - tpDist
+            nEntries += 1
+if bState == 1 and bar_index > bArm
+    if low < bHL or flux != 1 or bar_index - bArm > maxWait
+        bState := 0
+    else if close > bTrig
+        bState := 0
+        stopP = math.min(bHL - buf, close - minStopA * atr15)
+        risk = close - stopP
+        obst = nearestAbove(close)
+        tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, obst - close)
+        if not inSession
+            lastSkip := "hors horaires"
+        else if strategy.position_size != 0
+            lastSkip := "position déjà ouverte"
+        else if risk > maxStopA * atr15
+            lastSkip := "stop trop large"
+        else if tpDist < minTpR * risk
+            lastSkip := "obstacle trop proche"
+        else
+            strategy.entry("BUY", strategy.long, qty = riskCash / (risk * syminfo.pointvalue))
+            strategy.exit("BUY X", "BUY", stop = stopP, limit = close + tpDist)
+            curStop := stopP
+            curTp := close + tpDist
+            nEntries += 1
+
+if strategy.position_size != 0 and hUtc >= closeH
+    strategy.close_all(comment = "Fin de journée")
+
+inPos = strategy.position_size != 0
+plot(inPos ? curStop : na, "Stop", cRed, 2, plot.style_linebr)
+plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
+plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
+
+// ---------- Une seule étiquette ----------
+var label info = na
+if barstate.islast
+    label.delete(info)
+    string txt = ""
+    color col = cGray
+    if strategy.position_size < 0
+        txt := "SELL EN COURS | SL " + str.tostring(curStop, format.mintick) + " | TP " + str.tostring(curTp, format.mintick)
+        col := cRed
+    else if strategy.position_size > 0
+        txt := "BUY EN COURS | SL " + str.tostring(curStop, format.mintick) + " | TP " + str.tostring(curTp, format.mintick)
+        col := cGreen
+    else if flux == 0
+        txt := "FLUX NEUTRE | pas de trade"
+    else if flux == -1
+        col := cRed
+        txt := sState == 1 ? "FLUX SELL | CIBLE " + tgtSell + " | LH " + str.tostring(sLH, format.mintick) + " → SELL SETUP si clôture < " + str.tostring(sTrig, format.mintick) :
+             "FLUX SELL | CIBLE " + tgtSell + " | ATTENTE RETRACEMENT"
+    else
+        col := cGreen
+        txt := bState == 1 ? "FLUX BUY | CIBLE " + tgtBuy + " | HL " + str.tostring(bHL, format.mintick) + " → BUY SETUP si clôture > " + str.tostring(bTrig, format.mintick) :
+             "FLUX BUY | CIBLE " + tgtBuy + " | ATTENTE RETRACEMENT"
+    if not inSession and strategy.position_size == 0
+        txt += " (hors horaires)"
+    info := label.new(bar_index + 3, close, txt, style = label.style_label_left, color = col, textcolor = color.white, size = size.normal)
+
+// ---------- Résultats ----------
+var table stats = table.new(position.top_right, 2, 6, bgcolor = color.white, frame_color = color.gray, frame_width = 1)
+if barstate.islast
+    n = strategy.closedtrades
+    totalR = strategy.netprofit / riskCash
+    pf = strategy.grossloss > 0 ? strategy.grossprofit / strategy.grossloss : na
+    table.cell(stats, 0, 0, "Entrées", text_halign = text.align_left)
+    table.cell(stats, 1, 0, str.tostring(nEntries))
+    table.cell(stats, 0, 1, "Résultat total (R, frais inclus)", text_halign = text.align_left)
+    table.cell(stats, 1, 1, str.tostring(totalR, "#.##"))
+    table.cell(stats, 0, 2, "Espérance par entrée (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 2, nEntries > 0 ? str.tostring(totalR / nEntries, "#.###") : "—")
+    table.cell(stats, 0, 3, "Trades gagnants", text_halign = text.align_left)
+    table.cell(stats, 1, 3, n > 0 ? str.tostring(100.0 * strategy.wintrades / n, "#.#") + " %" : "—")
+    table.cell(stats, 0, 4, "Facteur de profit", text_halign = text.align_left)
+    table.cell(stats, 1, 4, na(pf) ? "—" : str.tostring(pf, "#.##"))
+    table.cell(stats, 0, 5, "Pire baisse (R)", text_halign = text.align_left)
+    table.cell(stats, 1, 5, str.tostring(strategy.max_drawdown / riskCash, "#.##"))
