@@ -147,3 +147,7 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | Par défaut (sommet/creux H4 compté comme obstacle) | 5 min, 03/08 → 28/09/2026 | 6 | −4,11 | −0,685 | 16,7 % (1/6) | 0,20 | 4,11 |
 - 6 trades : aucune conclusion possible (il en faut ≥ 100). Filtres trop serrés + historique 5 min limité à 2 mois.
 - v2 : le dernier sommet/creux H4 n'est plus un obstacle (en continuation il est fait pour être cassé) + compteurs de diagnostic. À tester en 15 min (historique long) et 5 min.
+| v2 (sommet/creux H4 non compté) | 15 min, 01/04 → 28/09/2026 | 3 | −0,55 | −0,183 | 33,3 % | 0,73 | 1,84 |
+- Diagnostic v2 (15 min) : 132 setups LH/HL → 69 cassures → refusés : horaires 45, position 0, stop trop large 21, obstacle 0 → 3 entrées.
+- v3 : stop maximum = 0,25 ATR journalier (au lieu de 1,5 ATR 15 min, trop serré dès que l'entrée se fait en 15 min). Horaires 07-16 UTC conservés (liquidité).
+- Règle fixée AVANT le test : v3 jugée en 30 min (≈ 21 mois d'historique). < 100 trades ou PF < 1,2 → abandon, plus aucun réglage.
