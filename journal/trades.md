@@ -153,3 +153,5 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - Règle fixée AVANT le test : v3 jugée en 30 min (≈ 21 mois d'historique). < 100 trades ou PF < 1,2 → abandon, plus aucun réglage.
 | v3 (stop max 0,25 ATR journalier) | 30 min, 02/01/2025 → 28/09/2026 | 3 | −2,99 | −1,0 | 0 % (0/3) | 0 | 2,99 |
 - Verdict (règle fixée avant le test) : 3 trades en 21 mois < 100 → stratégie Trend Pullback ABANDONNÉE, plus aucun réglage.
+| v3 + scénario dessiné | 15 min, 01/04 → 29/09/2026 | 11 | −1,17 | −0,106 | 36,4 % | 0,84 | 2,29 |
+- 29/09 : méthode Trend Pullback ARRÊTÉE par l'utilisateur (dessins du scénario non affichés, résultats insuffisants).
