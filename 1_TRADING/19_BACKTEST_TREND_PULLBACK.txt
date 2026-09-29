@@ -44,10 +44,12 @@ closeH    = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 2
 gV = "Affichage"
 showScn   = input.bool(true, "Dessiner le scénario (rebond → zone → cible)", group = gV)
 impLen    = input.int(100, "Dernière impulsion : recherche sur (bougies 15 min)", minval = 10, maxval = 480, group = gV)
-lblShift  = input.float(18.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
-fibShift  = input.float(12.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
-planBh    = input.float(3.0, "Plans A / B : début du plan A à droite (heures)", minval = 2, step = 0.5, group = gV)
+fibShift  = input.float(15.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+showA     = input.bool(true, "Afficher le PLAN A (OTE, sens du flux)", group = gV)
+showB     = input.bool(true, "Afficher le PLAN B (rebond vers l'OTE, contre le flux)", group = gV)
+planStart = input.float(1.0, "Plans : début à droite du prix (heures)", minval = 0.5, step = 0.5, group = gV)
 riskEur   = input.float(13.0, "Risque par trade pour la taille des plans (€)", minval = 1, group = gV)
 eurUsd    = input.float(1.17, "Taux EUR/USD (pour la taille)", minval = 0.5, step = 0.01, group = gV)
 
@@ -285,33 +287,44 @@ impData() =>
     lb = ta.lowestbars(low, impLen)
     [ta.highest(high, impLen), ta.lowest(low, math.max(1, 1 - nz(hb))), ta.lowest(low, impLen), ta.highest(high, math.max(1, 1 - nz(lb)))]
 [impHi, lowSinceHi, impLo, highSinceLo] = request.security(syminfo.tickerid, "15", impData())
-var line  scnA = na
-var line  scnB = na
-var label scnT = na
 var array<line>  fibL = array.new<line>()
 var array<label> fibT = array.new<label>()
 var array<box>   plB  = array.new<box>()
 var array<label> plT  = array.new<label>()
+var array<line>  plL  = array.new<line>()
 H = 3600000
 fibLvl(float e, float sg, float rg, float r) => e + sg * r * rg
 // Taille en lots pour un risque donné en € (1 lot = 100 onces), minimum 0,01
 lotsFor(float dist) =>
     riskPerLot = dist * 100 / eurUsd
     math.max(0.01, math.floor(riskEur / riskPerLot * 100) / 100)
-// Dessin d'une position : risque (rouge) entrée → stop, gain (vert) entrée → TP, étiquette à droite
-drawPlan(int t0, int t1, float e, float sl, float tp, string name, color c) =>
-    array.push(plB, box.new(t0, math.max(e, sl), t1, math.min(e, sl), xloc = xloc.bar_time, border_color = color.new(cRed, 50), bgcolor = color.new(cRed, 80)))
-    array.push(plB, box.new(t0, math.max(e, tp), t1, math.min(e, tp), xloc = xloc.bar_time, border_color = color.new(cGreen, 50), bgcolor = color.new(cGreen, 82)))
+// Un niveau du plan : trait + étiquette à droite
+planLine(int t0, int t1, float p, string txt, color c, int w) =>
+    array.push(plL, line.new(t0, p, t1, p, xloc = xloc.bar_time, color = c, width = w))
+    array.push(plT, label.new(t1, p, txt, xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
+// Un plan complet, dessiné de la même façon pour A et B :
+// flèche prix → entrée, boîte risque (rouge) et gain (vert), traits SL / Entrée / TP1-TP2-TP3 (1, 2, 3 R, avant la cible) / Cible, flèche entrée → cible
+drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
     dist = math.abs(e - sl)
+    up   = tgt > e
     lots = lotsFor(dist)
     riskReal = lots * dist * 100 / eurUsd
-    txt = name + "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(sl, format.mintick) + " | TP " + str.tostring(tp, format.mintick) +
-         "\n" + str.tostring(math.abs(tp - e) / dist, "#.#") + " R | " + str.tostring(lots, "#.##") + " lot | risque " + str.tostring(riskReal, "#") + " €"
-    array.push(plT, label.new(t1, e, txt, xloc = xloc.bar_time, style = label.style_label_left, color = c, textcolor = color.white, size = size.small))
+    array.push(plL, line.new(time, close, t0, e, xloc = xloc.bar_time, color = color.new(c, 40), width = 2, style = line.style_arrow_right))
+    array.push(plB, box.new(t0, math.max(e, sl), t1, math.min(e, sl), xloc = xloc.bar_time, border_color = color.new(cRed, 60), bgcolor = color.new(cRed, 82)))
+    array.push(plB, box.new(t0, math.max(e, tgt), t1, math.min(e, tgt), xloc = xloc.bar_time, border_color = color.new(cGreen, 60), bgcolor = color.new(cGreen, 86)))
+    array.push(plT, label.new(t0, math.max(sl, tgt, e), name + " | " + str.tostring(lots, "#.##") + " lot | risque " + str.tostring(riskReal, "#") + " €",
+         xloc = xloc.bar_time, style = label.style_label_lower_left, color = c, textcolor = color.white, size = size.small))
+    planLine(t0, t1, sl, "SL " + str.tostring(sl, format.mintick), cRed, 2)
+    planLine(t0, t1, e, "Entrée " + str.tostring(e, format.mintick), color.white, 2)
+    n = 0
+    for k = 1 to 3
+        tp = e + (up ? 1 : -1) * k * dist
+        if up ? tp < tgt : tp > tgt
+            n += 1
+            planLine(t0, t1, tp, "TP" + str.tostring(k) + " " + str.tostring(tp, format.mintick) + " (" + str.tostring(k) + " R)", cGreen, 1)
+    planLine(t0, t1, tgt, "TP" + str.tostring(n + 1) + " = CIBLE " + str.tostring(tgt, format.mintick) + " (" + str.tostring(math.abs(tgt - e) / dist, "#.#") + " R)", cGreen, 2)
+    array.push(plL, line.new(t1, e, t1 + H, tgt, xloc = xloc.bar_time, color = c, width = 2, style = line.style_arrow_right))
 if barstate.islast
-    line.delete(scnA)
-    line.delete(scnB)
-    label.delete(scnT)
     for l in fibL
         line.delete(l)
     for l in fibT
@@ -320,10 +333,13 @@ if barstate.islast
         box.delete(b)
     for l in plT
         label.delete(l)
+    for l in plL
+        line.delete(l)
     array.clear(fibL)
     array.clear(fibT)
     array.clear(plB)
     array.clear(plT)
+    array.clear(plL)
     if showScn and flux != 0
         isS = flux == -1
         // Dernière impulsion (calculée en 15 min) : départ exV, extrême atteint enV
@@ -338,27 +354,22 @@ if barstate.islast
         else
             tgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : enV
         cZ = isS ? cRed : cGreen
-        tA0 = time + math.round(planBh * H)
-        tA1 = tA0 + 3 * H
-        // PLAN A (dans le sens du flux) : ordre limite au milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, TP 38,2 % puis cible
+        // PLAN B (rebond vers l'OTE, contre le flux) : limite au 38,2 %, stop au-delà + marge, cible = début de l'OTE (61,8 %)
+        eB   = fibLvl(enV, sg, rng, 0.382)
+        slB  = eB - sg * pbuf
+        tgtB = fibLvl(enV, sg, rng, 0.618)
+        okB  = isS ? close > eB and close < tgtB : close < eB and close > tgtB
+        okB := okB and math.abs(tgtB - eB) / math.abs(eB - slB) >= 1.5
+        // PLAN A (dans le sens du flux) : limite au milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, cible = FVG H4 / veille
         eA  = fibLvl(enV, sg, rng, 0.705)
         slA = fibLvl(enV, sg, rng, 0.786) + sg * pbuf
-        tpA = fibLvl(enV, sg, rng, 0.382)
-        drawPlan(tA0, tA1, eA, slA, tpA, (isS ? "PLAN A — VENTE limite (OTE)" : "PLAN A — ACHAT limite (OTE)") + " | TP2 cible " + str.tostring(tgt, format.mintick), cZ)
-        // PLAN B (rebond vers l'OTE, contre le flux, plus risqué) : limite au 38,2 %, stop sous 38,2 % - marge, TP juste avant l'OTE (60 %)
-        eB  = fibLvl(enV, sg, rng, 0.382)
-        slB = eB - sg * pbuf
-        tpB = fibLvl(enV, sg, rng, 0.60)
-        rrB = math.abs(tpB - eB) / math.abs(eB - slB)
-        priceOkB = isS ? close > eB and close < fibLvl(enV, sg, rng, 0.60) : close < eB and close > fibLvl(enV, sg, rng, 0.60)
-        tB0 = time + math.round(planBh * H) - 2 * H
-        if priceOkB and rrB >= 1.5
-            drawPlan(tB0, tA0, eB, slB, tpB, isS ? "PLAN B — ACHAT limite (rebond, contre le flux)" : "PLAN B — VENTE limite (repli, contre le flux)", color.new(color.orange, 0))
-        // Flèches du scénario : rebond vers l'OTE puis mouvement vers la cible
-        scnA := line.new(time, close, tA0, eA, xloc = xloc.bar_time, color = color.new(cZ, 40), width = 2, style = line.style_arrow_right)
-        scnB := line.new(tA1, eA, tA1 + 3 * H, tgt, xloc = xloc.bar_time, color = cZ, width = 2, style = line.style_arrow_right)
-        scnT := label.new(tA1 + 3 * H, tgt, "Cible " + str.tostring(tgt, format.mintick), xloc = xloc.bar_time, style = label.style_label_left,
-             color = cZ, textcolor = color.white, size = size.small)
+        tStart = time + math.round(planStart * H)
+        drawB = showB and okB
+        if drawB
+            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, isS ? "PLAN B — ACHAT limite (rebond, contre le flux)" : "PLAN B — VENTE limite (repli, contre le flux)", color.new(color.orange, 0))
+        if showA
+            tA0 = drawB ? tStart + 5 * H : tStart
+            drawPlan(tA0, tA0 + 3 * H, eA, slA, tgt, isS ? "PLAN A — VENTE limite (OTE, sens du flux)" : "PLAN A — ACHAT limite (OTE, sens du flux)", cZ)
         // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
         if showFib
             f0 = time + math.round(fibShift * H)
