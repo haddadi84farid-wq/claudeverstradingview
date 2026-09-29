@@ -16,7 +16,7 @@ strategy("XAU Trend Pullback — R, frais inclus", shorttitle = "XAU TP", overla
      initial_capital = 10000, default_qty_type = strategy.fixed, default_qty_value = 1,
      slippage = 15, margin_long = 1, margin_short = 1, process_orders_on_close = false,
      commission_type = strategy.commission.cash_per_contract, commission_value = 0.035,
-     max_labels_count = 50)
+     max_labels_count = 50, max_bars_back = 500)
 
 gR = "Risque"
 riskCash  = input.float(100.0, "Risque par trade ($)", minval = 1, group = gR)
@@ -41,6 +41,9 @@ maxStopD  = input.float(0.25, "Stop maximum (× ATR journalier, sinon pas de tra
 startH    = input.int(7, "Entrées à partir de (heure UTC)", minval = 0, maxval = 23, group = gE)
 endH      = input.int(16, "Entrées jusqu'à (heure UTC)", minval = 1, maxval = 24, group = gE)
 closeH    = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 24, group = gE)
+gV = "Affichage"
+showScn   = input.bool(true, "Dessiner le scénario (rebond → zone → cible)", group = gV)
+impLen    = input.int(100, "Dernière impulsion : recherche sur (bougies)", minval = 10, maxval = 480, group = gV)
 
 cRed   = #F23645
 cGreen = #089981
@@ -268,6 +271,48 @@ inPos = strategy.position_size != 0
 plot(inPos ? curStop : na, "Stop", cRed, 2, plot.style_linebr)
 plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
 plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
+
+// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % de la dernière impulsion → 3. cible ----------
+var line  scnA = na
+var line  scnB = na
+var box   scnZ = na
+var label scnT = na
+if barstate.islast
+    line.delete(scnA)
+    line.delete(scnB)
+    box.delete(scnZ)
+    label.delete(scnT)
+    if showScn and flux != 0 and strategy.position_size == 0
+        isS = flux == -1
+        // Extrême de départ de l'impulsion (plus haut en baisse, plus bas en hausse) puis extrême atteint depuis
+        int ex = 0
+        float exV = isS ? high : low
+        for i = 0 to impLen - 1
+            if isS ? high[i] > exV : low[i] < exV
+                exV := isS ? high[i] : low[i]
+                ex := i
+        float enV = isS ? low : high
+        for i = 0 to ex
+            enV := isS ? math.min(enV, low[i]) : math.max(enV, high[i])
+        rng = math.abs(exV - enV)
+        z1 = isS ? enV + 0.382 * rng : enV - 0.382 * rng
+        z2 = isS ? enV + 0.618 * rng : enV - 0.618 * rng
+        zMid = (z1 + z2) / 2
+        float tgt = na
+        if isS
+            tgt := not na(fvgBelow) and fvgBelow < close ? fvgBelow : not na(pdl) and pdl < close ? pdl : enV
+        else
+            tgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : enV
+        cZ = isS ? cRed : cGreen
+        xZ = bar_index + 8
+        xT = bar_index + 26
+        scnA := line.new(bar_index, close, xZ, zMid, color = color.new(cZ, 40), width = 2, style = line.style_arrow_right)
+        scnZ := box.new(xZ - 3, math.max(z1, z2), xZ + 3, math.min(z1, z2), border_color = cZ, bgcolor = color.new(cZ, 80),
+             text = (isS ? "Zone de VENTE " : "Zone d'ACHAT ") + str.tostring(math.min(z1, z2), "#") + "–" + str.tostring(math.max(z1, z2), "#"),
+             text_color = color.white, text_size = size.small)
+        scnB := line.new(xZ, zMid, xT, tgt, color = cZ, width = 2, style = line.style_arrow_right)
+        scnT := label.new(xT, tgt, "Cible " + str.tostring(tgt, format.mintick), style = label.style_label_left,
+             color = cZ, textcolor = color.white, size = size.small)
 
 // ---------- Une seule étiquette ----------
 var label info = na
