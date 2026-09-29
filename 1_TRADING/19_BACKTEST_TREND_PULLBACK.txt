@@ -273,6 +273,13 @@ plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
 plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
 
 // ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % de la dernière impulsion → 3. cible ----------
+// Dernière impulsion calculée à chaque bougie (pas de boucle sur l'historique)
+hiBack      = ta.highestbars(high, impLen)
+loBack      = ta.lowestbars(low, impLen)
+impHi       = ta.highest(high, impLen)
+impLo       = ta.lowest(low, impLen)
+lowSinceHi  = ta.lowest(low, math.max(1, 1 - hiBack))
+highSinceLo = ta.highest(high, math.max(1, 1 - loBack))
 var line  scnA = na
 var line  scnB = na
 var box   scnZ = na
@@ -282,18 +289,11 @@ if barstate.islast
     line.delete(scnB)
     box.delete(scnZ)
     label.delete(scnT)
-    if showScn and flux != 0 and strategy.position_size == 0
+    if showScn and flux != 0
         isS = flux == -1
         // Extrême de départ de l'impulsion (plus haut en baisse, plus bas en hausse) puis extrême atteint depuis
-        int ex = 0
-        float exV = isS ? high : low
-        for i = 0 to impLen - 1
-            if isS ? high[i] > exV : low[i] < exV
-                exV := isS ? high[i] : low[i]
-                ex := i
-        float enV = isS ? low : high
-        for i = 0 to ex
-            enV := isS ? math.min(enV, low[i]) : math.max(enV, high[i])
+        exV = isS ? impHi : impLo
+        enV = isS ? lowSinceHi : highSinceLo
         rng = math.abs(exV - enV)
         z1 = isS ? enV + 0.382 * rng : enV - 0.382 * rng
         z2 = isS ? enV + 0.618 * rng : enV - 0.618 * rng
