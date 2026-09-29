@@ -273,7 +273,7 @@ plot(inPos ? curStop : na, "Stop", cRed, 2, plot.style_linebr)
 plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
 plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
 
-// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % de la dernière impulsion → 3. cible ----------
+// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement (retracement minimum → maximum, 38-79 %) de la dernière impulsion → 3. cible ----------
 // Dernière impulsion calculée à chaque bougie (pas de boucle sur l'historique)
 hiBack      = ta.highestbars(high, impLen)
 loBack      = ta.lowestbars(low, impLen)
@@ -296,8 +296,8 @@ if barstate.islast
         exV = isS ? impHi : impLo
         enV = isS ? lowSinceHi : highSinceLo
         rng = math.abs(exV - enV)
-        z1 = isS ? enV + 0.382 * rng : enV - 0.382 * rng
-        z2 = isS ? enV + 0.618 * rng : enV - 0.618 * rng
+        z1 = isS ? enV + retMin * rng : enV - retMin * rng
+        z2 = isS ? enV + retMax * rng : enV - retMax * rng
         zMid = (z1 + z2) / 2
         float tgt = na
         if isS
