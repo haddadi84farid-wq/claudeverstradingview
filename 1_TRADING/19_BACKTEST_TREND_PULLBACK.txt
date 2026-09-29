@@ -47,6 +47,7 @@ impLen    = input.int(100, "Dernière impulsion : recherche sur (bougies 15 min)
 lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
 fibShift  = input.float(15.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 showA     = input.bool(true, "Afficher le PLAN A (OTE, sens du flux)", group = gV)
 showB     = input.bool(true, "Afficher le PLAN B (rebond vers l'OTE, contre le flux)", group = gV)
 planStart = input.float(1.0, "Plans : début à droite du prix (heures)", minval = 0.5, step = 0.5, group = gV)
@@ -88,39 +89,59 @@ h4Data() =>
     var array<float> uBot = array.new<float>()
     var array<float> dTop = array.new<float>()
     var array<float> dBot = array.new<float>()
+    var array<int>   uT   = array.new<int>()
+    var array<int>   dT   = array.new<int>()
     if array.size(uTop) > 0
         for i = array.size(uTop) - 1 to 0
             if low <= array.get(uBot, i)
                 array.remove(uTop, i)
                 array.remove(uBot, i)
+                array.remove(uT, i)
     if array.size(dTop) > 0
         for i = array.size(dTop) - 1 to 0
             if high >= array.get(dTop, i)
                 array.remove(dTop, i)
                 array.remove(dBot, i)
+                array.remove(dT, i)
     if low > high[2]
         array.push(uTop, low)
         array.push(uBot, high[2])
+        array.push(uT, time[2])
     if high < low[2]
         array.push(dTop, low[2])
         array.push(dBot, high)
+        array.push(dT, time[2])
     if array.size(uTop) > 60
         array.shift(uTop)
         array.shift(uBot)
+        array.shift(uT)
     if array.size(dTop) > 60
         array.shift(dTop)
         array.shift(dBot)
+        array.shift(dT)
     // FVG haussière non comblée sous le prix (aimant des ventes) : son haut ; FVG baissière au-dessus : son bas
-    float below = na
-    float above = na
-    for t in uTop
-        if t < close and (na(below) or t > below)
-            below := t
-    for b in dBot
-        if b > close and (na(above) or b < above)
-            above := b
-    [st[1], lA[1], hA[1], below[1], above[1]]
-[h4St, h4Low, h4High, fvgBelow, fvgAbove] = request.security(syminfo.tickerid, "240", h4Data(), lookahead = barmerge.lookahead_on)
+    float below  = na
+    float belowB = na
+    int   belowT = na
+    float above  = na
+    float aboveT = na
+    int   aboveTm = na
+    if array.size(uTop) > 0
+        for i = 0 to array.size(uTop) - 1
+            t = array.get(uTop, i)
+            if t < close and (na(below) or t > below)
+                below  := t
+                belowB := array.get(uBot, i)
+                belowT := array.get(uT, i)
+    if array.size(dBot) > 0
+        for i = 0 to array.size(dBot) - 1
+            b = array.get(dBot, i)
+            if b > close and (na(above) or b < above)
+                above   := b
+                aboveT  := array.get(dTop, i)
+                aboveTm := array.get(dT, i)
+    [st[1], lA[1], hA[1], below[1], above[1], belowB[1], belowT[1], aboveT[1], aboveTm[1]]
+[h4St, h4Low, h4High, fvgBelow, fvgAbove, fvgBelowB, fvgBelowT, fvgAboveT, fvgAboveTm] = request.security(syminfo.tickerid, "240", h4Data(), lookahead = barmerge.lookahead_on)
 
 atr15 = request.security(syminfo.tickerid, "15", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
 atr   = ta.atr(14)
@@ -355,6 +376,15 @@ if barstate.islast
         else
             tgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : enV
         cZ = isS ? cRed : cGreen
+        // FVG H4 visée (la cible) : rectangle depuis sa création jusqu'à la droite des plans
+        fTop = isS ? fvgBelow : fvgAboveT
+        fBot = isS ? fvgBelowB : fvgAbove
+        fT   = isS ? fvgBelowT : fvgAboveTm
+        if showFvgH4 and not na(fTop) and not na(fBot) and not na(fT)
+            array.push(plB, box.new(fT, fTop, time + math.round((planStart + 10) * H), fBot, xloc = xloc.bar_time,
+                 border_color = color.new(color.orange, 20), bgcolor = color.new(color.orange, 80),
+                 text = "FVG H4 (cible) " + str.tostring(math.min(fTop, fBot), "#") + "–" + str.tostring(math.max(fTop, fBot), "#"),
+                 text_color = color.orange, text_size = size.small, text_halign = text.align_left))
         // PLAN B (rebond vers l'OTE, contre le flux) : limite au 38,2 %, stop au-delà + marge, cible = début de l'OTE (61,8 %)
         eB   = fibLvl(enV, sg, rng, 0.382)
         slB  = eB - sg * pbuf
