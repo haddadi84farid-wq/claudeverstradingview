@@ -44,6 +44,7 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            A creer comme NOUVEAU script Indicateur, nom « Day trading XAUUSD ». Le prompt 17 le remplit.
 - 20_PROMPT_AVIS_TRADE.txt : JE PROPOSE MON TRADE, CLAUDE DONNE SON AVIS. Coller une fois, puis « avis : vente 4148 stop 4180 tp 4080 ».
                            Verdict BON / A AMELIORER / NON, version corrigee, taille. Puis « trade : ... » et « bilan ».
+- 21_INDICATEUR_PLANS_AB.txt : VERSION RAPIDE du robot (indicateur) : flux, OTE, Fibonacci, plans A / B, cible. Sans backtest.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
