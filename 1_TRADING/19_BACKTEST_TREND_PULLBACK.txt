@@ -298,10 +298,11 @@ fibLvl(float e, float sg, float rg, float r) => e + sg * r * rg
 lotsFor(float dist) =>
     riskPerLot = dist * 100 / eurUsd
     math.max(0.01, math.floor(riskEur / riskPerLot * 100) / 100)
-// Un niveau du plan : trait + étiquette à droite
+// Un niveau du plan : trait + étiquette posée juste au-dessus du trait, À L'INTÉRIEUR du dessin (côté gauche)
 planLine(int t0, int t1, float p, string txt, color c, int w) =>
     array.push(plL, line.new(t0, p, t1, p, xloc = xloc.bar_time, color = c, width = w))
-    array.push(plT, label.new(t1, p, txt, xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
+    array.push(plT, label.new(t0 + math.round((t1 - t0) * 0.03), p, txt, xloc = xloc.bar_time, style = label.style_label_lower_left,
+         color = color.new(c, 100), textcolor = c == color.white ? color.white : c, size = size.small))
 // Un plan complet, dessiné de la même façon pour A et B :
 // flèche prix → entrée, boîte risque (rouge) et gain (vert), traits SL / Entrée / TP1-TP2-TP3 (1, 2, 3 R, avant la cible) / Cible, flèche entrée → cible
 drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
