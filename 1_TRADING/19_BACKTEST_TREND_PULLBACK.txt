@@ -313,8 +313,8 @@ drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
     array.push(plL, line.new(time, close, t0, e, xloc = xloc.bar_time, color = color.new(c, 40), width = 2, style = line.style_arrow_right))
     array.push(plB, box.new(t0, math.max(e, sl), t1, math.min(e, sl), xloc = xloc.bar_time, border_color = color.new(cRed, 60), bgcolor = color.new(cRed, 82)))
     array.push(plB, box.new(t0, math.max(e, tgt), t1, math.min(e, tgt), xloc = xloc.bar_time, border_color = color.new(cGreen, 60), bgcolor = color.new(cGreen, 86)))
-    array.push(plT, label.new(t0, math.max(sl, tgt, e), name + " | " + str.tostring(lots, "#.##") + " lot | risque " + str.tostring(riskReal, "#") + " €",
-         xloc = xloc.bar_time, style = label.style_label_lower_left, color = c, textcolor = color.white, size = size.small))
+    array.push(plT, label.new(t0, math.min(sl, tgt, e), name + " | " + str.tostring(lots, "#.##") + " lot | risque " + str.tostring(riskReal, "#") + " €",
+         xloc = xloc.bar_time, style = label.style_label_upper_left, color = c, textcolor = color.white, size = size.small))
     planLine(t0, t1, sl, "SL " + str.tostring(sl, format.mintick), cRed, 2)
     planLine(t0, t1, e, "Entrée " + str.tostring(e, format.mintick), color.white, 2)
     n = 0
