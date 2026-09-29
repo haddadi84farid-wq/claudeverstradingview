@@ -45,6 +45,8 @@ gV = "Affichage"
 showScn   = input.bool(true, "Dessiner le scénario (rebond → zone → cible)", group = gV)
 impLen    = input.int(100, "Dernière impulsion : recherche sur (bougies)", minval = 10, maxval = 480, group = gV)
 lblShift  = input.float(3.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
+fibShift  = input.float(8.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 
 cRed   = #F23645
 cGreen = #089981
@@ -273,7 +275,7 @@ plot(inPos ? curStop : na, "Stop", cRed, 2, plot.style_linebr)
 plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
 plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
 
-// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement (retracement minimum → maximum, 38-79 %) de la dernière impulsion → 3. cible ----------
+// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % (pâle) et OTE 62-79 % (vive) de la dernière impulsion + Fibonacci décalé à droite → 3. cible ----------
 // Dernière impulsion calculée à chaque bougie (pas de boucle sur l'historique)
 hiBack      = ta.highestbars(high, impLen)
 loBack      = ta.lowestbars(low, impLen)
@@ -284,21 +286,33 @@ highSinceLo = ta.highest(high, math.max(1, 1 - nz(loBack)))
 var line  scnA = na
 var line  scnB = na
 var box   scnZ = na
+var box   scnO = na
 var label scnT = na
+var array<line>  fibL = array.new<line>()
+var array<label> fibT = array.new<label>()
 if barstate.islast
     line.delete(scnA)
     line.delete(scnB)
     box.delete(scnZ)
+    box.delete(scnO)
     label.delete(scnT)
+    for l in fibL
+        line.delete(l)
+    for l in fibT
+        label.delete(l)
+    array.clear(fibL)
+    array.clear(fibT)
     if showScn and flux != 0
         isS = flux == -1
         // Extrême de départ de l'impulsion (plus haut en baisse, plus bas en hausse) puis extrême atteint depuis
         exV = isS ? impHi : impLo
         enV = isS ? lowSinceHi : highSinceLo
         rng = math.abs(exV - enV)
-        z1 = isS ? enV + retMin * rng : enV - retMin * rng
-        z2 = isS ? enV + retMax * rng : enV - retMax * rng
-        zMid = (z1 + z2) / 2
+        sg  = isS ? 1.0 : -1.0
+        z1  = enV + sg * retMin * rng
+        zO  = enV + sg * 0.618 * rng
+        z2  = enV + sg * retMax * rng
+        oMid = (zO + z2) / 2
         float tgt = na
         if isS
             tgt := not na(fvgBelow) and fvgBelow < close ? fvgBelow : not na(pdl) and pdl < close ? pdl : enV
@@ -307,13 +321,31 @@ if barstate.islast
         cZ = isS ? cRed : cGreen
         xZ = bar_index + 8
         xT = bar_index + 26
-        scnA := line.new(bar_index, close, xZ, zMid, color = color.new(cZ, 40), width = 2, style = line.style_arrow_right)
-        scnZ := box.new(xZ - 3, math.max(z1, z2), xZ + 3, math.min(z1, z2), border_color = cZ, bgcolor = color.new(cZ, 80),
-             text = (isS ? "Zone de VENTE " : "Zone d'ACHAT ") + str.tostring(math.min(z1, z2), "#") + "–" + str.tostring(math.max(z1, z2), "#"),
+        // Zone pâle (38-62 %) = information ; zone vive OTE (62-79 %) = zone préférée
+        scnZ := box.new(xZ - 3, math.max(z1, zO), xZ + 3, math.min(z1, zO), border_color = color.new(cZ, 70), bgcolor = color.new(cZ, 92),
+             text = "38-62 % " + str.tostring(math.min(z1, zO), "#") + "–" + str.tostring(math.max(z1, zO), "#"),
+             text_color = color.new(color.white, 40), text_size = size.tiny)
+        scnO := box.new(xZ - 3, math.max(zO, z2), xZ + 3, math.min(zO, z2), border_color = cZ, bgcolor = color.new(cZ, 55),
+             text = (isS ? "OTE VENTE " : "OTE ACHAT ") + str.tostring(math.min(zO, z2), "#") + "–" + str.tostring(math.max(zO, z2), "#"),
              text_color = color.white, text_size = size.small)
-        scnB := line.new(xZ, zMid, xT, tgt, color = cZ, width = 2, style = line.style_arrow_right)
+        scnA := line.new(bar_index, close, xZ, oMid, color = color.new(cZ, 40), width = 2, style = line.style_arrow_right)
+        scnB := line.new(xZ, oMid, xT, tgt, color = cZ, width = 2, style = line.style_arrow_right)
         scnT := label.new(xT, tgt, "Cible " + str.tostring(tgt, format.mintick), style = label.style_label_left,
              color = cZ, textcolor = color.white, size = size.small)
+        // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
+        if showFib
+            f0 = time + math.round(fibShift * 3600000)
+            f1 = f0 + 4 * 3600000
+            lv = array.from(0.0, 0.382, 0.5, 0.618, 0.786, 1.0)
+            for k = 0 to array.size(lv) - 1
+                r = array.get(lv, k)
+                p = enV + sg * r * rng
+                isOte = r == 0.618 or r == 0.786
+                c = r == 0.0 or r == 1.0 ? color.white : isOte ? cZ : cGray
+                array.push(fibL, line.new(f0, p, f1, p, xloc = xloc.bar_time, color = c, width = isOte ? 2 : 1,
+                     style = isOte ? line.style_solid : line.style_dashed))
+                array.push(fibT, label.new(f1, p, str.tostring(r * 100, "#.#") + " %  " + str.tostring(p, format.mintick),
+                     xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
 
 // ---------- Une seule étiquette ----------
 var label info = na
