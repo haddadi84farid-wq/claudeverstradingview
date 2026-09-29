@@ -43,7 +43,8 @@ endH      = input.int(16, "Entrées jusqu'à (heure UTC)", minval = 1, maxval = 
 closeH    = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 24, group = gE)
 gV = "Affichage"
 showScn   = input.bool(true, "Dessiner le scénario (rebond → zone → cible)", group = gV)
-impLen    = input.int(100, "Dernière impulsion : recherche sur (bougies 15 min)", minval = 10, maxval = 480, group = gV)
+impPiv    = input.int(12, "Vague : sommet / creux confirmé par N bougies 15 min de chaque côté", minval = 2, maxval = 40, group = gV)
+minImpH1  = input.float(1.5, "Vague : taille minimale (× ATR H1)", minval = 0.5, step = 0.1, group = gV)
 lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
 fibShift  = input.float(15.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
@@ -322,11 +323,44 @@ plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", 
 
 // ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % (pâle) et OTE 62-79 % (vive) de la dernière impulsion + Fibonacci décalé à droite → 3. cible ----------
 // Dernière impulsion calculée en 15 MIN, quelle que soit l'unité affichée (même zone et même Fibonacci en 1, 5 ou 15 min)
+// La vague part du dernier SOMMET (ou CREUX) confirmé en 15 min, et va jusqu'à l'extrême atteint depuis.
 impData() =>
-    hb = ta.highestbars(high, impLen)
-    lb = ta.lowestbars(low, impLen)
-    [ta.highest(high, impLen), ta.lowest(low, math.max(1, 1 - nz(hb))), ta.lowest(low, impLen), ta.highest(high, math.max(1, 1 - nz(lb)))]
-[impHi, lowSinceHi, impLo, highSinceLo] = request.security(syminfo.tickerid, "15", impData())
+    ph  = ta.pivothigh(high, impPiv, impPiv)
+    pl  = ta.pivotlow(low, impPiv, impPiv)
+    bsH = ta.barssince(not na(ph))
+    bsL = ta.barssince(not na(pl))
+    swH = ta.valuewhen(not na(ph), ph, 0)
+    swL = ta.valuewhen(not na(pl), pl, 0)
+    lenH = math.min(400, math.max(1, nz(bsH) + impPiv + 1))
+    lenL = math.min(400, math.max(1, nz(bsL) + impPiv + 1))
+    [swH, ta.lowest(low, lenH), swL, ta.highest(high, lenL)]
+[swH15, loSinceH, swL15, hiSinceL] = request.security(syminfo.tickerid, "15", impData())
+atrH1 = request.security(syminfo.tickerid, "60", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
+// Vague FIGÉE : elle s'allonge tant que le prix fait de nouveaux extrêmes, puis se fige dès que le retracement atteint 38,2 %.
+// Les plans ne bougent donc plus pendant qu'on les attend. Nouvelle vague = nouveau sommet / creux confirmé ou changement de sens.
+var float legEx  = na
+var float legEn  = na
+var int   legDir = 0
+var bool  legFrz = false
+cEx = dirP == -1 ? swH15 : swL15
+cEn = dirP == -1 ? loSinceH : hiSinceL
+if dirP != legDir or na(legEx) or cEx != legEx
+    legDir := dirP
+    legEx  := cEx
+    legEn  := cEn
+    legFrz := false
+else
+    extends = dirP == -1 ? cEn < legEn : cEn > legEn
+    if extends
+        legEn  := cEn
+        legFrz := false
+    else if not legFrz
+        legEn := cEn
+    legRng = math.abs(legEx - legEn)
+    retr = legRng > 0 ? (dirP == -1 ? close - legEn : legEn - close) / legRng : 0.0
+    if retr >= 0.382
+        legFrz := true
+legOk = not na(legEx) and not na(legEn) and math.abs(legEx - legEn) >= minImpH1 * atrH1
 var array<line>  fibL = array.new<line>()
 var array<label> fibT = array.new<label>()
 var array<box>   plB  = array.new<box>()
@@ -381,12 +415,15 @@ if barstate.islast
     array.clear(plB)
     array.clear(plT)
     array.clear(plL)
-    if showScn and dirP != 0
+    if showScn and dirP != 0 and not legOk
+        array.push(plT, label.new(time + math.round(planStart * H), close, "Pas de vague nette (< " + str.tostring(minImpH1) + " ATR H1) : pas de plan pour l'instant",
+             xloc = xloc.bar_time, style = label.style_label_left, color = color.new(cGray, 30), textcolor = color.white, size = size.small))
+    if showScn and dirP != 0 and legOk
         isS = dirP == -1
         contre = flux != 0 and dirP != flux
         // Dernière impulsion (calculée en 15 min) : départ exV, extrême atteint enV
-        exV = isS ? impHi : impLo
-        enV = isS ? lowSinceHi : highSinceLo
+        exV = legEx
+        enV = legEn
         rng = math.abs(exV - enV)
         sg  = isS ? 1.0 : -1.0
         pbuf = math.max(0.1 * rng, 0.5 * atr15)
