@@ -438,13 +438,13 @@ if barstate.islast
                  text_color = color.orange, text_size = size.small, text_halign = text.align_left))
         // PLAN B (rebond vers l'OTE, contre le flux) : limite au 38,2 %, stop au-delà + marge, cible = début de l'OTE (61,8 %)
         eB   = fibLvl(enV, sg, rng, 0.382)
-        slB  = eB - sg * pbuf
+        slB  = eB - sg * math.max(pbuf, atr15)  // stop au moins 1 ATR 15 min
         tgtB = fibLvl(enV, sg, rng, 0.618)
         okB  = isS ? close > eB and close < tgtB : close < eB and close > tgtB
         okB := okB and math.abs(tgtB - eB) / math.abs(eB - slB) >= 1.5
         // PLAN A (dans le sens du flux) : limite au milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, cible = FVG H4 / veille
         eA  = fibLvl(enV, sg, rng, 0.705)
-        slA = fibLvl(enV, sg, rng, 0.786) + sg * pbuf
+        slA = eA + sg * math.max(math.abs(fibLvl(enV, sg, rng, 0.786) + sg * pbuf - eA), atr15)  // au-delà de 78,6 % + marge, au moins 1 ATR 15 min
         tStart = time + math.round(planStart * H)
         drawB = showB and okB
         rrB = math.abs(tgtB - eB) / math.abs(eB - slB)
