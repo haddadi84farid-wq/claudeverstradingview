@@ -34,7 +34,18 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 13_BACKTEST_SCALP_V4_CORRIGE.txt : ta strategie V4 (sweep M15 + cassure M5) corrigee : risque fixe en R, frais, marge 1 %, options H4 et horaires.
 - 14_PROMPT_DESSIN.txt  : assistant de dessin (Replay ou direct). Coller une fois, puis envoyer : tendance, fvg, ob,
                            liquidite, structure, tout, efface, mise a jour. Claude dessine, c'est moi qui trade.
-- anciens\               : anciennes versions, ne plus utiliser.
+- 15_BACKTEST_LSMR_CORRIGE.txt : strategie « Liquidity Sweep Mean Reversion » corrigee (risque fixe en R, frais realistes, marge 1 %).
+- 16_BACKTEST_EMA_RSI.txt : indicateur « Premium GOLD Signal » (EMA 9 + RSI, SL + 3 TP) transforme en strategie mesurable.
+- 17_PROMPT_DAYTRADING_MATIN.txt : MA METHODE DE TRAVAIL (day trading). Vers 08:30 Paris : direction autorisee du jour, plan (entree, stop, TP)
+                           (tendance 20/10), niveaux dessines, annonces, limites. Puis « trade : ... » apres chaque trade.
+- 19_BACKTEST_TREND_PULLBACK.txt : strategie Trend Pullback (flux Daily/H4, cible H4, retracement + LH/HL + BOS,
+                           stop au-dela du LH/HL). A tester en 5 min puis en 1 min.
+- 18_INDICATEUR_DAYTRADING.txt : indicateur qui dessine tout proprement (niveaux, FVG, OB, direction, position VENTE/ACHAT avec Stop, Entree, TP1-3).
+                           A creer comme NOUVEAU script Indicateur, nom « Day trading XAUUSD ». Le prompt 17 le remplit.
+- 20_PROMPT_AVIS_TRADE.txt : JE PROPOSE MON TRADE, CLAUDE DONNE SON AVIS. Coller une fois, puis « avis : vente 4148 stop 4180 tp 4080 ».
+                           Verdict BON / A AMELIORER / NON, version corrigee, taille. Puis « trade : ... » et « bilan ».
+- 21_INDICATEUR_PLANS_AB.txt : VERSION RAPIDE du robot (indicateur) : flux, OTE, Fibonacci, plans A / B, cible. Sans backtest.
+- anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
 - journal\ : mon journal de trades (Claude le lit et le complete).

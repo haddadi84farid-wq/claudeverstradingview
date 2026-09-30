@@ -1,0 +1,315 @@
+//@version=6
+// Day trading XAUUSD — plan et niveaux (affichage propre, style « Premium GOLD Signal »).
+// AUTOMATIQUE : direction du jour (tendance 20/10 en 1 jour), plus haut / bas de la veille, Asie (00:00-07:00 UTC),
+// chiffres ronds, FVG non comblés, order blocks non cassés, EMA 200.
+// Claude remplit seulement le PLAN (sens, entrée, stop, TP) : l'indicateur dessine la position avec ses étiquettes.
+// Ne passe aucun ordre. Graphique 5 ou 15 min.
+indicator("Day trading XAUUSD — plan et niveaux", shorttitle = "DT XAU", overlay = true,
+     max_boxes_count = 30, max_lines_count = 40, max_labels_count = 40)
+
+gP = "PLAN (rempli par Claude)"
+pSide  = input.string("Aucun", "Sens", options = ["Aucun", "Vente", "Achat"], group = gP)
+pEntry = input.float(0.0, "Entrée", group = gP)
+pStop  = input.float(0.0, "Stop", group = gP)
+pTp1   = input.float(0.0, "TP1 (0 = 1 R)", group = gP)
+pTp2   = input.float(0.0, "TP2 (0 = 2 R)", group = gP)
+pTp3   = input.float(0.0, "TP3 (0 = 3 R)", group = gP)
+pDate  = input.int(0, "Date du plan (AAAAMMJJ, 0 = aujourd'hui)", minval = 0, group = gP)
+pHour  = input.int(7, "Heure du plan (UTC)", minval = 0, maxval = 23, group = gP)
+pEndH  = input.int(16, "Fin de validité (heure UTC)", minval = 1, maxval = 24, group = gP)
+pLots  = input.float(0.0, "Taille (lots, 0 = ne pas afficher)", minval = 0, group = gP)
+
+gA = "AFFICHAGE"
+showLv    = input.bool(true, "Niveaux (veille, Asie, chiffres ronds)", group = gA)
+showFvg   = input.bool(true, "FVG non comblés", group = gA)
+showOb    = input.bool(true, "Order blocks", group = gA)
+showEma   = input.bool(true, "EMA 200", group = gA)
+showDir   = input.bool(true, "Cadre « direction du jour »", group = gA)
+maxFvg    = input.int(3, "FVG affichés (maximum)", minval = 0, maxval = 10, group = gA)
+maxOb     = input.int(2, "Order blocks affichés par sens", minval = 0, maxval = 5, group = gA)
+fvgMin    = input.float(0.3, "Taille minimale d'un FVG (× ATR)", minval = 0, step = 0.05, group = gA)
+roundStep = input.float(50.0, "Pas des chiffres ronds", minval = 1, group = gA)
+mergePts  = input.float(4.0, "Fusion des niveaux proches (points)", minval = 0, group = gA)
+rightBars = input.int(15, "Longueur à droite (bougies)", minval = 3, group = gA)
+
+cRed   = #F23645
+cGreen = #089981
+cGray  = #787B86
+cOrange = #FF9800
+cPink  = #E040FB
+cBlue  = #2962FF
+
+// ---------- Calculs globaux ----------
+atr = ta.atr(14)
+ema200 = ta.ema(close, 200)
+plot(showEma ? ema200 : na, "EMA 200", cBlue, 2)
+
+// Direction du jour : bougies 1 JOUR clôturées (lookahead + [1] dans l'expression : aucun regard vers le futur)
+dayTrend() =>
+    var int st = 0
+    hi20 = ta.highest(high, 20)[1]
+    lo20 = ta.lowest(low, 20)[1]
+    hi10 = ta.highest(high, 10)[1]
+    lo10 = ta.lowest(low, 10)[1]
+    if close > hi20
+        st := 1
+    else if close < lo20
+        st := -1
+    else if st == 1 and close < lo10
+        st := 0
+    else if st == -1 and close > hi10
+        st := 0
+    [st[1], ta.lowest(low, 10)[1], ta.highest(high, 10)[1], ta.highest(high, 20)[1], ta.lowest(low, 20)[1], high[1], low[1]]
+[dSt, dLo10, dHi10, dHi20, dLo20, pdh, pdl] = request.security(syminfo.tickerid, "D", dayTrend(), lookahead = barmerge.lookahead_on)
+
+// Asie 00:00-07:00 UTC
+hUtc = hour(time, "UTC")
+inAsia = hUtc < 7
+var float asH = na
+var float asL = na
+if inAsia and not inAsia[1]
+    asH := high
+    asL := low
+else if inAsia
+    asH := math.max(asH, high)
+    asL := math.min(asL, low)
+
+// FVG (dir 1 = haussier, -1 = baissier), réduits quand ils se remplissent, retirés quand ils sont traversés
+var array<float> fTop = array.new<float>()
+var array<float> fBot = array.new<float>()
+var array<int>   fT   = array.new<int>()
+var array<int>   fDir = array.new<int>()
+if array.size(fTop) > 0
+    for i = array.size(fTop) - 1 to 0
+        d = array.get(fDir, i)
+        t = array.get(fTop, i)
+        b = array.get(fBot, i)
+        if d == 1
+            if low <= b
+                array.remove(fTop, i)
+                array.remove(fBot, i)
+                array.remove(fT, i)
+                array.remove(fDir, i)
+            else if low < t
+                array.set(fTop, i, low)
+        else
+            if high >= t
+                array.remove(fTop, i)
+                array.remove(fBot, i)
+                array.remove(fT, i)
+                array.remove(fDir, i)
+            else if high > b
+                array.set(fBot, i, high)
+bullF = low > high[2] and (low - high[2]) >= fvgMin * atr
+bearF = high < low[2] and (low[2] - high) >= fvgMin * atr
+if bullF
+    array.push(fTop, low)
+    array.push(fBot, high[2])
+    array.push(fT, time[2])
+    array.push(fDir, 1)
+if bearF
+    array.push(fTop, low[2])
+    array.push(fBot, high)
+    array.push(fT, time[2])
+    array.push(fDir, -1)
+if array.size(fTop) > 40
+    array.shift(fTop)
+    array.shift(fBot)
+    array.shift(fT)
+    array.shift(fDir)
+
+// Order blocks : dernière bougie opposée avant la clôture qui casse le dernier sommet / creux (pivot 3-3),
+// retirés quand une clôture passe de l'autre côté de la zone
+ph = ta.pivothigh(high, 3, 3)
+pl = ta.pivotlow(low, 3, 3)
+var float swH = na
+var float swL = na
+if not na(ph)
+    swH := ph
+if not na(pl)
+    swL := pl
+var array<float> oTop = array.new<float>()
+var array<float> oBot = array.new<float>()
+var array<int>   oT   = array.new<int>()
+var array<int>   oDir = array.new<int>()
+if array.size(oTop) > 0
+    for i = array.size(oTop) - 1 to 0
+        d = array.get(oDir, i)
+        if (d == 1 and close < array.get(oBot, i)) or (d == -1 and close > array.get(oTop, i))
+            array.remove(oTop, i)
+            array.remove(oBot, i)
+            array.remove(oT, i)
+            array.remove(oDir, i)
+if not na(swH) and close > swH
+    for i = 1 to 30
+        if close[i] < open[i]
+            array.push(oTop, high[i])
+            array.push(oBot, low[i])
+            array.push(oT, time[i])
+            array.push(oDir, 1)
+            break
+    swH := na
+if not na(swL) and close < swL
+    for i = 1 to 30
+        if close[i] > open[i]
+            array.push(oTop, high[i])
+            array.push(oBot, low[i])
+            array.push(oT, time[i])
+            array.push(oDir, -1)
+            break
+    swL := na
+if array.size(oTop) > 40
+    array.shift(oTop)
+    array.shift(oBot)
+    array.shift(oT)
+    array.shift(oDir)
+
+// ---------- Dessin (refait à chaque mise à jour de la dernière bougie) ----------
+var array<line>  gLines  = array.new<line>()
+var array<label> gLabels = array.new<label>()
+var array<box>   gBoxes  = array.new<box>()
+var table dirTab = table.new(position.top_right, 1, 3, frame_color = cGray, frame_width = 1)
+
+fmt(float p) => str.tostring(p, format.mintick)
+rr(float tp, float e, float r) => str.tostring(math.abs(tp - e) / r, "#.#") + " R"
+
+drawLevel(float p, string txt, color c, int t0, int t1) =>
+    array.push(gLines, line.new(t0, p, t1, p, xloc = xloc.bar_time, color = c, style = line.style_dotted, width = 1))
+    array.push(gLabels, label.new(t1, p, txt, xloc = xloc.bar_time, style = label.style_label_left,
+         color = color.new(c, 100), textcolor = c, size = size.small))
+
+drawZone(int t0, int t1, float top, float bot, color c, string txt) =>
+    array.push(gBoxes, box.new(t0, top, t1, bot, xloc = xloc.bar_time, border_color = c, bgcolor = color.new(c, 85),
+         text = txt, text_color = c, text_size = size.small, text_halign = text.align_left, text_valign = text.align_center))
+
+planTag(int t, float p, string txt, color c) =>
+    array.push(gLabels, label.new(t, p, txt, xloc = xloc.bar_time, style = label.style_label_left,
+         color = c, textcolor = color.white, size = size.normal))
+
+if barstate.islast
+    for l in gLines
+        line.delete(l)
+    for l in gLabels
+        label.delete(l)
+    for b in gBoxes
+        box.delete(b)
+    array.clear(gLines)
+    array.clear(gLabels)
+    array.clear(gBoxes)
+
+    tfMs     = timeframe.in_seconds() * 1000
+    tRight   = time + rightBars * tfMs
+    yy       = year(time, "UTC")
+    mm       = month(time, "UTC")
+    dd       = dayofmonth(time, "UTC")
+    dayStart = timestamp("UTC", yy, mm, dd, 0, 0)
+
+    // Niveaux : triés, fusionnés quand ils sont proches (plus de textes qui se chevauchent)
+    if showLv
+        pr = array.new<float>()
+        nm = array.new<string>()
+        if not na(pdh)
+            array.push(pr, pdh)
+            array.push(nm, "PDH " + fmt(pdh))
+        if not na(pdl)
+            array.push(pr, pdl)
+            array.push(nm, "PDL " + fmt(pdl))
+        if not na(asH)
+            array.push(pr, asH)
+            array.push(nm, (inAsia ? "Asie haut (en cours) " : "Asie haut ") + fmt(asH))
+            array.push(pr, asL)
+            array.push(nm, (inAsia ? "Asie bas (en cours) " : "Asie bas ") + fmt(asL))
+        rUp = math.ceil(close / roundStep) * roundStep
+        rDn = math.floor(close / roundStep) * roundStep
+        if rUp == rDn
+            rUp += roundStep
+        array.push(pr, rUp)
+        array.push(nm, "Rond " + str.tostring(rUp))
+        array.push(pr, rDn)
+        array.push(nm, "Rond " + str.tostring(rDn))
+        idx = array.sort_indices(pr, order.ascending)
+        float gP0 = na
+        string gTxt = ""
+        for k = 0 to array.size(idx) - 1
+            i = array.get(idx, k)
+            p = array.get(pr, i)
+            n = array.get(nm, i)
+            if na(gP0)
+                gP0 := p
+                gTxt := n
+            else if p - gP0 <= mergePts
+                gTxt := gTxt + " + " + n
+            else
+                drawLevel(gP0, gTxt, gP0 > close ? cRed : cGreen, dayStart, tRight)
+                gP0 := p
+                gTxt := n
+        if not na(gP0)
+            drawLevel(gP0, gTxt, gP0 > close ? cRed : cGreen, dayStart, tRight)
+
+    // FVG : les plus récents seulement
+    if showFvg and array.size(fTop) > 0
+        cnt = 0
+        for i = array.size(fTop) - 1 to 0
+            if cnt >= maxFvg
+                break
+            up = array.get(fDir, i) == 1
+            drawZone(array.get(fT, i), tRight, array.get(fTop, i), array.get(fBot, i), up ? cGreen : cOrange, "FVG")
+            cnt += 1
+
+    // Order blocks : les plus récents de chaque sens
+    if showOb and array.size(oTop) > 0
+        nBull = 0
+        nBear = 0
+        for i = array.size(oTop) - 1 to 0
+            d = array.get(oDir, i)
+            if d == 1 and nBull < maxOb
+                drawZone(array.get(oT, i), tRight, array.get(oTop, i), array.get(oBot, i), cBlue, "Bull OB")
+                nBull += 1
+            else if d == -1 and nBear < maxOb
+                drawZone(array.get(oT, i), tRight, array.get(oTop, i), array.get(oBot, i), cPink, "Bear OB")
+                nBear += 1
+
+    // Plan : position avec étiquettes (comme « Premium GOLD Signal »)
+    isSell = pSide == "Vente"
+    planOk = pSide != "Aucun" and pEntry > 0 and pStop > 0 and (isSell ? pStop > pEntry : pStop < pEntry)
+    if planOk
+        risk = math.abs(pEntry - pStop)
+        sgn  = isSell ? -1.0 : 1.0
+        tp1  = pTp1 > 0 ? pTp1 : pEntry + sgn * risk
+        tp2  = pTp2 > 0 ? pTp2 : pEntry + sgn * 2 * risk
+        tp3  = pTp3 > 0 ? pTp3 : pEntry + sgn * 3 * risk
+        py   = pDate > 0 ? math.floor(pDate / 10000) : yy
+        pm   = pDate > 0 ? math.floor(pDate / 100) % 100 : mm
+        pd   = pDate > 0 ? pDate % 100 : dd
+        t0   = timestamp("UTC", py, pm, pd, pHour, 0)
+        t1   = timestamp("UTC", py, pm, pd, 0, 0) + pEndH * 3600000
+        array.push(gBoxes, box.new(t0, math.max(pEntry, pStop), t1, math.min(pEntry, pStop), xloc = xloc.bar_time,
+             border_color = color.new(cRed, 60), bgcolor = color.new(cRed, 85)))
+        array.push(gBoxes, box.new(t0, math.max(pEntry, tp3), t1, math.min(pEntry, tp3), xloc = xloc.bar_time,
+             border_color = color.new(cGreen, 60), bgcolor = color.new(cGreen, 88)))
+        array.push(gLines, line.new(t0, pEntry, t1, pEntry, xloc = xloc.bar_time, color = cGray, width = 2))
+        array.push(gLines, line.new(t0, tp1, t1, tp1, xloc = xloc.bar_time, color = cGreen, width = 1))
+        array.push(gLines, line.new(t0, tp2, t1, tp2, xloc = xloc.bar_time, color = cGreen, width = 1))
+        planTag(t1, pStop, "Stop : " + fmt(pStop), cRed)
+        planTag(t1, pEntry, "Entrée : " + fmt(pEntry) + (pLots > 0 ? "  (" + str.tostring(pLots) + " lot)" : ""), cGray)
+        planTag(t1, tp1, "TP1 : " + fmt(tp1) + "  " + rr(tp1, pEntry, risk), cGreen)
+        planTag(t1, tp2, "TP2 : " + fmt(tp2) + "  " + rr(tp2, pEntry, risk), cGreen)
+        planTag(t1, tp3, "TP3 : " + fmt(tp3) + "  " + rr(tp3, pEntry, risk), cGreen)
+        array.push(gLabels, label.new(t0, isSell ? math.max(pStop, pEntry) : math.min(pStop, pEntry),
+             isSell ? "VENTE" : "ACHAT", xloc = xloc.bar_time,
+             style = isSell ? label.style_label_down : label.style_label_up,
+             color = isSell ? cRed : cGreen, textcolor = color.white, size = size.normal))
+
+    // Cadre direction du jour
+    if showDir
+        brokeNow = (dSt == 1 and close < dLo10) or (dSt == -1 and close > dHi10)
+        dTxt = dSt == 1 ? "ACHAT" : dSt == -1 ? "VENTE" : "NEUTRE"
+        dCol = brokeNow ? cGray : dSt == 1 ? cGreen : dSt == -1 ? cRed : cGray
+        head = "Direction du jour : " + dTxt + (brokeNow ? " → prix au-delà du seuil : NEUTRE" : "")
+        seuil = dSt == 1 ? "Ce soir : NEUTRE si clôture < " + fmt(dLo10) :
+             dSt == -1 ? "Ce soir : NEUTRE si clôture > " + fmt(dHi10) :
+             "Ce soir : ACHAT si clôture > " + fmt(dHi20) + " · VENTE si < " + fmt(dLo20)
+        table.cell(dirTab, 0, 0, head, bgcolor = dCol, text_color = color.white, text_size = size.small)
+        table.cell(dirTab, 0, 1, seuil, bgcolor = color.new(color.white, 0), text_color = color.black, text_size = size.tiny)
+        table.cell(dirTab, 0, 2, "3 trades max · arrêt à −2 R · 1 % par trade", bgcolor = color.new(color.white, 0),
+             text_color = color.black, text_size = size.tiny)

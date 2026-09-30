@@ -1,0 +1,643 @@
+//@version=6
+// VERSION LÉGÈRE (indicateur) de 19_BACKTEST_TREND_PULLBACK : mêmes flux, OTE, Fibonacci, plans A / B et étiquette FLUX,
+// sans le backtest (pas de testeur de stratégie) → s'affiche beaucoup plus vite. Ne passe aucun ordre.
+// XAU Trend Pullback — règles verrouillées (continuation de tendance, entrée sur retracement + BOS).
+// 1. FLUX : Daily = état 20/10 (clôtures) ; H4 = structure (sommets / creux) qui ne doit PAS aller contre. Sinon NEUTRE.
+// 2. CIBLE : 1re FVG H4 non comblée dans le sens du flux, sinon plus haut / bas de la veille, sinon dernier sommet / creux H4.
+//    Elle sert de filtre : TP = 2 R, ou le 1er obstacle contraire s'il est plus proche ; pas de trade si l'espace < 1,5 R.
+// 3. ENTRÉE (unité du graphique, 5 min puis 1 min) — VENTE : impulsion baissière (sommet H0 → creux L1, ≥ 1 ATR 15 min),
+//    retracement 38-79 % qui forme un LH confirmé, puis CLÔTURE sous le micro-creux formé après le LH → entrée à
+//    l'ouverture suivante. Annulé si le prix dépasse le LH ou après N bougies. ACHAT : exactement l'inverse.
+// 4. STOP : au-delà du LH (HL) + max(0,2 ATR, spread) ; au moins 0,5 ATR 15 min (élargi), au plus 0,25 ATR JOURNALIER (sinon pas de trade :
+//    2 R doivent tenir dans la moitié du mouvement moyen d'une journée, quelle que soit l'unité d'entrée).
+// Aucune gestion (pas de break-even, pas de partiel). Entrées 07:00-16:00 UTC, clôture forcée à 20:00 UTC.
+// Anti-regard vers le futur : données HTF = bougies CLÔTURÉES (lookahead_on + [1]), pivots utilisés une fois confirmés.
+// Frais : glissement 15 ticks par ordre, commission 0,035 $ par once et par ordre, marge 1 %. Résultat en R (risque fixe).
+// Les annonces ne sont pas filtrées (impossible dans le testeur) : on regardera leur effet dans la liste des trades.
+indicator("XAU Plans A / B — flux, OTE, Fibonacci", shorttitle = "XAU PLANS", overlay = true,
+     max_labels_count = 60, max_lines_count = 60, max_boxes_count = 20, max_bars_back = 500)
+posSize = 0.0
+
+gR = "Risque"
+riskCash  = input.float(100.0, "Risque par trade ($)", minval = 1, group = gR)
+tpR       = input.float(2.0, "TP (R)", minval = 0.5, step = 0.1, group = gR)
+minTpR    = input.float(1.5, "Espace minimal jusqu'à l'obstacle (R)", minval = 0.5, step = 0.1, group = gR)
+gT = "Flux"
+dLong     = input.int(20, "Daily : cassure (jours)", minval = 2, group = gT)
+dShort    = input.int(10, "Daily : sortie (jours)", minval = 2, group = gT)
+htfPiv    = input.int(3, "Pivot H4", minval = 1, group = gT)
+useH4     = input.bool(true, "H4 ne doit pas aller contre le Daily", group = gT)
+useSwObs  = input.bool(false, "Dernier sommet / creux H4 = obstacle (non : en continuation, il est fait pour être cassé)", group = gT)
+gE = "Entrée"
+pivLen    = input.int(3, "Pivot de l'unité d'entrée", minval = 1, group = gE)
+minImpAtr = input.float(1.0, "Impulsion minimale (× ATR 15 min)", minval = 0, step = 0.1, group = gE)
+retMin    = input.float(0.382, "Retracement minimum", minval = 0, maxval = 1, step = 0.01, group = gE)
+retMax    = input.float(0.786, "Retracement maximum", minval = 0, maxval = 1, step = 0.01, group = gE)
+maxWait   = input.int(20, "Attente maximale du BOS (bougies)", minval = 1, group = gE)
+slBufAtr  = input.float(0.2, "Tampon du stop (× ATR de l'unité)", minval = 0, step = 0.05, group = gE)
+spreadPts = input.float(0.3, "Tampon minimal = spread (points)", minval = 0, step = 0.05, group = gE)
+minStopA  = input.float(0.5, "Stop minimum (× ATR 15 min, élargi)", minval = 0, step = 0.1, group = gE)
+maxStopD  = input.float(0.25, "Stop maximum (× ATR journalier, sinon pas de trade)", minval = 0.05, step = 0.05, group = gE)
+startH    = input.int(7, "Entrées à partir de (heure UTC)", minval = 0, maxval = 23, group = gE)
+endH      = input.int(16, "Entrées jusqu'à (heure UTC)", minval = 1, maxval = 24, group = gE)
+closeH    = input.int(20, "Clôture forcée (heure UTC)", minval = 1, maxval = 24, group = gE)
+gV = "Affichage"
+showScn   = input.bool(true, "Dessiner le scénario (rebond → zone → cible)", group = gV)
+impPiv    = input.int(12, "Vague : sommet / creux confirmé par N bougies 15 min de chaque côté", minval = 2, maxval = 40, group = gV)
+minImpH1  = input.float(1.5, "Vague : taille minimale (× ATR H1)", minval = 0.5, step = 0.1, group = gV)
+lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
+fibShift  = input.float(18.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
+modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
+useH1     = input.bool(true, "Plans dans le sens de la tendance H1 (sinon : flux journalier)", group = gV)
+showRes   = input.bool(true, "Tableau des résultats des plans A / B (en bas à gauche)", group = gV)
+showA     = input.bool(true, "Afficher le PLAN A (OTE, sens du flux)", group = gV)
+showB     = input.bool(true, "Afficher le PLAN B (retournement sur le niveau clé, contre la tendance)", group = gV)
+planStart = input.float(1.0, "Plans : début à droite du prix (heures)", minval = 0.5, step = 0.5, group = gV)
+riskEur   = input.float(13.0, "Risque par trade pour la taille des plans (€)", minval = 1, group = gV)
+eurUsd    = input.float(1.17, "Taux EUR/USD (pour la taille)", minval = 0.5, step = 0.01, group = gV)
+
+cRed   = #F23645
+cGreen = #089981
+cGray  = #787B86
+
+// ---------- Daily : état 20/10 + veille ----------
+dayData() =>
+    var int st = 0
+    hiL = ta.highest(high, dLong)[1]
+    loL = ta.lowest(low, dLong)[1]
+    hiS = ta.highest(high, dShort)[1]
+    loS = ta.lowest(low, dShort)[1]
+    if close > hiL
+        st := 1
+    else if close < loL
+        st := -1
+    else if st == 1 and close < loS
+        st := 0
+    else if st == -1 and close > hiS
+        st := 0
+    [st[1], high[1], low[1], ta.atr(14)[1]]
+[dSt, pdh, pdl, atrD] = request.security(syminfo.tickerid, "D", dayData(), lookahead = barmerge.lookahead_on)
+
+// ---------- H4 : structure + FVG non comblées (la plus proche de chaque côté) ----------
+h4Data() =>
+    ph = ta.pivothigh(high, htfPiv, htfPiv)
+    pl = ta.pivotlow(low, htfPiv, htfPiv)
+    hA = ta.valuewhen(not na(ph), ph, 0)
+    hB = ta.valuewhen(not na(ph), ph, 1)
+    lA = ta.valuewhen(not na(pl), pl, 0)
+    lB = ta.valuewhen(not na(pl), pl, 1)
+    st = hA > hB and lA > lB ? 1 : hA < hB and lA < lB ? -1 : 0
+    var array<float> uTop = array.new<float>()
+    var array<float> uBot = array.new<float>()
+    var array<float> dTop = array.new<float>()
+    var array<float> dBot = array.new<float>()
+    var array<int>   uT   = array.new<int>()
+    var array<int>   dT   = array.new<int>()
+    if array.size(uTop) > 0
+        for i = array.size(uTop) - 1 to 0
+            if low <= array.get(uBot, i)
+                array.remove(uTop, i)
+                array.remove(uBot, i)
+                array.remove(uT, i)
+    if array.size(dTop) > 0
+        for i = array.size(dTop) - 1 to 0
+            if high >= array.get(dTop, i)
+                array.remove(dTop, i)
+                array.remove(dBot, i)
+                array.remove(dT, i)
+    if low > high[2]
+        array.push(uTop, low)
+        array.push(uBot, high[2])
+        array.push(uT, time[2])
+    if high < low[2]
+        array.push(dTop, low[2])
+        array.push(dBot, high)
+        array.push(dT, time[2])
+    if array.size(uTop) > 60
+        array.shift(uTop)
+        array.shift(uBot)
+        array.shift(uT)
+    if array.size(dTop) > 60
+        array.shift(dTop)
+        array.shift(dBot)
+        array.shift(dT)
+    // FVG haussière non comblée sous le prix (aimant des ventes) : son haut ; FVG baissière au-dessus : son bas
+    float below  = na
+    float belowB = na
+    int   belowT = na
+    float above  = na
+    float aboveT = na
+    int   aboveTm = na
+    if array.size(uTop) > 0
+        for i = 0 to array.size(uTop) - 1
+            t = array.get(uTop, i)
+            if t < close and (na(below) or t > below)
+                below  := t
+                belowB := array.get(uBot, i)
+                belowT := array.get(uT, i)
+    if array.size(dBot) > 0
+        for i = 0 to array.size(dBot) - 1
+            b = array.get(dBot, i)
+            if b > close and (na(above) or b < above)
+                above   := b
+                aboveT  := array.get(dTop, i)
+                aboveTm := array.get(dT, i)
+    [st[1], lA[1], hA[1], below[1], above[1], belowB[1], belowT[1], aboveT[1], aboveTm[1]]
+[h4St, h4Low, h4High, fvgBelow, fvgAbove, fvgBelowB, fvgBelowT, fvgAboveT, fvgAboveTm] = request.security(syminfo.tickerid, "240", h4Data(), lookahead = barmerge.lookahead_on)
+
+atr15 = request.security(syminfo.tickerid, "15", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
+// Dernière bougie 15 min CLÔTURÉE (pour les conditions d'annulation / de confirmation des plans)
+[c15, o15, l15, h15] = request.security(syminfo.tickerid, "15", [close[1], open[1], low[1], high[1]], lookahead = barmerge.lookahead_on)
+atr   = ta.atr(14)
+
+flux = dSt == 1 and (not useH4 or h4St != -1) ? 1 : dSt == -1 and (not useH4 or h4St != 1) ? -1 : 0
+// Tendance du jour = structure H1 (sommets et creux de plus en plus hauts = haussière, de plus en plus bas = baissière)
+h1Data() =>
+    ph = ta.pivothigh(high, 3, 3)
+    pl = ta.pivotlow(low, 3, 3)
+    hA = ta.valuewhen(not na(ph), ph, 0)
+    hB = ta.valuewhen(not na(ph), ph, 1)
+    lA = ta.valuewhen(not na(pl), pl, 0)
+    lB = ta.valuewhen(not na(pl), pl, 1)
+    st = hA > hB and lA > lB ? 1 : hA < hB and lA < lB ? -1 : 0
+    // Sommet cassé à la clôture = haussier même si le dernier creux n'est pas encore confirmé (et inversement)
+    st := close > hA and lA >= lB ? 1 : close < lA and hA <= hB ? -1 : st
+    st[1]
+h1St = request.security(syminfo.tickerid, "60", h1Data(), lookahead = barmerge.lookahead_on)
+// Sens des plans : tendance H1 si elle est nette (réglable), sinon flux journalier
+dirP = useH1 and h1St != 0 ? h1St : flux
+
+hUtc = hour(time, "UTC")
+inSession = hUtc >= startH and hUtc < endH
+
+// Obstacle contraire le plus proche et cible affichée
+nearestBelow(float p) =>
+    float o = na
+    if not na(fvgBelow) and fvgBelow < p
+        o := fvgBelow
+    if not na(pdl) and pdl < p and (na(o) or pdl > o)
+        o := pdl
+    if useSwObs and not na(h4Low) and h4Low < p and (na(o) or h4Low > o)
+        o := h4Low
+    o
+nearestAbove(float p) =>
+    float o = na
+    if not na(fvgAbove) and fvgAbove > p
+        o := fvgAbove
+    if not na(pdh) and pdh > p and (na(o) or pdh < o)
+        o := pdh
+    if useSwObs and not na(h4High) and h4High > p and (na(o) or h4High < o)
+        o := h4High
+    o
+tgtSell = not na(fvgBelow) and fvgBelow < close ? "FVG H4 " + str.tostring(fvgBelow, format.mintick) :
+     not na(pdl) and pdl < close ? "PDL " + str.tostring(pdl, format.mintick) :
+     not na(h4Low) and h4Low < close ? "creux H4 " + str.tostring(h4Low, format.mintick) : "aucune"
+tgtBuy = not na(fvgAbove) and fvgAbove > close ? "FVG H4 " + str.tostring(fvgAbove, format.mintick) :
+     not na(pdh) and pdh > close ? "PDH " + str.tostring(pdh, format.mintick) :
+     not na(h4High) and h4High > close ? "sommet H4 " + str.tostring(h4High, format.mintick) : "aucune"
+
+// ---------- Structure de l'unité d'entrée ----------
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+lowN  = ta.lowest(low, pivLen)
+highN = ta.highest(high, pivLen)
+
+var float lastPhV = na
+var int   lastPhI = na
+var float lastPlV = na
+var int   lastPlI = na
+var int   nArm = 0
+var int   nBos = 0
+var int   kSess = 0
+var int   kPos = 0
+var int   kWide = 0
+var int   kRoom = 0
+var int   sState = 0
+var float sLH = na
+var float sTrig = na
+var int   sArm = na
+var int   bState = 0
+var float bHL = na
+var float bTrig = na
+var int   bArm = na
+
+if not na(ph)
+    phI = bar_index - pivLen
+    if flux == -1 and not na(lastPhV) and not na(lastPlV) and lastPhI < lastPlI and lastPlI < phI
+        imp = lastPhV - lastPlV
+        ret = imp > 0 ? (ph - lastPlV) / imp : 0.0
+        if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and lowN > lastPlV
+            sState := 1
+            nArm += 1
+            sLH := ph
+            sTrig := lowN
+            sArm := bar_index
+    lastPhV := ph
+    lastPhI := phI
+if not na(pl)
+    plI = bar_index - pivLen
+    if flux == 1 and not na(lastPhV) and not na(lastPlV) and lastPlI < lastPhI and lastPhI < plI
+        imp = lastPhV - lastPlV
+        ret = imp > 0 ? (lastPhV - pl) / imp : 0.0
+        if imp >= minImpAtr * atr15 and ret >= retMin and ret <= retMax and highN < lastPhV
+            bState := 1
+            nArm += 1
+            bHL := pl
+            bTrig := highN
+            bArm := bar_index
+    lastPlV := pl
+    lastPlI := plI
+
+// ---------- Déclenchement (BOS à la clôture) ----------
+var int   nEntries = 0
+var float curStop = na
+var float curTp = na
+var string lastSkip = ""
+buf = math.max(slBufAtr * atr, spreadPts)
+
+if sState == 1 and bar_index > sArm
+    if high > sLH or flux != -1 or bar_index - sArm > maxWait
+        sState := 0
+    else if close < sTrig
+        sState := 0
+        nBos += 1
+        stopP = math.max(sLH + buf, close + minStopA * atr15)
+        risk = stopP - close
+        obst = nearestBelow(close)
+        tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, close - obst)
+        if not inSession
+            lastSkip := "hors horaires"
+            kSess += 1
+        else if posSize != 0
+            lastSkip := "position déjà ouverte"
+            kPos += 1
+        else if risk > maxStopD * atrD
+            lastSkip := "stop trop large"
+            kWide += 1
+        else if tpDist < minTpR * risk
+            lastSkip := "obstacle trop proche"
+            kRoom += 1
+        else
+            curStop := stopP
+            curTp := close - tpDist
+            nEntries += 1
+if bState == 1 and bar_index > bArm
+    if low < bHL or flux != 1 or bar_index - bArm > maxWait
+        bState := 0
+    else if close > bTrig
+        bState := 0
+        nBos += 1
+        stopP = math.min(bHL - buf, close - minStopA * atr15)
+        risk = close - stopP
+        obst = nearestAbove(close)
+        tpDist = na(obst) ? tpR * risk : math.min(tpR * risk, obst - close)
+        if not inSession
+            lastSkip := "hors horaires"
+            kSess += 1
+        else if posSize != 0
+            lastSkip := "position déjà ouverte"
+            kPos += 1
+        else if risk > maxStopD * atrD
+            lastSkip := "stop trop large"
+            kWide += 1
+        else if tpDist < minTpR * risk
+            lastSkip := "obstacle trop proche"
+            kRoom += 1
+        else
+            curStop := stopP
+            curTp := close + tpDist
+            nEntries += 1
+
+
+inPos = posSize != 0
+plot(inPos ? curStop : na, "Stop", cRed, 2, plot.style_linebr)
+plot(inPos ? curTp : na, "TP", cGreen, 2, plot.style_linebr)
+plot(sState == 1 ? sTrig : bState == 1 ? bTrig : na, "Niveau de cassure (BOS)", cGray, 1, plot.style_linebr)
+
+// ---------- Scénario dessiné : 1. rebond → 2. zone de retracement 38-62 % (pâle) et OTE 62-79 % (vive) de la dernière impulsion + Fibonacci décalé à droite → 3. cible ----------
+// Dernière impulsion calculée en 15 MIN, quelle que soit l'unité affichée (même zone et même Fibonacci en 1, 5 ou 15 min)
+// La vague part du dernier SOMMET (ou CREUX) confirmé en 15 min, et va jusqu'à l'extrême atteint depuis.
+impData() =>
+    ph  = ta.pivothigh(high, impPiv, impPiv)
+    pl  = ta.pivotlow(low, impPiv, impPiv)
+    bsH = ta.barssince(not na(ph))
+    bsL = ta.barssince(not na(pl))
+    swH = ta.valuewhen(not na(ph), ph, 0)
+    swL = ta.valuewhen(not na(pl), pl, 0)
+    lenH = math.min(400, math.max(1, nz(bsH) + impPiv + 1))
+    lenL = math.min(400, math.max(1, nz(bsL) + impPiv + 1))
+    [swH, ta.lowest(low, lenH), swL, ta.highest(high, lenL)]
+[swH15, loSinceH, swL15, hiSinceL] = request.security(syminfo.tickerid, "15", impData())
+atrH1 = request.security(syminfo.tickerid, "60", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
+// Vague FIGÉE : elle s'allonge tant que le prix fait de nouveaux extrêmes, puis se fige dès que le retracement atteint 38,2 %.
+// Les plans ne bougent donc plus pendant qu'on les attend. Nouvelle vague = nouveau sommet / creux confirmé ou changement de sens.
+var float legEx  = na
+var float legEn  = na
+var int   legDir = 0
+var bool  legFrz = false
+cEx = dirP == -1 ? swH15 : swL15
+cEn = dirP == -1 ? loSinceH : hiSinceL
+if dirP != legDir or na(legEx) or cEx != legEx
+    legDir := dirP
+    legEx  := cEx
+    legEn  := cEn
+    legFrz := false
+else
+    extends = dirP == -1 ? cEn < legEn : cEn > legEn
+    if extends
+        legEn  := cEn
+        legFrz := false
+    else if not legFrz
+        legEn := cEn
+    legRng = math.abs(legEx - legEn)
+    retr = legRng > 0 ? (dirP == -1 ? close - legEn : legEn - close) / legRng : 0.0
+    if retr >= 0.382
+        legFrz := true
+legOk = not na(legEx) and not na(legEn) and math.abs(legEx - legEn) >= minImpH1 * atrH1
+var array<line>  fibL = array.new<line>()
+var array<label> fibT = array.new<label>()
+var array<box>   plB  = array.new<box>()
+var array<label> plT  = array.new<label>()
+var array<line>  plL  = array.new<line>()
+H = 3600000
+fibLvl(float e, float sg, float rg, float r) => e + sg * r * rg
+// Taille en lots pour un risque donné en € (1 lot = 100 onces), minimum 0,01
+lotsFor(float dist) =>
+    riskPerLot = dist * 100 / eurUsd
+    math.max(0.01, math.floor(riskEur / riskPerLot * 100) / 100)
+// Un niveau du plan : trait + étiquette posée juste au-dessus du trait, À L'INTÉRIEUR du dessin (côté gauche)
+planLine(int t0, int t1, float p, string txt, color c, int w) =>
+    array.push(plL, line.new(t0, p, t1, p, xloc = xloc.bar_time, color = c, width = w))
+    array.push(plT, label.new(t0 + math.round((t1 - t0) * 0.03), p, txt, xloc = xloc.bar_time, style = label.style_label_lower_left,
+         color = color.new(c, 100), textcolor = c == color.white ? color.white : c, size = size.small))
+// Un plan complet, dessiné de la même façon pour A et B :
+// flèche prix → entrée, boîte risque (rouge) et gain (vert), traits SL / Entrée / TP1-TP2-TP3 (1, 2, 3 R, avant la cible) / Cible, flèche entrée → cible
+drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
+    dist = math.abs(e - sl)
+    up   = tgt > e
+    lots = lotsFor(dist)
+    riskReal = lots * dist * 100 / eurUsd
+    array.push(plL, line.new(time, close, t0, e, xloc = xloc.bar_time, color = color.new(c, 40), width = 2, style = line.style_arrow_right))
+    array.push(plB, box.new(t0, math.max(e, sl), t1, math.min(e, sl), xloc = xloc.bar_time, border_color = color.new(cRed, 60), bgcolor = color.new(cRed, 82)))
+    array.push(plB, box.new(t0, math.max(e, tgt), t1, math.min(e, tgt), xloc = xloc.bar_time, border_color = color.new(cGreen, 60), bgcolor = color.new(cGreen, 86)))
+    array.push(plT, label.new(t0, math.min(sl, tgt, e), name + " | " + str.tostring(lots, "#.##") + " lot | risque " + str.tostring(riskReal, "#") + " €",
+         xloc = xloc.bar_time, style = label.style_label_upper_left, color = c, textcolor = color.white, size = size.small))
+    planLine(t0, t1, sl, "SL " + str.tostring(sl, format.mintick), cRed, 2)
+    planLine(t0, t1, e, "Entrée " + str.tostring(e, format.mintick), color.white, 2)
+    n = 0
+    for k = 1 to 3
+        tp = e + (up ? 1 : -1) * k * dist
+        if up ? tp < tgt - 0.3 * dist : tp > tgt + 0.3 * dist
+            n += 1
+            planLine(t0, t1, tp, "TP" + str.tostring(k) + " " + str.tostring(tp, format.mintick) + " (" + str.tostring(k) + " R)", cGreen, 1)
+    planLine(t0, t1, tgt, "TP" + str.tostring(n + 1) + " = CIBLE " + str.tostring(tgt, format.mintick) + " (" + str.tostring(math.abs(tgt - e) / dist, "#.#") + " R)", cGreen, 2)
+    array.push(plL, line.new(t1, e, t1 + H, tgt, xloc = xloc.bar_time, color = c, width = 2, style = line.style_arrow_right))
+// ---------- Confirmations MÉMORISÉES (une fois vues, elles restent jusqu'à une nouvelle vague / annulation) ----------
+gIsS = dirP == -1
+gSg  = gIsS ? 1.0 : -1.0
+gRng = math.abs(legEx - legEn)
+float gTgt = na
+if gIsS
+    gTgt := not na(fvgBelow) and fvgBelow < close ? fvgBelow : not na(pdl) and pdl < close ? pdl : legEn
+else
+    gTgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : legEn
+gEA  = fibLvl(legEn, gSg, gRng, 0.705)
+g618 = fibLvl(legEn, gSg, gRng, 0.618)
+new15 = ta.change(c15) != 0 or ta.change(o15) != 0
+var bool  confAm = false
+var bool  confBm = false
+var float entBm  = na
+var float lastEx = na
+var float lastEn = na
+var float lastTg = na
+if na(lastEx) or legEx != lastEx or (not legFrz and legEn != lastEn) or dirP != dirP[1]
+    confAm := false
+    confBm := false
+    entBm  := na
+if not na(gTgt) and (na(lastTg) or math.abs(gTgt - lastTg) > 0.5)
+    confBm := false
+    entBm  := na
+lastEx := legEx
+lastEn := legEn
+lastTg := gTgt
+if new15 and legOk and not na(gTgt)
+    // Plan A : bougie 15 min qui entre dans l'OTE (61,8 %) et clôture dans le sens des plans, au-delà de l'entrée
+    if not confAm and (gIsS ? h15 >= g618 and c15 < o15 and c15 < gEA : l15 <= g618 and c15 > o15 and c15 > gEA)
+        confAm := true
+    // Plan B : bougie 15 min qui touche le niveau clé (à 0,2 ATR près) et clôture de l'autre côté → entrée au prix de clôture
+    if not confBm and (gIsS ? l15 <= gTgt + 0.2 * atr15 and c15 > o15 and c15 > gTgt : h15 >= gTgt - 0.2 * atr15 and c15 < o15 and c15 < gTgt)
+        confBm := true
+        entBm  := c15
+if barstate.islast
+    for l in fibL
+        line.delete(l)
+    for l in fibT
+        label.delete(l)
+    for b in plB
+        box.delete(b)
+    for l in plT
+        label.delete(l)
+    for l in plL
+        line.delete(l)
+    array.clear(fibL)
+    array.clear(fibT)
+    array.clear(plB)
+    array.clear(plT)
+    array.clear(plL)
+    if showScn and dirP != 0 and not legOk
+        array.push(plT, label.new(time + math.round(planStart * H), close, "Pas de vague nette (< " + str.tostring(minImpH1) + " ATR H1) : pas de plan pour l'instant",
+             xloc = xloc.bar_time, style = label.style_label_left, color = color.new(cGray, 30), textcolor = color.white, size = size.small))
+    if showScn and dirP != 0 and legOk
+        isS = dirP == -1
+        contre = flux != 0 and dirP != flux
+        // Dernière impulsion (calculée en 15 min) : départ exV, extrême atteint enV
+        exV = legEx
+        enV = legEn
+        rng = math.abs(exV - enV)
+        sg  = isS ? 1.0 : -1.0
+        pbuf = math.max(0.1 * rng, 0.5 * atr15)
+        float tgt = na
+        if isS
+            tgt := not na(fvgBelow) and fvgBelow < close ? fvgBelow : not na(pdl) and pdl < close ? pdl : enV
+        else
+            tgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : enV
+        cZ = isS ? cRed : cGreen
+        // FVG H4 visée (la cible) : rectangle depuis sa création jusqu'à la droite des plans
+        fTop = isS ? fvgBelow : fvgAboveT
+        fBot = isS ? fvgBelowB : fvgAbove
+        fT   = isS ? fvgBelowT : fvgAboveTm
+        if showFvgH4 and not na(fTop) and not na(fBot) and not na(fT)
+            array.push(plB, box.new(fT, fTop, time + math.round((planStart + 10) * H), fBot, xloc = xloc.bar_time,
+                 border_color = color.new(color.orange, 20), bgcolor = color.new(color.orange, 80),
+                 text = "FVG H4 (cible) " + str.tostring(math.min(fTop, fBot), "#") + "–" + str.tostring(math.max(fTop, fBot), "#"),
+                 text_color = color.orange, text_size = size.small, text_halign = text.align_left))
+        // PLAN A (dans le sens des plans) : milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, cible = FVG H4 / veille / extrême
+        eA  = fibLvl(enV, sg, rng, 0.705)
+        slA = eA + sg * math.max(math.abs(fibLvl(enV, sg, rng, 0.786) + sg * pbuf - eA), atr15)  // au-delà de 78,6 % + marge, au moins 1 ATR 15 min
+        tStart = time + math.round(planStart * H)
+        // PLAN B (retournement sur le niveau clé, CONTRE la tendance) : quand le prix arrive sur la cible du plan A
+        // (résistance en hausse / support en baisse), il peut la balayer puis repartir. Entrée seulement sur REJET :
+        // la bougie 15 min dépasse le niveau puis clôture de l'autre côté. Stop au-delà + 1 ATR 15 min, objectif = 38,2 % de la vague.
+        eB   = confBm and not na(entBm) ? entBm : tgt
+        slB  = tgt + sg * -1 * math.max(pbuf, atr15)
+        tgtB = fibLvl(enV, sg, rng, 0.382)
+        rrB  = math.abs(tgtB - eB) / math.abs(eB - slB)
+        brokeB = isS ? c15 < tgt - atr15 : c15 > tgt + atr15
+        okB  = not na(eB) and rrB >= 1.5 and not brokeB
+        drawB = showB and okB
+        if drawB
+            confB = confBm
+            stB = confB ? "CONFIRMÉ (rejet vu à " + str.tostring(eB, format.mintick) + ") : tu peux entrer" : "EN ATTENTE du rejet"
+            condB = isS ? "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture VERTE au-dessus" :
+                 "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture ROUGE en dessous"
+            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, (isS ? "PLAN B — ACHAT sur rejet du support" : "PLAN B — VENTE sur rejet de la résistance") + " (contre la tendance, taille ÷ 2) — " + stB + condB, color.new(color.orange, 0))
+        else if showB
+            // Plan B coché mais pas valable : on le dit au lieu de ne rien afficher
+            whyB = brokeB ? "le niveau " + str.tostring(eB, format.mintick) + " est cassé (clôture 15 min au-delà + 1 ATR)" : "R:R " + str.tostring(rrB, "#.#") + " < 1,5"
+            array.push(plT, label.new(tStart, close, "PLAN B : pas de trade maintenant\n" + whyB, xloc = xloc.bar_time, style = label.style_label_left,
+                 color = color.new(cGray, 30), textcolor = color.white, size = size.small))
+        if showA
+            tA0 = showB ? tStart + 5 * H : tStart
+            lvlX = fibLvl(enV, sg, rng, 0.786)
+            // Annulé si une bougie 15 min a CLÔTURÉ au-delà de 78,6 % (le rebond n'est plus un simple retracement)
+            killA = isS ? c15 > lvlX : c15 < lvlX
+            // Confirmation : dernière bougie 15 min qui a touché l'OTE et clôturé dans le sens du flux (rejet)
+            confA = confAm
+            modeTxt = modeA == "Limite" ? (isS ? "VENTE limite" : "ACHAT limite") : (isS ? "VENTE sur confirmation" : "ACHAT sur confirmation")
+            stTxt = killA ? "ANNULÉ (clôture 15 min au-delà de 78,6 %)" : modeA == "Limite" ? "ordre limite actif" : confA ? "CONFIRMÉ : tu peux entrer" : "EN ATTENTE du rejet"
+            condTxt = modeA == "Limite" ? "" : (isS ? "\nEntrée : bougie 15 min dans l'OTE qui clôture ROUGE sous l'entrée" : "\nEntrée : bougie 15 min dans l'OTE qui clôture VERTE au-dessus de l'entrée")
+            drawPlan(tA0, tA0 + 3 * H, eA, slA, tgt, "PLAN A — " + modeTxt + " (OTE) — " + stTxt + (contre ? "\n⚠ Dans le sens du H1 mais CONTRE le flux journalier : taille ÷ 2" : "") + condTxt, killA ? cGray : cZ)
+            planLine(tA0, tA0 + 3 * H, lvlX, "ANNULATION si clôture 15 min au-delà de " + str.tostring(lvlX, format.mintick), color.orange, 1)
+        // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
+        if showFib
+            f0 = time + math.round(fibShift * H)
+            f1 = f0 + 4 * H
+            lv = array.from(0.0, 0.382, 0.5, 0.618, 0.786, 1.0)
+            for k = 0 to array.size(lv) - 1
+                r = array.get(lv, k)
+                p = fibLvl(enV, sg, rng, r)
+                isOte = r == 0.618 or r == 0.786
+                c = r == 0.0 or r == 1.0 ? color.white : isOte ? cZ : cGray
+                array.push(fibL, line.new(f0, p, f1, p, xloc = xloc.bar_time, color = c, width = isOte ? 2 : 1,
+                     style = isOte ? line.style_solid : line.style_dashed))
+                array.push(fibT, label.new(f1, p, str.tostring(r * 100, "#.#") + " %  " + str.tostring(p, format.mintick),
+                     xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
+
+// ---------- RÉSULTATS DES PLANS A et B (simulation sur l'historique affiché, frais compris) ----------
+// Entrée à la clôture de la bougie qui CONFIRME (mêmes règles qu'à l'écran), stop du plan, sortie au plus proche de 2 R ou de la cible,
+// sortie forcée à l'heure de clôture. Si stop et objectif sont touchés dans la même bougie : on compte le STOP (prudent).
+// Frais = spread + commission (≈ spread + 0,07 point) retirés de chaque trade, en R.
+var int   tA = 0
+var float eAp = na
+var float sAp = na
+var float gAp = na
+var int   nA = 0
+var int   wA = 0
+var float rA = 0.0
+var int   tB = 0
+var float eBp = na
+var float sBp = na
+var float gBp = na
+var int   nB = 0
+var int   wB = 0
+var float rB = 0.0
+costPts = spreadPts + 0.07
+pbufG = math.max(0.1 * gRng, 0.5 * atr15)
+// Gestion des positions simulées ouvertes
+closeSim(int d, float e, float sl, float tp) =>
+    risk = math.abs(e - sl)
+    float res = na
+    hitSL = d == 1 ? low <= sl : high >= sl
+    hitTP = d == 1 ? high >= tp : low <= tp
+    if hitSL
+        res := -1.0
+    else if hitTP
+        res := math.abs(tp - e) / risk
+    else if hUtc >= closeH
+        res := (d == 1 ? close - e : e - close) / risk
+    na(res) ? na : res - costPts / risk
+if tA != 0
+    r = closeSim(tA, eAp, sAp, gAp)
+    if not na(r)
+        nA += 1
+        wA += r > 0 ? 1 : 0
+        rA += r
+        tA := 0
+if tB != 0
+    r = closeSim(tB, eBp, sBp, gBp)
+    if not na(r)
+        nB += 1
+        wB += r > 0 ? 1 : 0
+        rB += r
+        tB := 0
+// Nouvelles entrées (sur la confirmation, dans les horaires)
+if legOk and inSession and hUtc < closeH
+    if confAm and not confAm[1] and tA == 0
+        d = gIsS ? -1 : 1
+        slx = gEA + gSg * math.max(math.abs(fibLvl(legEn, gSg, gRng, 0.786) + gSg * pbufG - gEA), atr15)
+        rk = math.abs(close - slx)
+        if rk > 0 and (d == 1 ? close > slx : close < slx)
+            tA  := d
+            eAp := close
+            sAp := slx
+            gAp := d == 1 ? math.min(close + 2 * rk, math.max(gTgt, close + rk)) : math.max(close - 2 * rk, math.min(gTgt, close - rk))
+    if confBm and not confBm[1] and tB == 0
+        d = gIsS ? 1 : -1
+        slx = gTgt - gSg * math.max(pbufG, atr15)
+        tg38 = fibLvl(legEn, gSg, gRng, 0.382)
+        rk = math.abs(close - slx)
+        if rk > 0 and (d == 1 ? close > slx : close < slx)
+            tB  := d
+            eBp := close
+            sBp := slx
+            gBp := d == 1 ? math.min(close + 2 * rk, math.max(tg38, close + rk)) : math.max(close - 2 * rk, math.min(tg38, close - rk))
+var table resT = table.new(position.bottom_left, 5, 3, bgcolor = color.new(color.black, 20), frame_color = cGray, frame_width = 1, border_color = color.new(cGray, 60), border_width = 1)
+if barstate.islast and showRes
+    table.cell(resT, 0, 0, "Résultats (frais compris)", text_color = color.white, text_size = size.small)
+    table.cell(resT, 1, 0, "Trades", text_color = color.white, text_size = size.small)
+    table.cell(resT, 2, 0, "Gagnants", text_color = color.white, text_size = size.small)
+    table.cell(resT, 3, 0, "R total", text_color = color.white, text_size = size.small)
+    table.cell(resT, 4, 0, "R / trade", text_color = color.white, text_size = size.small)
+    table.cell(resT, 0, 1, "PLAN A (OTE)", text_color = cGreen, text_size = size.small)
+    table.cell(resT, 1, 1, str.tostring(nA), text_color = color.white, text_size = size.small)
+    table.cell(resT, 2, 1, nA > 0 ? str.tostring(100.0 * wA / nA, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(resT, 3, 1, str.tostring(rA, "#.#"), text_color = rA >= 0 ? cGreen : cRed, text_size = size.small)
+    table.cell(resT, 4, 1, nA > 0 ? str.tostring(rA / nA, "#.##") : "—", text_color = color.white, text_size = size.small)
+    table.cell(resT, 0, 2, "PLAN B (rejet)", text_color = color.orange, text_size = size.small)
+    table.cell(resT, 1, 2, str.tostring(nB), text_color = color.white, text_size = size.small)
+    table.cell(resT, 2, 2, nB > 0 ? str.tostring(100.0 * wB / nB, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(resT, 3, 2, str.tostring(rB, "#.#"), text_color = rB >= 0 ? cGreen : cRed, text_size = size.small)
+    table.cell(resT, 4, 2, nB > 0 ? str.tostring(rB / nB, "#.##") : "—", text_color = color.white, text_size = size.small)
+
+// ---------- Une seule étiquette ----------
+var label info = na
+if barstate.islast
+    label.delete(info)
+    string txt = ""
+    color col = cGray
+    if posSize < 0
+        txt := "SELL EN COURS | SL " + str.tostring(curStop, format.mintick) + " | TP " + str.tostring(curTp, format.mintick)
+        col := cRed
+    else if posSize > 0
+        txt := "BUY EN COURS | SL " + str.tostring(curStop, format.mintick) + " | TP " + str.tostring(curTp, format.mintick)
+        col := cGreen
+    else if flux == 0
+        txt := "FLUX NEUTRE | pas de trade"
+    else if flux == -1
+        col := cRed
+        txt := sState == 1 ? "FLUX SELL | CIBLE " + tgtSell + " | LH " + str.tostring(sLH, format.mintick) + " → SELL SETUP si clôture < " + str.tostring(sTrig, format.mintick) :
+             "FLUX SELL | CIBLE " + tgtSell + " | ATTENTE RETRACEMENT"
+    else
+        col := cGreen
+        txt := bState == 1 ? "FLUX BUY | CIBLE " + tgtBuy + " | HL " + str.tostring(bHL, format.mintick) + " → BUY SETUP si clôture > " + str.tostring(bTrig, format.mintick) :
+             "FLUX BUY | CIBLE " + tgtBuy + " | ATTENTE RETRACEMENT"
+    txt += " | H1 " + (h1St == 1 ? "HAUSSIER" : h1St == -1 ? "BAISSIER" : "NEUTRE") + (useH1 and h1St != 0 and h1St != flux ? " → plans en " + (h1St == 1 ? "ACHAT" : "VENTE") : "")
+    if useH1 and h1St != 0 and h1St != flux and posSize == 0
+        // Plans dans le sens du H1 : l'étiquette montre la cible de CES plans, pas celle du flux journalier
+        txt := "TENDANCE JOUR " + (flux == -1 ? "VENTE" : flux == 1 ? "ACHAT" : "NEUTRE") + " | H1 " + (h1St == 1 ? "HAUSSIER" : "BAISSIER") + " → plans en " + (h1St == 1 ? "ACHAT" : "VENTE") + " | CIBLE " + str.tostring(gTgt, format.mintick)
+        col := h1St == 1 ? cGreen : cRed
+    if not inSession and posSize == 0
+        txt += " (hors horaires)"
+    info := label.new(time + math.round(lblShift * 3600000), close, txt, xloc = xloc.bar_time, style = label.style_label_left, color = col, textcolor = color.white, size = size.normal)

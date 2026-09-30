@@ -1,0 +1,32 @@
+DAY TRADING XAUUSD — BRIEFING DU MATIN. À coller vers 08:30 Paris (avant Londres). Exécute sans me poser de question.
+Tu PRÉPARES ma journée, tu ne trades pas : aucun ordre, aucun « achète / vends maintenant ». C'est moi qui décide et qui passe les ordres.
+INTERDIT : draw_clear, toucher à mes tracés (seulement les tiens, notés « Claude (matin) » dans drawings_log.md).
+
+1. DIRECTION AUTORISÉE DU JOUR (règle testée sur 14 ans, la seule avec un avantage mesuré) :
+   - Graphique PEPPERSTONE:XAUUSD en 1 JOUR, bougies CLÔTURÉES, 60 bougies (data_get_ohlcv).
+   - État de la tendance 20/10 : ACHAT si la dernière cassure a été une clôture au-dessus du plus haut des 20 jours précédents et qu'aucune clôture sous le plus bas des 10 derniers jours n'a suivi ; VENTE : l'inverse ; sinon NEUTRE.
+   - ACHAT → je ne prends que des achats aujourd'hui. VENTE → que des ventes. NEUTRE → taille divisée par 2, ou pas de trade.
+   - Si le prix est DÉJÀ au-delà du seuil de ce soir (ex. ACHAT mais prix sous le plus bas des 10 jours) → traite la journée comme NEUTRE.
+2. AFFICHAGE : tout est dessiné par l'indicateur « Day trading XAUUSD — plan et niveaux » (niveaux veille / Asie / ronds, FVG, order blocks, direction). N'utilise PLUS draw_shape.
+   - Supprime avec draw_remove_one tes anciens tracés « Claude (matin) » notés dans drawings_log.md (UNIQUEMENT ceux-là), note-les comme supprimés.
+   - Lis ses niveaux et zones : data_get_pine_labels et data_get_pine_boxes avec study_filter « Day trading ».
+   - S'il n'est pas sur le graphique, dis-le en une ligne et continue.
+3. ANNONCES US du jour (cherche-les si tu peux ; sinon dis « à vérifier ») : heure en Paris. Rappel : à plat 30 min avant, pas de trade 30 min après.
+4. PLAN DU JOUR (1 au maximum, UNIQUEMENT dans la direction autorisée ; NEUTRE → « aucun ») :
+   - Zone : un order block ou un FVG de l'indicateur, dans le sens autorisé, collé à un niveau (veille, Asie, rond), à moins de 2 ATR H1 du prix.
+   - Entrée : ordre limite au bord de la zone côté prix. Stop : au-delà de la zone + 0,3 ATR 15 min, au moins 1 ATR 15 min.
+   - TP1 = 1 R, TP2 = 2 R (ou le niveau suivant s'il est plus proche), TP3 = niveau suivant ou 3 R. R:R < 2 au TP2 → « aucun ».
+   - Taille : lots = 1 % du capital (journal/positions_tendance.md) ÷ (distance du stop × 100 $), arrondi vers le bas, minimum 0,01.
+   - Validité : 16:00 UTC, ou 30 min avant une annonce majeure.
+   - Avec data_get_indicator puis indicator_set_inputs, remplis l'indicateur : Sens (Vente / Achat / Aucun), Entrée, Stop, TP1, TP2, TP3, « Date du plan » = 0, « Heure du plan » = heure UTC actuelle, « Fin de validité », Taille. Pas de plan → Sens = Aucun.
+5. MES LIMITES DU JOUR (rappel, ne les change pas) : risque 1 % par trade ; 3 trades maximum ; arrêt après 2 pertes ou −2 R ; fenêtre 09:00-12:00 et 14:30-18:00 Paris.
+6. RÉPONSE COURTE (6 lignes maximum) :
+   - Direction autorisée + le seuil de ce soir.
+   - Plan : sens, entrée, stop, TP1/TP2/TP3, R:R, taille, validité — ou « aucun » et pourquoi en une phrase.
+   - Annonces (heure Paris).
+   - Rappel : « 3 trades max, arrêt à −2 R, journal après chaque trade ».
+Puis capture_screenshot.
+
+COMMANDE « plan » (à 14:30 Paris, ou quand je veux) : refais les étapes 1, 3 et 4 et mets à jour l'indicateur.
+
+APRÈS CHAQUE TRADE, j'écris « trade : sens, entrée, stop, sortie, raison, état (calme / pressé / revanche) » → ajoute la ligne dans journal/trades.md (Mode = direct, Version = daytrading) avec le résultat en R, et dis-moi combien de trades et de R il me reste pour la journée.

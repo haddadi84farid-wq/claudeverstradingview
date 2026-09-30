@@ -149,3 +149,27 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | 15 min, 01/04 → 25/09/2026, sans filtre H4 | 104 | +1,11 | +0,011 | 31,4 % | 1,02 | 16,56 |
 | 30 min, 02/01/2025 → 25/09/2026, filtre H4 activé | 65 | +1,33 | +0,021 | 32,8 % | 1,03 | 12,58 |
 - Conclusion : ≈ 0 R après frais, avec des baisses de 12 à 17 R. Pas d'avantage exploitable.
+
+## Stratégie « Liquidity Sweep Mean Reversion » (LS-MR) corrigée (15_BACKTEST) — 27/09/2026
+| Mode / réglages | Unité / période | Entrées | Résultat (R) | Espérance (R) | Gagnants | Facteur de profit | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Balanced, tampon 0,5 % (original) | 15 min, 01/04 → 25/09/2026 | 0 | — | — | — | — | — |
+| Aggressive, tampon 0,3 ATR | 15 min, 01/04 → 25/09/2026 | 449 | −12,93 | −0,029 | 43,5 % | 0,91 | 37,35 |
+- Balanced ne déclenche jamais (balayage des plus bas + prix au-dessus du VWAP sur la même bougie, stop à 0,5 % trop large). Aggressive : perdant après frais.
+- Avec un capital de 1 400 € et 100 $ de risque par trade, le testeur montre −92 % : illustration du risque de ruine quand le risque par trade dépasse 1-2 % du compte.
+
+### Backtest — XAU Trend Pullback (19_BACKTEST_TREND_PULLBACK, v1)
+
+| Réglage | Unité, période | Entrées | R total | R / entrée | Gagnants | PF | Pire baisse (R) |
+|---|---|---|---|---|---|---|---|
+| Par défaut (sommet/creux H4 compté comme obstacle) | 5 min, 03/08 → 28/09/2026 | 6 | −4,11 | −0,685 | 16,7 % (1/6) | 0,20 | 4,11 |
+- 6 trades : aucune conclusion possible (il en faut ≥ 100). Filtres trop serrés + historique 5 min limité à 2 mois.
+- v2 : le dernier sommet/creux H4 n'est plus un obstacle (en continuation il est fait pour être cassé) + compteurs de diagnostic. À tester en 15 min (historique long) et 5 min.
+| v2 (sommet/creux H4 non compté) | 15 min, 01/04 → 28/09/2026 | 3 | −0,55 | −0,183 | 33,3 % | 0,73 | 1,84 |
+- Diagnostic v2 (15 min) : 132 setups LH/HL → 69 cassures → refusés : horaires 45, position 0, stop trop large 21, obstacle 0 → 3 entrées.
+- v3 : stop maximum = 0,25 ATR journalier (au lieu de 1,5 ATR 15 min, trop serré dès que l'entrée se fait en 15 min). Horaires 07-16 UTC conservés (liquidité).
+- Règle fixée AVANT le test : v3 jugée en 30 min (≈ 21 mois d'historique). < 100 trades ou PF < 1,2 → abandon, plus aucun réglage.
+| v3 (stop max 0,25 ATR journalier) | 30 min, 02/01/2025 → 28/09/2026 | 3 | −2,99 | −1,0 | 0 % (0/3) | 0 | 2,99 |
+- Verdict (règle fixée avant le test) : 3 trades en 21 mois < 100 → stratégie Trend Pullback ABANDONNÉE, plus aucun réglage.
+| v3 + scénario dessiné | 15 min, 01/04 → 29/09/2026 | 11 | −1,17 | −0,106 | 36,4 % | 0,84 | 2,29 |
+- 29/09 : méthode Trend Pullback ARRÊTÉE par l'utilisateur (dessins du scénario non affichés, résultats insuffisants).
