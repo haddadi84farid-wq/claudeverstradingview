@@ -393,6 +393,42 @@ drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
             planLine(t0, t1, tp, "TP" + str.tostring(k) + " " + str.tostring(tp, format.mintick) + " (" + str.tostring(k) + " R)", cGreen, 1)
     planLine(t0, t1, tgt, "TP" + str.tostring(n + 1) + " = CIBLE " + str.tostring(tgt, format.mintick) + " (" + str.tostring(math.abs(tgt - e) / dist, "#.#") + " R)", cGreen, 2)
     array.push(plL, line.new(t1, e, t1 + H, tgt, xloc = xloc.bar_time, color = c, width = 2, style = line.style_arrow_right))
+// ---------- Confirmations MÉMORISÉES (une fois vues, elles restent jusqu'à une nouvelle vague / annulation) ----------
+gIsS = dirP == -1
+gSg  = gIsS ? 1.0 : -1.0
+gRng = math.abs(legEx - legEn)
+float gTgt = na
+if gIsS
+    gTgt := not na(fvgBelow) and fvgBelow < close ? fvgBelow : not na(pdl) and pdl < close ? pdl : legEn
+else
+    gTgt := not na(fvgAbove) and fvgAbove > close ? fvgAbove : not na(pdh) and pdh > close ? pdh : legEn
+gEA  = fibLvl(legEn, gSg, gRng, 0.705)
+g618 = fibLvl(legEn, gSg, gRng, 0.618)
+new15 = ta.change(c15) != 0 or ta.change(o15) != 0
+var bool  confAm = false
+var bool  confBm = false
+var float entBm  = na
+var float lastEx = na
+var float lastEn = na
+var float lastTg = na
+if na(lastEx) or legEx != lastEx or (not legFrz and legEn != lastEn) or dirP != dirP[1]
+    confAm := false
+    confBm := false
+    entBm  := na
+if not na(gTgt) and (na(lastTg) or math.abs(gTgt - lastTg) > 0.5)
+    confBm := false
+    entBm  := na
+lastEx := legEx
+lastEn := legEn
+lastTg := gTgt
+if new15 and legOk and not na(gTgt)
+    // Plan A : bougie 15 min qui entre dans l'OTE (61,8 %) et clôture dans le sens des plans, au-delà de l'entrée
+    if not confAm and (gIsS ? h15 >= g618 and c15 < o15 and c15 < gEA : l15 <= g618 and c15 > o15 and c15 > gEA)
+        confAm := true
+    // Plan B : bougie 15 min qui touche le niveau clé (à 0,2 ATR près) et clôture de l'autre côté → entrée au prix de clôture
+    if not confBm and (gIsS ? l15 <= gTgt + 0.2 * atr15 and c15 > o15 and c15 > gTgt : h15 >= gTgt - 0.2 * atr15 and c15 < o15 and c15 < gTgt)
+        confBm := true
+        entBm  := c15
 if barstate.islast
     for l in fibL
         line.delete(l)
@@ -443,18 +479,18 @@ if barstate.islast
         // PLAN B (retournement sur le niveau clé, CONTRE la tendance) : quand le prix arrive sur la cible du plan A
         // (résistance en hausse / support en baisse), il peut la balayer puis repartir. Entrée seulement sur REJET :
         // la bougie 15 min dépasse le niveau puis clôture de l'autre côté. Stop au-delà + 1 ATR 15 min, objectif = 38,2 % de la vague.
-        eB   = tgt
-        slB  = eB + sg * -1 * math.max(pbuf, atr15)
+        eB   = confBm and not na(entBm) ? entBm : tgt
+        slB  = tgt + sg * -1 * math.max(pbuf, atr15)
         tgtB = fibLvl(enV, sg, rng, 0.382)
         rrB  = math.abs(tgtB - eB) / math.abs(eB - slB)
-        brokeB = isS ? c15 < eB - atr15 : c15 > eB + atr15
+        brokeB = isS ? c15 < tgt - atr15 : c15 > tgt + atr15
         okB  = not na(eB) and rrB >= 1.5 and not brokeB
         drawB = showB and okB
         if drawB
-            confB = isS ? l15 < eB and c15 > eB and c15 > o15 : h15 > eB and c15 < eB and c15 < o15
-            stB = confB ? "CONFIRMÉ : balayage + rejet, tu peux entrer" : "EN ATTENTE du balayage + rejet"
-            condB = isS ? "\nEntrée : le prix passe sous " + str.tostring(eB, format.mintick) + " puis une bougie 15 min clôture VERTE au-dessus" :
-                 "\nEntrée : le prix passe au-dessus de " + str.tostring(eB, format.mintick) + " puis une bougie 15 min clôture ROUGE en dessous"
+            confB = confBm
+            stB = confB ? "CONFIRMÉ (rejet vu à " + str.tostring(eB, format.mintick) + ") : tu peux entrer" : "EN ATTENTE du rejet"
+            condB = isS ? "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture VERTE au-dessus" :
+                 "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture ROUGE en dessous"
             drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, (isS ? "PLAN B — ACHAT sur rejet du support" : "PLAN B — VENTE sur rejet de la résistance") + " (contre la tendance, taille ÷ 2) — " + stB + condB, color.new(color.orange, 0))
         else if showB
             // Plan B coché mais pas valable : on le dit au lieu de ne rien afficher
@@ -467,7 +503,7 @@ if barstate.islast
             // Annulé si une bougie 15 min a CLÔTURÉ au-delà de 78,6 % (le rebond n'est plus un simple retracement)
             killA = isS ? c15 > lvlX : c15 < lvlX
             // Confirmation : dernière bougie 15 min qui a touché l'OTE et clôturé dans le sens du flux (rejet)
-            confA = isS ? h15 >= fibLvl(enV, sg, rng, 0.618) and c15 < o15 and c15 < eA : l15 <= fibLvl(enV, sg, rng, 0.618) and c15 > o15 and c15 > eA
+            confA = confAm
             modeTxt = modeA == "Limite" ? (isS ? "VENTE limite" : "ACHAT limite") : (isS ? "VENTE sur confirmation" : "ACHAT sur confirmation")
             stTxt = killA ? "ANNULÉ (clôture 15 min au-delà de 78,6 %)" : modeA == "Limite" ? "ordre limite actif" : confA ? "CONFIRMÉ : tu peux entrer" : "EN ATTENTE du rejet"
             condTxt = modeA == "Limite" ? "" : (isS ? "\nEntrée : bougie 15 min dans l'OTE qui clôture ROUGE sous l'entrée" : "\nEntrée : bougie 15 min dans l'OTE qui clôture VERTE au-dessus de l'entrée")
@@ -513,7 +549,7 @@ if barstate.islast
     txt += " | H1 " + (h1St == 1 ? "HAUSSIER" : h1St == -1 ? "BAISSIER" : "NEUTRE") + (useH1 and h1St != 0 and h1St != flux ? " → plans en " + (h1St == 1 ? "ACHAT" : "VENTE") : "")
     if useH1 and h1St != 0 and h1St != flux and posSize == 0
         // Plans dans le sens du H1 : l'étiquette montre la cible de CES plans, pas celle du flux journalier
-        txt := "TENDANCE JOUR " + (flux == -1 ? "VENTE" : flux == 1 ? "ACHAT" : "NEUTRE") + " | H1 " + (h1St == 1 ? "HAUSSIER" : "BAISSIER") + " → plans en " + (h1St == 1 ? "ACHAT | CIBLE " + tgtBuy : "VENTE | CIBLE " + tgtSell)
+        txt := "TENDANCE JOUR " + (flux == -1 ? "VENTE" : flux == 1 ? "ACHAT" : "NEUTRE") + " | H1 " + (h1St == 1 ? "HAUSSIER" : "BAISSIER") + " → plans en " + (h1St == 1 ? "ACHAT" : "VENTE") + " | CIBLE " + str.tostring(gTgt, format.mintick)
         col := h1St == 1 ? cGreen : cRed
     if not inSession and posSize == 0
         txt += " (hors horaires)"
