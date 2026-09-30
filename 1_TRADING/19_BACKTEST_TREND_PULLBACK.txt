@@ -47,7 +47,7 @@ impPiv    = input.int(12, "Vague : sommet / creux confirmé par N bougies 15 min
 minImpH1  = input.float(1.5, "Vague : taille minimale (× ATR H1)", minval = 0.5, step = 0.1, group = gV)
 lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
-fibShift  = input.float(15.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+fibShift  = input.float(18.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
 useH1     = input.bool(true, "Plans dans le sens de la tendance H1 (sinon : flux journalier)", group = gV)
@@ -394,7 +394,7 @@ drawPlan(int t0, int t1, float e, float sl, float tgt, string name, color c) =>
     n = 0
     for k = 1 to 3
         tp = e + (up ? 1 : -1) * k * dist
-        if up ? tp < tgt : tp > tgt
+        if up ? tp < tgt - 0.3 * dist : tp > tgt + 0.3 * dist
             n += 1
             planLine(t0, t1, tp, "TP" + str.tostring(k) + " " + str.tostring(tp, format.mintick) + " (" + str.tostring(k) + " R)", cGreen, 1)
     planLine(t0, t1, tgt, "TP" + str.tostring(n + 1) + " = CIBLE " + str.tostring(tgt, format.mintick) + " (" + str.tostring(math.abs(tgt - e) / dist, "#.#") + " R)", cGreen, 2)
@@ -471,7 +471,7 @@ if barstate.islast
             confA = isS ? h15 >= fibLvl(enV, sg, rng, 0.618) and c15 < o15 and c15 < eA : l15 <= fibLvl(enV, sg, rng, 0.618) and c15 > o15 and c15 > eA
             modeTxt = modeA == "Limite" ? (isS ? "VENTE limite" : "ACHAT limite") : (isS ? "VENTE sur confirmation" : "ACHAT sur confirmation")
             stTxt = killA ? "ANNULÉ (clôture 15 min au-delà de 78,6 %)" : modeA == "Limite" ? "ordre limite actif" : confA ? "CONFIRMÉ : tu peux entrer" : "EN ATTENTE du rejet"
-            condTxt = modeA == "Limite" ? "" : (isS ? "\nEntrer seulement si une bougie 15 min touche l'OTE puis clôture ROUGE sous l'entrée" : "\nEntrer seulement si une bougie 15 min touche l'OTE puis clôture VERTE au-dessus de l'entrée")
+            condTxt = modeA == "Limite" ? "" : (isS ? "\nEntrée : bougie 15 min dans l'OTE qui clôture ROUGE sous l'entrée" : "\nEntrée : bougie 15 min dans l'OTE qui clôture VERTE au-dessus de l'entrée")
             drawPlan(tA0, tA0 + 3 * H, eA, slA, tgt, "PLAN A — " + modeTxt + " (OTE) — " + stTxt + (contre ? "\n⚠ Dans le sens du H1 mais CONTRE le flux journalier : taille ÷ 2" : "") + condTxt, killA ? cGray : cZ)
             planLine(tA0, tA0 + 3 * H, lvlX, "ANNULATION si clôture 15 min au-delà de " + str.tostring(lvlX, format.mintick), color.orange, 1)
         // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
@@ -512,6 +512,10 @@ if barstate.islast
         txt := bState == 1 ? "FLUX BUY | CIBLE " + tgtBuy + " | HL " + str.tostring(bHL, format.mintick) + " → BUY SETUP si clôture > " + str.tostring(bTrig, format.mintick) :
              "FLUX BUY | CIBLE " + tgtBuy + " | ATTENTE RETRACEMENT"
     txt += " | H1 " + (h1St == 1 ? "HAUSSIER" : h1St == -1 ? "BAISSIER" : "NEUTRE") + (useH1 and h1St != 0 and h1St != flux ? " → plans en " + (h1St == 1 ? "ACHAT" : "VENTE") : "")
+    if useH1 and h1St != 0 and h1St != flux and strategy.position_size == 0
+        // Plans dans le sens du H1 : l'étiquette montre la cible de CES plans, pas celle du flux journalier
+        txt := "TENDANCE JOUR " + (flux == -1 ? "VENTE" : flux == 1 ? "ACHAT" : "NEUTRE") + " | H1 " + (h1St == 1 ? "HAUSSIER" : "BAISSIER") + " → plans en " + (h1St == 1 ? "ACHAT | CIBLE " + tgtBuy : "VENTE | CIBLE " + tgtSell)
+        col := h1St == 1 ? cGreen : cRed
     if not inSession and strategy.position_size == 0
         txt += " (hors horaires)"
     info := label.new(time + math.round(lblShift * 3600000), close, txt, xloc = xloc.bar_time, style = label.style_label_left, color = col, textcolor = color.white, size = size.normal)
