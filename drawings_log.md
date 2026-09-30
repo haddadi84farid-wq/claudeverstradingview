@@ -240,6 +240,28 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-30 08:45 | A3EaOC | text | 4209,5 (« TP2 4208 (2.6 R) ») | Claude |
 | 2026-09-30 08:45 | vJFqMP | text | 4218,5 (« TP3 4217 (3.6 R) ») | Claude |
 | 2026-09-30 08:45 | 1mt6n9 | text | 4172,0 (« PLAN CLAUDE — ACHAT LIMITE 4185.8 \| … », bleu plein) | Claude |
+| 2026-09-30 09:40 | nWadMT | rectangle | 4200,0 – 4204,9 (plan 09:30, VENTE CT, RISQUE rouge, 01/10 13:00 → 17:00 UTC) | Claude |
+| 2026-09-30 09:40 | UWCz53 | rectangle | 4183,5 – 4200,0 (VENTE CT, OBJECTIF vert) | Claude |
+| 2026-09-30 09:40 | KclJwP | trend_line | 4191,8 (séparateur TP1 vente) | Claude |
+| 2026-09-30 09:40 | f5BkHa | trend_line | 4188,4 (séparateur TP2 vente) | Claude |
+| 2026-09-30 09:40 | qYwrg8 | text | 4206,4 (« SL 4204.9 ») | Claude |
+| 2026-09-30 09:40 | QQ4UN0 | text | 4201,6 (« INVALIDE si clôture 15 min au-dessus de 4202.9 → COUPER ») | Claude |
+| 2026-09-30 09:40 | P9LrOK | text | 4198,1 (« Entrée 4200 (zone 4199.5-4201.5) ») | Claude |
+| 2026-09-30 09:40 | i6AgO2 | text | 4193,0 (« TP1 4191.8 (1.67 R) SORTIE TOTALE ») | Claude |
+| 2026-09-30 09:40 | l3Q3jg | text | 4189,6 (« TP2 4188.4 (2.4 R) ») | Claude |
+| 2026-09-30 09:40 | PXBY2b | text | 4184,7 (« TP3 4183.5 (3.4 R) ») | Claude |
+| 2026-09-30 09:40 | Edk7LL | text | 4180,0 (« PLAN CLAUDE — VENTE CT 4200 \| … », rouge plein) | Claude |
+| 2026-09-30 09:40 | IPnFOn | rectangle | 4180,5 – 4186,5 (plan 09:30, ACHAT, RISQUE rouge, 01/10 17:30 → 21:30 UTC) | Claude |
+| 2026-09-30 09:40 | bEdrvW | rectangle | 4186,5 – 4217,0 (ACHAT, OBJECTIF vert) | Claude |
+| 2026-09-30 09:40 | IPiCmm | trend_line | 4199,2 (séparateur TP1 achat) | Claude |
+| 2026-09-30 09:40 | pWz6EV | trend_line | 4208,0 (séparateur TP2 achat) | Claude |
+| 2026-09-30 09:40 | dLmUQL | text | 4181,6 (« SL 4180.5 ») | Claude |
+| 2026-09-30 09:40 | NFLGZJ | text | 4184,3 (« INVALIDE si clôture 15 min sous 4182.9 → COUPER ») | Claude |
+| 2026-09-30 09:40 | H18No8 | text | 4188,0 (« Entrée 4186.5 (zone 4185.5-4187.5) ») | Claude |
+| 2026-09-30 09:40 | SKYYix | text | 4200,7 (« TP1 4199.2 (2.1 R) SORTIE TOTALE ») | Claude |
+| 2026-09-30 09:40 | utEhUt | text | 4209,5 (« TP2 4208 (3.6 R) ») | Claude |
+| 2026-09-30 09:40 | 9nOiWf | text | 4218,5 (« TP3 4217 (5.1 R) ») | Claude |
+| 2026-09-30 09:40 | ynzwLY | text | 4176,0 (« PLAN CLAUDE — ACHAT 4186.5 \| … », bleu plein) | Claude |
 
 ## Tracés retirés
 
@@ -270,6 +292,7 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-29 12:05 (constaté) | OgOGot, atVpcL, 1NWDrI, 1K8Eee, JfKZ6K, s6GkaL, pAJLzW, fhTpe2, Nag2zl (plan BAS) | hors Claude (déjà absents du graphique) |
 | 2026-09-29 14:10 | GQLwge, RoBrfZ, nXYx8a, rxOOcm, lqsKwd, Ge3w4q, 57FKlv, NqYyke, mX8GJd, cIEqaO, qKTlO4 (pavé de la vente 4156, trade perdant) | Claude, sur « oui vas-y » |
 | 2026-09-29 12:20 | 8ef6nS, s1dVOP, iTLFDl, gHc5BI, mq7RzR, zVOdIr, eXTtdl, x8U93E, ulge2T, V2GOTd, Tb09Rw (pavé vente 4156 décalé de 3 h vers la droite) | Claude, sur go 1-11 |
+| 2026-09-30 09:40 | 98umyt, 4R14Km, jDueG1, iocYkS, qmUcLO, JCTCbl, wP4znS, stK8H1, VXR9RE (pavé vente CT 4199,8, trade terminé) ; cMmPAt, NjxmM6, mCRBhN, bBOJ2M, fn9k2G, wmHuwB, at2CYR, a15HAE, A3EaOC, vJFqMP, 1mt6n9 (pavé achat 4185,8, remplacé par le plan de 09:30) | Claude, sur go 1-20 |
 | 2026-09-30 08:45 | eFZ4gy, jDtgph, YuIRH2, IRRaLT, mZ3ii7, DA8VSh, xWRhXF, VCWecu, QdbFro, tM6fG5, KwIxdI (pavé achat à 22:00 UTC, recréé après les tracés XAU Plans en 15 min, à côté du pavé vente) | Claude, sur go 1-11 |
 | 2026-09-30 08:00 | Fxsycp, vkyEi5, 6Tgm33, qfPi6c, qh1FjM, i8qJoo, AAzki2, DhW2AI, MtkzRY, 6FNBPb, hVv17M (pavé achat 4185,8 à 10:30 UTC, recréé après les tracés XAU Plans) | Claude, sur go 1-11 |
 | 2026-09-30 07:45 | D3VqZW, T3LLzt, leHS55, uFiChG, OQ97LE, aNNXRP (6 étiquettes isolées du plan achat 4185,8, remplacées par le pavé) | Claude, sur go 1-6 |
