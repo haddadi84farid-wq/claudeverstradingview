@@ -52,7 +52,7 @@ showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
 useH1     = input.bool(true, "Plans dans le sens de la tendance H1 (sinon : flux journalier)", group = gV)
 showA     = input.bool(true, "Afficher le PLAN A (OTE, sens du flux)", group = gV)
-showB     = input.bool(true, "Afficher le PLAN B (rebond vers l'OTE, contre le flux)", group = gV)
+showB     = input.bool(true, "Afficher le PLAN B (retournement sur le niveau clé, contre la tendance)", group = gV)
 planStart = input.float(1.0, "Plans : début à droite du prix (heures)", minval = 0.5, step = 0.5, group = gV)
 riskEur   = input.float(13.0, "Risque par trade pour la taille des plans (€)", minval = 1, group = gV)
 eurUsd    = input.float(1.17, "Taux EUR/USD (pour la taille)", minval = 0.5, step = 0.01, group = gV)
@@ -442,24 +442,29 @@ if barstate.islast
                  border_color = color.new(color.orange, 20), bgcolor = color.new(color.orange, 80),
                  text = "FVG H4 (cible) " + str.tostring(math.min(fTop, fBot), "#") + "–" + str.tostring(math.max(fTop, fBot), "#"),
                  text_color = color.orange, text_size = size.small, text_halign = text.align_left))
-        // PLAN B (rebond vers l'OTE, contre le flux) : limite au 38,2 %, stop au-delà + marge, cible = début de l'OTE (61,8 %)
-        eB   = fibLvl(enV, sg, rng, 0.382)
-        slB  = eB - sg * math.max(pbuf, atr15)  // stop au moins 1 ATR 15 min
-        tgtB = fibLvl(enV, sg, rng, 0.618)
-        okB  = isS ? close > eB and close < tgtB : close < eB and close > tgtB
-        okB := okB and math.abs(tgtB - eB) / math.abs(eB - slB) >= 1.5
-        // PLAN A (dans le sens du flux) : limite au milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, cible = FVG H4 / veille
+        // PLAN A (dans le sens des plans) : milieu de l'OTE (70,5 %), stop au-delà de 78,6 % + marge, cible = FVG H4 / veille / extrême
         eA  = fibLvl(enV, sg, rng, 0.705)
         slA = eA + sg * math.max(math.abs(fibLvl(enV, sg, rng, 0.786) + sg * pbuf - eA), atr15)  // au-delà de 78,6 % + marge, au moins 1 ATR 15 min
         tStart = time + math.round(planStart * H)
+        // PLAN B (retournement sur le niveau clé, CONTRE la tendance) : quand le prix arrive sur la cible du plan A
+        // (résistance en hausse / support en baisse), il peut la balayer puis repartir. Entrée seulement sur REJET :
+        // la bougie 15 min dépasse le niveau puis clôture de l'autre côté. Stop au-delà + 1 ATR 15 min, objectif = 38,2 % de la vague.
+        eB   = tgt
+        slB  = eB + sg * -1 * math.max(pbuf, atr15)
+        tgtB = fibLvl(enV, sg, rng, 0.382)
+        rrB  = math.abs(tgtB - eB) / math.abs(eB - slB)
+        brokeB = isS ? c15 < eB - atr15 : c15 > eB + atr15
+        okB  = not na(eB) and rrB >= 1.5 and not brokeB
         drawB = showB and okB
-        rrB = math.abs(tgtB - eB) / math.abs(eB - slB)
-        inZoneB = isS ? close > eB and close < tgtB : close < eB and close > tgtB
         if drawB
-            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, isS ? "PLAN B — ACHAT limite (rebond vers l'OTE, contre le sens)" : "PLAN B — VENTE limite (repli vers l'OTE, contre le sens)", color.new(color.orange, 0))
+            confB = isS ? l15 < eB and c15 > eB and c15 > o15 : h15 > eB and c15 < eB and c15 < o15
+            stB = confB ? "CONFIRMÉ : balayage + rejet, tu peux entrer" : "EN ATTENTE du balayage + rejet"
+            condB = isS ? "\nEntrée : le prix passe sous " + str.tostring(eB, format.mintick) + " puis une bougie 15 min clôture VERTE au-dessus" :
+                 "\nEntrée : le prix passe au-dessus de " + str.tostring(eB, format.mintick) + " puis une bougie 15 min clôture ROUGE en dessous"
+            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, (isS ? "PLAN B — ACHAT sur rejet du support" : "PLAN B — VENTE sur rejet de la résistance") + " (contre la tendance, taille ÷ 2) — " + stB + condB, color.new(color.orange, 0))
         else if showB
             // Plan B coché mais pas valable : on le dit au lieu de ne rien afficher
-            whyB = not inZoneB ? "le prix n'est pas entre 38,2 % (" + str.tostring(eB, "#") + ") et 61,8 % (" + str.tostring(tgtB, "#") + ")" : "R:R " + str.tostring(rrB, "#.#") + " < 1,5"
+            whyB = brokeB ? "le niveau " + str.tostring(eB, format.mintick) + " est cassé (clôture 15 min au-delà + 1 ATR)" : "R:R " + str.tostring(rrB, "#.#") + " < 1,5"
             array.push(plT, label.new(tStart, close, "PLAN B : pas de trade maintenant\n" + whyB, xloc = xloc.bar_time, style = label.style_label_left,
                  color = color.new(cGray, 30), textcolor = color.white, size = size.small))
         if showA
