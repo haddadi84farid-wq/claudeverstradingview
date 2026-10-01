@@ -262,6 +262,30 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-30 09:40 | utEhUt | text | 4209,5 (« TP2 4208 (3.6 R) ») | Claude |
 | 2026-09-30 09:40 | 9nOiWf | text | 4218,5 (« TP3 4217 (5.1 R) ») | Claude |
 | 2026-09-30 09:40 | ynzwLY | text | 4176,0 (« PLAN CLAUDE — ACHAT 4186.5 \| … », bleu plein) | Claude |
+| 2026-10-01 07:20 | U1u0Kl | rectangle | 4191,5 – 4196,0 (plan 01/10 07:00, VENTE, risque rouge, 02/10 00:00 → 04:00 UTC) | Claude |
+| 2026-10-01 07:20 | F2dfqh | rectangle | 4178,1 – 4191,5 (VENTE, objectif vert) | Claude |
+| 2026-10-01 07:20 | N960Tl | trend_line | 4196,0 (VENTE, ligne SL rouge) | Claude |
+| 2026-10-01 07:20 | fCqpzE | trend_line | 4191,5 (VENTE, ligne entrée grise) | Claude |
+| 2026-10-01 07:20 | O7xzIH | trend_line | 4184,4 (VENTE, ligne TP1 verte) | Claude |
+| 2026-10-01 07:20 | ztR6BZ | trend_line | 4178,1 (VENTE, ligne TP2 verte) | Claude |
+| 2026-10-01 07:20 | WqlGMF | text | 4196,0 (« Stop Loss: 4196.0 », rouge plein, 04:00 UTC) | Claude |
+| 2026-10-01 07:20 | mQCgsH | text | 4191,5 (« Entry: 4191.5 (zone 4190.5-4192.5) », gris plein) | Claude |
+| 2026-10-01 07:20 | ttWL6b | text | 4184,4 (« Take Profit 1: 4184.4 (1.58 R) », vert plein) | Claude |
+| 2026-10-01 07:20 | d2FJUh | text | 4178,1 (« Take Profit 2: 4178.1 (3 R) », vert plein) | Claude |
+| 2026-10-01 07:20 | KLKS5A | text | 4197,3 (« Sell », rouge plein) | Claude |
+| 2026-10-01 07:20 | LUE5SK | text | 4199,6 (« SI BALAYAGE > 4193.1 … SORTIE 12:00 UTC », orange plein) | Claude |
+| 2026-10-01 07:20 | zOaK4r | rectangle | 4175,5 – 4180,5 (plan 01/10 07:00, ACHAT CT, risque rouge, 02/10 09:30 → 13:30 UTC) | Claude |
+| 2026-10-01 07:20 | 3jbNSJ | rectangle | 4180,5 – 4191,8 (ACHAT CT, objectif vert) | Claude |
+| 2026-10-01 07:20 | vabYzF | trend_line | 4175,5 (ACHAT, ligne SL rouge) | Claude |
+| 2026-10-01 07:20 | 7yni2v | trend_line | 4180,5 (ACHAT, ligne entrée grise) | Claude |
+| 2026-10-01 07:20 | vDllWi | trend_line | 4185,0 (ACHAT, ligne TP1 verte) | Claude |
+| 2026-10-01 07:20 | i9obgH | trend_line | 4191,8 (ACHAT, ligne TP2 verte) | Claude |
+| 2026-10-01 07:20 | f0099f | text | 4175,5 (« Stop Loss: 4175.5 », rouge plein, 13:30 UTC) | Claude |
+| 2026-10-01 07:20 | uRU6il | text | 4180,5 (« Entry: 4180.5 (zone 4179.5-4181.5) », gris plein) | Claude |
+| 2026-10-01 07:20 | 7ZVeYp | text | 4185,0 (« Take Profit 1: 4185.0 (0.9 R) PETIT PROFIT », vert plein) | Claude |
+| 2026-10-01 07:20 | YrWrcd | text | 4191,8 (« Take Profit 2: 4191.8 (2.3 R) », vert plein) | Claude |
+| 2026-10-01 07:20 | CRpxOg | text | 4174,2 (« Buy », vert plein) | Claude |
+| 2026-10-01 07:20 | J3MBgR | text | 4172,0 (« CT : SI BALAYAGE < 4179.1 … SORTIE 12:00 UTC », orange plein) | Claude |
 
 ## Tracés retirés
 
@@ -292,6 +316,7 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-29 12:05 (constaté) | OgOGot, atVpcL, 1NWDrI, 1K8Eee, JfKZ6K, s6GkaL, pAJLzW, fhTpe2, Nag2zl (plan BAS) | hors Claude (déjà absents du graphique) |
 | 2026-09-29 14:10 | GQLwge, RoBrfZ, nXYx8a, rxOOcm, lqsKwd, Ge3w4q, 57FKlv, NqYyke, mX8GJd, cIEqaO, qKTlO4 (pavé de la vente 4156, trade perdant) | Claude, sur « oui vas-y » |
 | 2026-09-29 12:20 | 8ef6nS, s1dVOP, iTLFDl, gHc5BI, mq7RzR, zVOdIr, eXTtdl, x8U93E, ulge2T, V2GOTd, Tb09Rw (pavé vente 4156 décalé de 3 h vers la droite) | Claude, sur go 1-11 |
+| 2026-10-01 07:20 | nWadMT, UWCz53, KclJwP, f5BkHa, qYwrg8, QQ4UN0, P9LrOK, i6AgO2, l3Q3jg, PXBY2b, Edk7LL, IPnFOn, bEdrvW, IPiCmm, pWz6EV, dLmUQL, NFLGZJ, H18No8, SKYYix, utEhUt, 9nOiWf, ynzwLY (pavés du plan 30/09 09:30, périmés) | Claude, sur go 1-22 |
 | 2026-09-30 09:40 | 98umyt, 4R14Km, jDueG1, iocYkS, qmUcLO, JCTCbl, wP4znS, stK8H1, VXR9RE (pavé vente CT 4199,8, trade terminé) ; cMmPAt, NjxmM6, mCRBhN, bBOJ2M, fn9k2G, wmHuwB, at2CYR, a15HAE, A3EaOC, vJFqMP, 1mt6n9 (pavé achat 4185,8, remplacé par le plan de 09:30) | Claude, sur go 1-20 |
 | 2026-09-30 08:45 | eFZ4gy, jDtgph, YuIRH2, IRRaLT, mZ3ii7, DA8VSh, xWRhXF, VCWecu, QdbFro, tM6fG5, KwIxdI (pavé achat à 22:00 UTC, recréé après les tracés XAU Plans en 15 min, à côté du pavé vente) | Claude, sur go 1-11 |
 | 2026-09-30 08:00 | Fxsycp, vkyEi5, 6Tgm33, qfPi6c, qh1FjM, i8qJoo, AAzki2, DhW2AI, MtkzRY, 6FNBPb, hVv17M (pavé achat 4185,8 à 10:30 UTC, recréé après les tracés XAU Plans) | Claude, sur go 1-11 |
