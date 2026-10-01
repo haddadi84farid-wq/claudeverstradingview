@@ -47,8 +47,8 @@ impPiv    = input.int(12, "Vague : sommet / creux confirmé par N bougies 15 min
 minImpH1  = input.float(1.5, "Vague : taille minimale (× ATR H1)", minval = 0.5, step = 0.1, group = gV)
 lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
-fibAnchor = input.string("Sur la vague (comme l'outil Fibonacci)", "Fibonacci : position", options = ["Sur la vague (comme l'outil Fibonacci)", "À droite, décalé"], group = gV)
-fibShift  = input.float(18.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
+fibAnchor = input.string("À droite, décalé", "Fibonacci : position", options = ["Sur la vague (comme l'outil Fibonacci)", "À droite, décalé"], group = gV)
+fibShift  = input.float(11.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
 useH1     = input.bool(true, "Plans dans le sens de la tendance H1 (sinon : flux journalier)", group = gV)
@@ -542,8 +542,8 @@ if barstate.islast
                 p = fibLvl(enV, sg, rng, r)
                 isOte = r == 0.618 or r == 0.786
                 c = r == 0.0 or r == 1.0 ? color.white : isOte ? cZ : cGray
-                array.push(fibL, line.new(f0, p, f1, p, xloc = xloc.bar_time, color = c, width = isOte ? 2 : 1,
-                     style = isOte ? line.style_solid : line.style_dashed))
+                array.push(fibL, line.new(f0, p, f1, p, xloc = xloc.bar_time, color = color.new(c, 25), width = 1,
+                     style = isOte ? line.style_solid : line.style_dotted))
                 array.push(fibT, label.new(f1, p, str.tostring(r * 100, "#.#") + " %  " + str.tostring(p, format.mintick) + (r == 1.0 ? "  (début de la vague)" : r == 0.0 ? "  (fin de la vague)" : ""),
                      xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
 
