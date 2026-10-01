@@ -52,6 +52,7 @@ showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
 useH1     = input.bool(true, "Plans dans le sens de la tendance H1 (sinon : flux journalier)", group = gV)
 showRes   = input.bool(true, "Tableau des résultats des plans A / B (en bas à gauche)", group = gV)
+showChk   = input.bool(true, "Check-list des plans (cases vertes / rouges)", group = gV)
 showA     = input.bool(true, "Afficher le PLAN A (OTE, sens du flux)", group = gV)
 showB     = input.bool(true, "Afficher le PLAN B (retournement sur le niveau clé, contre la tendance)", group = gV)
 planStart = input.float(1.0, "Plans : début à droite du prix (heures)", minval = 0.5, step = 0.5, group = gV)
@@ -610,6 +611,50 @@ if barstate.islast and showRes
     table.cell(resT, 2, 2, nB > 0 ? str.tostring(100.0 * wB / nB, "#") + " %" : "—", text_color = color.white, text_size = size.small)
     table.cell(resT, 3, 2, str.tostring(rB, "#.#"), text_color = rB >= 0 ? cGreen : cRed, text_size = size.small)
     table.cell(resT, 4, 2, nB > 0 ? str.tostring(rB / nB, "#.##") : "—", text_color = color.white, text_size = size.small)
+
+// ---------- CHECK-LIST en haut à droite : conditions des plans A et B (cases vertes quand c'est bon) ----------
+var table chk = table.new(position.top_right, 2, 16, bgcolor = color.new(color.black, 15), frame_color = cGray, frame_width = 1,
+     border_color = color.new(cGray, 70), border_width = 1)
+lvlXg  = fibLvl(legEn, gSg, gRng, 0.786)
+killG  = gIsS ? c15 > lvlXg : c15 < lvlXg
+inOteG = gIsS ? h15 >= g618 or high >= g618 : l15 <= g618 or low <= g618
+slBg   = gTgt - gSg * math.max(pbufG, atr15)
+tg38g  = fibLvl(legEn, gSg, gRng, 0.382)
+rrBg   = math.abs(gTgt - slBg) > 0 ? math.abs(tg38g - gTgt) / math.abs(gTgt - slBg) : 0.0
+touchB = gIsS ? l15 <= gTgt + 0.2 * atr15 or low <= gTgt + 0.2 * atr15 : h15 >= gTgt - 0.2 * atr15 or high >= gTgt - 0.2 * atr15
+brokeG = gIsS ? c15 < gTgt - atr15 : c15 > gTgt + atr15
+chkRow(int r, string name, bool ok) =>
+    table.cell(chk, 0, r, name, text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(chk, 1, r, ok ? "✓" : "✗", text_color = color.white, bgcolor = ok ? cGreen : cRed, text_size = size.small)
+if barstate.islast and showChk
+    table.clear(chk, 0, 0, 1, 15)
+    if dirP == 0 or not legOk
+        table.cell(chk, 0, 0, dirP == 0 ? "Pas de tendance nette : pas de plan" : "Pas de vague nette : pas de plan", text_color = color.white, bgcolor = cGray, text_size = size.small)
+        table.cell(chk, 1, 0, "", bgcolor = cGray)
+    else
+        sA = gIsS ? "VENTE" : "ACHAT"
+        sB = gIsS ? "ACHAT" : "VENTE"
+        aOk = legOk and inOteG and confAm and not killG and inSession
+        bOk = not na(gTgt) and touchB and confBm and not brokeG and rrBg >= 1.5 and inSession
+        table.cell(chk, 0, 0, "PLAN A — " + sA + " (OTE " + str.tostring(math.min(g618, lvlXg), "#") + "–" + str.tostring(math.max(g618, lvlXg), "#") + ")", text_color = color.white, bgcolor = gIsS ? cRed : cGreen, text_size = size.small)
+        table.cell(chk, 1, 0, "", bgcolor = gIsS ? cRed : cGreen)
+        chkRow(1, "Tendance H1 / flux dans ce sens", dirP != 0)
+        chkRow(2, "Vague nette (≥ " + str.tostring(minImpH1) + " ATR H1)", legOk)
+        chkRow(3, "Prix entré dans l'OTE", inOteG)
+        chkRow(4, "Bougie 15 min de rejet", confAm)
+        chkRow(5, "Pas de clôture 15 min au-delà de 78,6 %", not killG)
+        chkRow(6, "Dans les horaires", inSession)
+        table.cell(chk, 0, 7, aOk ? "→ PLAN A : TU PEUX ENTRER" : "→ PLAN A : ATTENDRE", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 1, 7, aOk ? "✓" : "…", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 0, 8, "PLAN B — " + sB + " (rejet " + str.tostring(gTgt, format.mintick) + ", contre la tendance)", text_color = color.white, bgcolor = color.orange, text_size = size.small)
+        table.cell(chk, 1, 8, "", bgcolor = color.orange)
+        chkRow(9, "Niveau clé touché", touchB)
+        chkRow(10, "Bougie 15 min de rejet", confBm)
+        chkRow(11, "Niveau pas cassé (clôture 15 min)", not brokeG)
+        chkRow(12, "R:R ≥ 1,5 (" + str.tostring(rrBg, "#.#") + ")", rrBg >= 1.5)
+        chkRow(13, "Dans les horaires", inSession)
+        table.cell(chk, 0, 14, bOk ? "→ PLAN B : TU PEUX ENTRER (taille ÷ 2)" : "→ PLAN B : ATTENDRE", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 1, 14, bOk ? "✓" : "…", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
 
 // ---------- Une seule étiquette ----------
 var label info = na
