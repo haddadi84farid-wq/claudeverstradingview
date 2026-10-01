@@ -188,4 +188,6 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 |---|---|---|---|---|---|
 | v1 (OB au sommet, Fibo 150 bougies) | 15 min | 40 / 23 % / −0,41 | 124 / 37 % / +0,08 | 117 / 25 % / −0,33 | −45,4 |
 | v3 (OB = pause avant la jambe, Fibo sur la vague, étoiles 3 et 5 dynamiques) | 5 min | 63 / 35 % / −0,09 | 126 / 29 % / −0,20 | 156 / 34 % / −0,07 | −42,6 |
+| v3 | 10 min | 62 / 35 % / +0,01 | 119 / 41 % / +0,18 | ? / 28 % / −0,24 (−35,1 R) | ≈ −13 |
 - Entrée sur bougie de réaction dans l'OB, stop au-delà de l'OB, 2 R, frais 0,37 point. Les étoiles ne séparent pas les bons OB des mauvais (5★ ≈ ≤ 3★). Aucun avantage mesuré.
+- 10 min : 5★ ≈ 0 ; 4★ +0,18 R/trade mais contredit en 5 min (−0,20) → probablement du bruit. Règle fixée avant : 5★ ≤ 0 → méthode arrêtée. Option : test en direct (démo) des OB ≥ 4★ en 10 min sur 30 trades, sans rien modifier.
