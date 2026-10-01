@@ -334,6 +334,24 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-10-01 08:25 | 0aCYIN | text | 4159,0 (« TP2 4158 · 1.9 R ») | Claude |
 | 2026-10-01 08:25 | IcAmD1 | text | 4162,0 (« TP3 4163.5 · 3 R ») | Claude |
 | 2026-10-01 08:25 | KBgFJo | note | 4142,5 (consigne ACHAT CT au survol, orange, 14:30 UTC ; tracée par la commande locale) | Claude |
+| 2026-10-01 08:55 | Od6lnj | rectangle | 4158,5 – 4164,0 (plan 08:45, VENTE, risque rouge, 02/10 00:00 → 06:00 UTC) | Claude |
+| 2026-10-01 08:55 | OkAQsC | rectangle | 4139,7 – 4158,5 (VENTE, objectif vert) | Claude |
+| 2026-10-01 08:55 | w0VKsX | trend_line | 4147,9 (VENTE, trait TP1) | Claude |
+| 2026-10-01 08:55 | 8oTBjf | text | 4161,2 (« SL 4164 ») | Claude |
+| 2026-10-01 08:55 | HX64kx | text | 4155,5 (« VENTE 4158.5 ») | Claude |
+| 2026-10-01 08:55 | a92IU6 | text | 4150,6 (« TP1 4147.9 (1.9 R) ») | Claude |
+| 2026-10-01 08:55 | jBww0T | text | 4142,6 (« TP2 4139.7 (3.4 R) ») | Claude |
+| 2026-10-01 08:55 | S01esc | note | 4165,5 (consigne VENTE au survol, 02/10 00:00 UTC ; commande locale) | Claude |
+| 2026-10-01 08:55 | QXLiEi | rectangle | 4143,5 – 4148,5 (plan 08:15, ACHAT CT, risque rouge, 02/10 06:30 → 12:30 UTC) | Claude |
+| 2026-10-01 08:55 | V3nC3V | rectangle | 4148,5 – 4163,5 (ACHAT CT, objectif vert) | Claude |
+| 2026-10-01 08:55 | SVpRFr | trend_line | 4155,0 (ACHAT, trait TP1) | Claude |
+| 2026-10-01 08:55 | tcVyDY | trend_line | 4158,0 (ACHAT, trait TP2) | Claude |
+| 2026-10-01 08:55 | LDmril | text | 4146,0 (« SL 4143.5 ») | Claude |
+| 2026-10-01 08:55 | NbXMnQ | text | 4150,3 (« ACHAT CT 4148.5 ») | Claude |
+| 2026-10-01 08:55 | 2pG4y4 | text | 4153,0 (« TP1 4155 (1.3 R) ») | Claude |
+| 2026-10-01 08:55 | 8vwfPt | text | 4156,5 (« TP2 4158 (1.9 R) ») | Claude |
+| 2026-10-01 08:55 | F4JfL0 | text | 4161,0 (« TP3 4163.5 (3 R) ») | Claude |
+| 2026-10-01 08:55 | NpTdG3 | note | 4165,0 (consigne ACHAT CT au survol, 02/10 06:30 UTC ; commande locale) | Claude |
 
 ## Tracés retirés
 
@@ -364,6 +382,7 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-09-29 12:05 (constaté) | OgOGot, atVpcL, 1NWDrI, 1K8Eee, JfKZ6K, s6GkaL, pAJLzW, fhTpe2, Nag2zl (plan BAS) | hors Claude (déjà absents du graphique) |
 | 2026-09-29 14:10 | GQLwge, RoBrfZ, nXYx8a, rxOOcm, lqsKwd, Ge3w4q, 57FKlv, NqYyke, mX8GJd, cIEqaO, qKTlO4 (pavé de la vente 4156, trade perdant) | Claude, sur « oui vas-y » |
 | 2026-09-29 12:20 | 8ef6nS, s1dVOP, iTLFDl, gHc5BI, mq7RzR, zVOdIr, eXTtdl, x8U93E, ulge2T, V2GOTd, Tb09Rw (pavé vente 4156 décalé de 3 h vers la droite) | Claude, sur go 1-11 |
+| 2026-10-01 08:55 | I5v9VK, gjkFaK, qVMmN1, oUAuEq, PGk5cH, grFT3A, X6a7bE, H0lqkO, vPa80c, Wqpk10, WBtHpj, WtLgqj, a3DT4d, mNtldM, ayQiKw, FBs1xp, qVm2VI, 0aCYIN, IcAmD1, KBgFJo (pavés de 08:15, refaits plus à droite) | Claude, sur go 1-20 |
 | 2026-10-01 08:25 | avhU7m, U1UH1G, d15L22, VRVfLO, Mym1IX, JuYem3, qlDay9, j3JpsK, HH3k2J, kd0X7n, riX5cX, SwhWjx, GuEOiV, E1f2VK, PW3ZPU, CFgb1q, gSK8FI, 7QDZz9, UMKkOS, 8YaRkr, anGGIx, YVEdXy, w3d3Uj, d30RFe, LIUPEO, VNW69P, CJOc4k, GHiz4t (plans de 07:20) | Claude, sur go 1-28 |
 | 2026-10-01 07:35 | U1u0Kl, F2dfqh, N960Tl, fCqpzE, O7xzIH, ztR6BZ, WqlGMF, mQCgsH, ttWL6b, d2FJUh, KLKS5A, LUE5SK, zOaK4r, 3jbNSJ, vabYzF, 7yni2v, vDllWi, i9obgH, f0099f, uRU6il, 7ZVeYp, YrWrcd, CRpxOg, J3MBgR (plans de 07:00 annulés) | Claude, sur go 1-24 |
 | 2026-10-01 07:20 | nWadMT, UWCz53, KclJwP, f5BkHa, qYwrg8, QQ4UN0, P9LrOK, i6AgO2, l3Q3jg, PXBY2b, Edk7LL, IPnFOn, bEdrvW, IPiCmm, pWz6EV, dLmUQL, NFLGZJ, H18No8, SKYYix, utEhUt, 9nOiWf, ynzwLY (pavés du plan 30/09 09:30, périmés) | Claude, sur go 1-22 |
