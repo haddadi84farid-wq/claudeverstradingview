@@ -194,3 +194,9 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 | v3 | 10 min | 62 / 35 % / +0,01 | 119 / 41 % / +0,18 | ? / 28 % / −0,24 (−35,1 R) | ≈ −13 |
 - Entrée sur bougie de réaction dans l'OB, stop au-delà de l'OB, 2 R, frais 0,37 point. Les étoiles ne séparent pas les bons OB des mauvais (5★ ≈ ≤ 3★). Aucun avantage mesuré.
 - 10 min : 5★ ≈ 0 ; 4★ +0,18 R/trade mais contredit en 5 min (−0,20) → probablement du bruit. Règle fixée avant : 5★ ≤ 0 → méthode arrêtée. Option : test en direct (démo) des OB ≥ 4★ en 10 min sur 30 trades, sans rien modifier.
+
+### Résultats du robot XAU PLANS (21) — simulation sur l'historique, frais compris
+| Unité | Plan A (OTE) | Plan B (rejet) |
+|---|---|---|
+| 30 min (01/10) | 126 trades, 40 % gagnants, −10,7 R, −0,08 R/trade | 64 trades, 39 %, −12,4 R, −0,19 R/trade |
+- Aucun des deux plans n'a d'avantage mesuré en 30 min. À vérifier en 15 et 5 min.

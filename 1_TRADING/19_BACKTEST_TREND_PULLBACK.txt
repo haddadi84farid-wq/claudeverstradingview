@@ -421,6 +421,8 @@ new15 = ta.change(c15) != 0 or ta.change(o15) != 0
 var bool  confAm = false
 var bool  confBm = false
 var float entBm  = na
+var bool  doneAm = false
+var bool  doneBm = false
 var float lastEx = na
 var float lastEn = na
 var float lastTg = na
@@ -428,9 +430,12 @@ if na(lastEx) or legEx != lastEx or (not legFrz and legEn != lastEn) or dirP != 
     confAm := false
     confBm := false
     entBm  := na
+    doneAm := false
+    doneBm := false
 if not na(gTgt) and (na(lastTg) or math.abs(gTgt - lastTg) > 0.5)
     confBm := false
     entBm  := na
+    doneBm := false
 lastEx := legEx
 lastEn := legEn
 lastTg := gTgt
@@ -442,6 +447,15 @@ if new15 and legOk and not na(gTgt)
     if not confBm and (gIsS ? l15 <= gTgt + 0.2 * atr15 and c15 > o15 and c15 > gTgt : h15 >= gTgt - 0.2 * atr15 and c15 < o15 and c15 < gTgt)
         confBm := true
         entBm  := c15
+// Plan déjà JOUÉ (objectif ou stop atteint après la confirmation) → on ne le propose plus
+if confAm and not doneAm and not na(gTgt)
+    g786 = fibLvl(legEn, gSg, gRng, 0.786)
+    if gIsS ? low <= gTgt or high >= g786 + atr15 : high >= gTgt or low <= g786 - atr15
+        doneAm := true
+if confBm and not doneBm and not na(gTgt)
+    g382 = fibLvl(legEn, gSg, gRng, 0.382)
+    if gIsS ? high >= g382 or low <= gTgt - atr15 : low <= g382 or high >= gTgt + atr15
+        doneBm := true
 if barstate.islast
     for l in fibL
         line.delete(l)
@@ -501,10 +515,10 @@ if barstate.islast
         drawB = showB and okB
         if drawB
             confB = confBm
-            stB = confB ? "CONFIRMÉ (rejet vu à " + str.tostring(eB, format.mintick) + ") : tu peux entrer" : "EN ATTENTE du rejet"
+            stB = doneBm ? "TERMINÉ (objectif ou stop déjà atteint)" : confB ? "CONFIRMÉ (rejet vu à " + str.tostring(eB, format.mintick) + ") : tu peux entrer" : "EN ATTENTE du rejet"
             condB = isS ? "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture VERTE au-dessus" :
                  "\nEntrée : une bougie 15 min touche " + str.tostring(tgt, format.mintick) + " puis clôture ROUGE en dessous"
-            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, (isS ? "PLAN B — ACHAT sur rejet du support" : "PLAN B — VENTE sur rejet de la résistance") + " (contre la tendance, taille ÷ 2) — " + stB + condB, color.new(color.orange, 0))
+            drawPlan(tStart, tStart + 3 * H, eB, slB, tgtB, (isS ? "PLAN B — ACHAT sur rejet du support" : "PLAN B — VENTE sur rejet de la résistance") + " (contre la tendance, taille ÷ 2) — " + stB + condB, doneBm ? cGray : color.new(color.orange, 0))
         else if showB
             // Plan B coché mais pas valable : on le dit au lieu de ne rien afficher
             whyB = brokeB ? "le niveau " + str.tostring(eB, format.mintick) + " est cassé (clôture 15 min au-delà + 1 ATR)" : "R:R " + str.tostring(rrB, "#.#") + " < 1,5"
@@ -518,9 +532,9 @@ if barstate.islast
             // Confirmation : dernière bougie 15 min qui a touché l'OTE et clôturé dans le sens du flux (rejet)
             confA = confAm
             modeTxt = modeA == "Limite" ? (isS ? "VENTE limite" : "ACHAT limite") : (isS ? "VENTE sur confirmation" : "ACHAT sur confirmation")
-            stTxt = killA ? "ANNULÉ (clôture 15 min au-delà de 78,6 %)" : modeA == "Limite" ? "ordre limite actif" : confA ? "CONFIRMÉ : tu peux entrer" : "EN ATTENTE du rejet"
+            stTxt = doneAm ? "TERMINÉ (objectif ou stop déjà atteint)" : killA ? "ANNULÉ (clôture 15 min au-delà de 78,6 %)" : modeA == "Limite" ? "ordre limite actif" : confA ? "CONFIRMÉ : tu peux entrer" : "EN ATTENTE du rejet"
             condTxt = modeA == "Limite" ? "" : (isS ? "\nEntrée : bougie 15 min dans l'OTE qui clôture ROUGE sous l'entrée" : "\nEntrée : bougie 15 min dans l'OTE qui clôture VERTE au-dessus de l'entrée")
-            drawPlan(tA0, tA0 + 3 * H, eA, slA, tgt, "PLAN A — " + modeTxt + " (OTE) — " + stTxt + (contre ? "\n⚠ Dans le sens du H1 mais CONTRE le flux journalier : taille ÷ 2" : "") + condTxt, killA ? cGray : cZ)
+            drawPlan(tA0, tA0 + 3 * H, eA, slA, tgt, "PLAN A — " + modeTxt + " (OTE) — " + stTxt + (contre ? "\n⚠ Dans le sens du H1 mais CONTRE le flux journalier : taille ÷ 2" : "") + condTxt, killA or doneAm ? cGray : cZ)
             planLine(tA0, tA0 + 3 * H, lvlX, "ANNULATION si clôture 15 min au-delà de " + str.tostring(lvlX, format.mintick), color.orange, 1)
         // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
         if showFib
@@ -626,7 +640,7 @@ if barstate.islast and showRes
     table.cell(resT, 4, 2, nB > 0 ? str.tostring(rB / nB, "#.##") : "—", text_color = color.white, text_size = size.small)
 
 // ---------- CHECK-LIST en haut à droite : conditions des plans A et B (cases vertes quand c'est bon) ----------
-var table chk = table.new(position.middle_right, 2, 16, bgcolor = color.new(color.black, 15), frame_color = cGray, frame_width = 1,
+var table chk = table.new(position.middle_right, 2, 18, bgcolor = color.new(color.black, 15), frame_color = cGray, frame_width = 1,
      border_color = color.new(cGray, 70), border_width = 1)
 lvlXg  = fibLvl(legEn, gSg, gRng, 0.786)
 killG  = gIsS ? c15 > lvlXg : c15 < lvlXg
@@ -640,34 +654,36 @@ chkRow(int r, string name, bool ok) =>
     table.cell(chk, 0, r, name, text_color = color.white, text_size = size.small, text_halign = text.align_left)
     table.cell(chk, 1, r, ok ? "✓" : "✗", text_color = color.white, bgcolor = ok ? cGreen : cRed, text_size = size.small)
 if barstate.islast and showChk
-    table.clear(chk, 0, 0, 1, 15)
+    table.clear(chk, 0, 0, 1, 17)
     if dirP == 0 or not legOk
         table.cell(chk, 0, 0, dirP == 0 ? "Pas de tendance nette : pas de plan" : "Pas de vague nette : pas de plan", text_color = color.white, bgcolor = cGray, text_size = size.small)
         table.cell(chk, 1, 0, "", bgcolor = cGray)
     else
         sA = gIsS ? "VENTE" : "ACHAT"
         sB = gIsS ? "ACHAT" : "VENTE"
-        aOk = legOk and inOteG and confAm and not killG and inSession
-        bOk = not na(gTgt) and touchB and confBm and not brokeG and rrBg >= 1.5 and inSession
+        aOk = legOk and confAm and not killG and inSession and not doneAm
+        bOk = not na(gTgt) and confBm and not brokeG and rrBg >= 1.5 and inSession and not doneBm
         table.cell(chk, 0, 0, "PLAN A — " + sA + " (OTE " + str.tostring(math.min(g618, lvlXg), "#") + "–" + str.tostring(math.max(g618, lvlXg), "#") + ")", text_color = color.white, bgcolor = gIsS ? cRed : cGreen, text_size = size.small)
         table.cell(chk, 1, 0, "", bgcolor = gIsS ? cRed : cGreen)
         chkRow(1, "Tendance H1 / flux dans ce sens", dirP != 0)
         chkRow(2, "Vague nette (≥ " + str.tostring(minImpH1) + " ATR H1)", legOk)
-        chkRow(3, "Prix entré dans l'OTE", inOteG)
+        chkRow(3, "Prix entré dans l'OTE", inOteG or confAm)
         chkRow(4, "Bougie 15 min de rejet", confAm)
         chkRow(5, "Pas de clôture 15 min au-delà de 78,6 %", not killG)
         chkRow(6, "Dans les horaires", inSession)
-        table.cell(chk, 0, 7, aOk ? "→ PLAN A : TU PEUX ENTRER" : "→ PLAN A : ATTENDRE", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
-        table.cell(chk, 1, 7, aOk ? "✓" : "…", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
-        table.cell(chk, 0, 8, "PLAN B — " + sB + " (rejet " + str.tostring(gTgt, format.mintick) + ", contre la tendance)", text_color = color.white, bgcolor = color.orange, text_size = size.small)
-        table.cell(chk, 1, 8, "", bgcolor = color.orange)
-        chkRow(9, "Niveau clé touché", touchB)
-        chkRow(10, "Bougie 15 min de rejet", confBm)
-        chkRow(11, "Niveau pas cassé (clôture 15 min)", not brokeG)
-        chkRow(12, "R:R ≥ 1,5 (" + str.tostring(rrBg, "#.#") + ")", rrBg >= 1.5)
-        chkRow(13, "Dans les horaires", inSession)
-        table.cell(chk, 0, 14, bOk ? "→ PLAN B : TU PEUX ENTRER (taille ÷ 2)" : "→ PLAN B : ATTENDRE", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
-        table.cell(chk, 1, 14, bOk ? "✓" : "…", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
+        chkRow(7, "Pas déjà joué (objectif / stop pas atteint)", not doneAm)
+        table.cell(chk, 0, 8, aOk ? "→ PLAN A : TU PEUX ENTRER" : doneAm ? "→ PLAN A : TERMINÉ" : "→ PLAN A : ATTENDRE", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 1, 8, aOk ? "✓" : "…", text_color = color.white, bgcolor = aOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 0, 9, "PLAN B — " + sB + " (rejet " + str.tostring(gTgt, format.mintick) + ", contre la tendance)", text_color = color.white, bgcolor = color.orange, text_size = size.small)
+        table.cell(chk, 1, 9, "", bgcolor = color.orange)
+        chkRow(10, "Niveau clé touché", touchB or confBm)
+        chkRow(11, "Bougie 15 min de rejet", confBm)
+        chkRow(12, "Niveau pas cassé (clôture 15 min)", not brokeG)
+        chkRow(13, "R:R ≥ 1,5 (" + str.tostring(rrBg, "#.#") + ")", rrBg >= 1.5)
+        chkRow(14, "Dans les horaires", inSession)
+        chkRow(15, "Pas déjà joué (objectif / stop pas atteint)", not doneBm)
+        table.cell(chk, 0, 16, bOk ? "→ PLAN B : TU PEUX ENTRER (taille ÷ 2)" : doneBm ? "→ PLAN B : TERMINÉ" : "→ PLAN B : ATTENDRE", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
+        table.cell(chk, 1, 16, bOk ? "✓" : "…", text_color = color.white, bgcolor = bOk ? cGreen : cGray, text_size = size.small)
 
 // ---------- Une seule étiquette ----------
 var label info = na
