@@ -8,7 +8,7 @@
 //    (Fibonacci du dernier sommet au plus bas atteint, OB vendeur au-dessus de 50 %), V = vierge, M = multi-unités (≥ 3).
 // 4. Fibonacci DANS l'OB (0 / 0,5 / 1) : entrée sur la 2e moitié possible, stop juste au-delà de l'OB, objectif 2 R.
 // Ne passe aucun ordre.
-indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, max_boxes_count = 60, max_lines_count = 120, max_labels_count = 60)
+indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 60, max_lines_count = 120, max_labels_count = 60)
 
 gD = "Détection"
 pivLen  = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gD)
@@ -185,7 +185,7 @@ drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<strin
                      bgcolor = color.new(c, st == 5 ? 70 : 85)))
                 // Fibonacci dans l'OB : 0 / 0,5 / 1
                 array.push(gLn, line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
-                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + array.get(starTxt, st) +
+                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + str.tostring(st) + "/5 " + array.get(starTxt, st) +
                      "\nF" + ck(array.get(fs, i)) + " T" + ck(array.get(rs, i)) + " P" + ck(array.get(ps, i)) + " V" + ck(array.get(vs, i)) + " M" + (cnt >= 3 ? "✓" : "✗") +
                      "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(slp, format.mintick) + " | TP " + str.tostring(tpp, format.mintick) + " (" + str.tostring(rrTP) + " R)"
                 array.push(gLb, label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
