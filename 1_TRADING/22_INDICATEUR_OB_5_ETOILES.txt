@@ -1,13 +1,14 @@
 //@version=6
 // ORDER BLOCKS 5 ÉTOILES — détection + notation automatique + résultats mesurés (frais compris).
 // OB baissier = dernière bougie HAUSSIÈRE avant la baisse qui casse le dernier creux (BOS). OB haussier = l'inverse.
-// Zone = la bougie entière (plus haut / plus bas). Trait pointillé = 50 % de l'OB (2 parties).
+// Zone = la dernière bougie (ou série de bougies) OPPOSÉE juste avant la jambe qui casse la structure, mèches comprises.
+// Trait pointillé = 50 % de l'OB (2 parties).
 // Les 5 étoiles :
 //   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB).
 //   2. DIRECTION : Supertrend dans le sens de l'OB au moment où il se forme.
 //   3. LIQUIDITÉ : pas de hauts égaux (bas égaux) NON balayés juste au-delà de l'OB (ils attireraient le prix à travers l'OB).
 //   4. VIERGE : le prix n'est jamais revenu dans l'OB (l'étoile est perdue dès le 1er contact).
-//   5. FIBONACCI : OB baissier en zone PREMIUM (au-dessus de 50 % du range), OB haussier en zone DISCOUNT (en dessous).
+//   5. FIBONACCI : tracé du dernier sommet au dernier creux (la vague) ; OB baissier au-dessus de 50 % (PREMIUM), haussier en dessous.
 // Trade (comme la méthode) : le prix revient dans l'OB → bougie de réaction dans le sens de l'OB → entrée à sa clôture,
 // stop juste au-delà de l'OB, objectif 2 R. Le tableau compare les OB 5★, 4★ et ≤ 3★ : si les étoiles servent, 5★ doit gagner plus.
 // Ne passe aucun ordre.
@@ -22,7 +23,8 @@ stLen    = input.int(10, "Étoile 2 — Supertrend : période ATR", minval = 1, 
 stFac    = input.float(3.0, "Étoile 2 — Supertrend : facteur", minval = 0.5, step = 0.1, group = gS)
 liqTol   = input.float(0.1, "Étoile 3 — hauts / bas égaux : écart max (× ATR)", minval = 0.01, step = 0.01, group = gS)
 liqDist  = input.float(3.0, "Étoile 3 — liquidité dangereuse si à moins de (× ATR) de l'OB", minval = 0.5, step = 0.5, group = gS)
-rngLen   = input.int(150, "Étoile 5 — Fibonacci : range = plus haut / plus bas des N dernières bougies", minval = 20, maxval = 480, group = gS)
+fibMode  = input.string("Dernière vague (sommet → creux)", "Étoile 5 — Fibonacci tracé sur", options = ["Dernière vague (sommet → creux)", "N dernières bougies"], group = gS)
+rngLen   = input.int(150, "Étoile 5 — N bougies (si choisi)", minval = 20, maxval = 480, group = gS)
 gT = "Trade"
 waitBars = input.int(3, "Bougie de réaction : au plus N bougies après le 1er contact", minval = 1, maxval = 10, group = gT)
 slBuf    = input.float(0.3, "Marge du stop au-delà de l'OB (points, ≈ spread)", minval = 0, step = 0.05, group = gT)
@@ -83,12 +85,16 @@ var bool  shBroken = true
 var bool  slBroken = true
 var array<float> liqH = array.new<float>()
 var array<float> liqL = array.new<float>()
+var int lastSHbar = na
+var int lastSLbar = na
 if not na(ph)
     lastSH := ph
+    lastSHbar := bar_index - pivLen
     shBroken := false
     array.push(liqH, ph)
 if not na(pl)
     lastSL := pl
+    lastSLbar := bar_index - pivLen
     slBroken := false
     array.push(liqL, pl)
 // Liquidité balayée = retirée
@@ -100,6 +106,9 @@ if array.size(liqL) > 0
     for i = array.size(liqL) - 1 to 0
         if low < array.get(liqL, i)
             array.remove(liqL, i)
+// Vague actuelle pour le Fibonacci : du dernier sommet confirmé au plus bas atteint depuis (et inversement)
+llSinceSH = ta.lowest(low, math.min(450, math.max(1, bar_index - nz(lastSHbar, bar_index) + 1)))
+hhSinceSL = ta.highest(high, math.min(450, math.max(1, bar_index - nz(lastSLbar, bar_index) + 1)))
 if array.size(liqH) > 30
     array.shift(liqH)
 if array.size(liqL) > 30
@@ -152,15 +161,26 @@ killOB(OB o) =>
 
 // ---------- Création des OB sur cassure de structure ----------
 newOB(int d) =>
-    // Bougie OB : la dernière bougie opposée au mouvement, au sommet (creux) du mouvement ou juste avant
-    off = d == -1 ? hiOff : loOff
-    int j = off
-    for k = off to math.min(off + 5, obLook + 5)
+    // Bougie(s) OB : en remontant depuis la cassure, la 1re bougie OPPOSÉE au mouvement (la pause avant la jambe qui casse),
+    // plus les bougies opposées collées à elle (une série de bougies = une seule zone)
+    int j = na
+    for k = 1 to obLook
         if d == -1 ? close[k] > open[k] : close[k] < open[k]
             j := k
             break
-    top = high[j]
-    bot = low[j]
+    if na(j)
+        j := d == -1 ? hiOff : loOff
+    int j2 = j
+    for k = j + 1 to j + 4
+        if d == -1 ? close[k] > open[k] : close[k] < open[k]
+            j2 := k
+        else
+            break
+    float top = high[j]
+    float bot = low[j]
+    for k = j to j2
+        top := math.max(top, high[k])
+        bot := math.min(bot, low[k])
     // Étoile 1 : FVG sur les 3 bougies qui partent de l'OB (ou les 3 suivantes)
     s1 = false
     if j >= 2
@@ -169,9 +189,12 @@ newOB(int d) =>
         s1 := d == -1 ? low[j - 1] > high[j - 3] : high[j - 1] < low[j - 3]
     s2 = d == -1 ? not trendUp : trendUp
     s3 = not liqDanger(d, top, bot)
-    eq = (rH + rL) / 2
+    // Fibonacci : vague du dernier sommet au plus bas atteint depuis (OB baissier), ou du dernier creux au plus haut (OB haussier)
+    fH = fibMode == "N dernières bougies" ? rH : d == -1 ? lastSH : hhSinceSL
+    fL = fibMode == "N dernières bougies" ? rL : d == -1 ? llSinceSH : lastSL
+    eq = (fH + fL) / 2
     s5 = d == -1 ? (top + bot) / 2 >= eq : (top + bot) / 2 <= eq
-    OB.new(top, bot, bar_index - j, d, s1, s2, s3, s5)
+    OB.new(top, bot, bar_index - j2, d, s1, s2, s3, s5)
 
 if not slBroken and not na(lastSL) and close < lastSL
     slBroken := true
