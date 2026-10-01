@@ -1,0 +1,282 @@
+//@version=6
+// ORDER BLOCKS 5 ÉTOILES — détection + notation automatique + résultats mesurés (frais compris).
+// OB baissier = dernière bougie HAUSSIÈRE avant la baisse qui casse le dernier creux (BOS). OB haussier = l'inverse.
+// Zone = la bougie entière (plus haut / plus bas). Trait pointillé = 50 % de l'OB (2 parties).
+// Les 5 étoiles :
+//   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB).
+//   2. DIRECTION : Supertrend dans le sens de l'OB au moment où il se forme.
+//   3. LIQUIDITÉ : pas de hauts égaux (bas égaux) NON balayés juste au-delà de l'OB (ils attireraient le prix à travers l'OB).
+//   4. VIERGE : le prix n'est jamais revenu dans l'OB (l'étoile est perdue dès le 1er contact).
+//   5. FIBONACCI : OB baissier en zone PREMIUM (au-dessus de 50 % du range), OB haussier en zone DISCOUNT (en dessous).
+// Trade (comme la méthode) : le prix revient dans l'OB → bougie de réaction dans le sens de l'OB → entrée à sa clôture,
+// stop juste au-delà de l'OB, objectif 2 R. Le tableau compare les OB 5★, 4★ et ≤ 3★ : si les étoiles servent, 5★ doit gagner plus.
+// Ne passe aucun ordre.
+indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true,
+     max_boxes_count = 200, max_lines_count = 200, max_labels_count = 200, max_bars_back = 500)
+
+gD = "Détection"
+pivLen   = input.int(5, "Structure : sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20, group = gD)
+obLook   = input.int(20, "Recherche de la bougie OB (bougies avant la cassure)", minval = 5, maxval = 60, group = gD)
+gS = "Étoiles"
+stLen    = input.int(10, "Étoile 2 — Supertrend : période ATR", minval = 1, group = gS)
+stFac    = input.float(3.0, "Étoile 2 — Supertrend : facteur", minval = 0.5, step = 0.1, group = gS)
+liqTol   = input.float(0.1, "Étoile 3 — hauts / bas égaux : écart max (× ATR)", minval = 0.01, step = 0.01, group = gS)
+liqDist  = input.float(3.0, "Étoile 3 — liquidité dangereuse si à moins de (× ATR) de l'OB", minval = 0.5, step = 0.5, group = gS)
+rngLen   = input.int(150, "Étoile 5 — Fibonacci : range = plus haut / plus bas des N dernières bougies", minval = 20, maxval = 480, group = gS)
+gT = "Trade"
+waitBars = input.int(3, "Bougie de réaction : au plus N bougies après le 1er contact", minval = 1, maxval = 10, group = gT)
+slBuf    = input.float(0.3, "Marge du stop au-delà de l'OB (points, ≈ spread)", minval = 0, step = 0.05, group = gT)
+rrTP     = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
+maxHold  = input.int(96, "Sortie forcée après N bougies", minval = 5, group = gT)
+costPts  = input.float(0.37, "Frais par trade (points : spread + commission)", minval = 0, step = 0.01, group = gT)
+gA = "Affichage"
+minStars = input.int(3, "Afficher les OB à partir de (étoiles)", minval = 0, maxval = 5, group = gA)
+maxOb    = input.int(12, "OB suivis au maximum", minval = 1, maxval = 50, group = gA)
+extBars  = input.int(15, "Prolonger les OB à droite (bougies)", minval = 1, group = gA)
+showTab  = input.bool(true, "Tableau des résultats (en bas à droite)", group = gA)
+
+cRed   = #F23645
+cGreen = #089981
+cGray  = #787B86
+
+type OB
+    float top
+    float bot
+    int   bar
+    int   dir
+    bool  s1
+    bool  s2
+    bool  s3
+    bool  s5
+    bool  touched = false
+    int   touchBar = na
+    bool  done = false
+    int   tStars = 0
+    box   bx
+    line  mid
+
+type Trd
+    int   d
+    float e
+    float sl
+    float tp
+    int   st
+    int   b
+
+var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
+ck(bool b) => b ? "✓" : "✗"
+
+// ---------- Calculs globaux ----------
+atr = ta.atr(14)
+[stVal, stDir] = ta.supertrend(stFac, stLen)
+trendUp = stDir < 0
+rH = ta.highest(high, rngLen)
+rL = ta.lowest(low, rngLen)
+hiOff = -ta.highestbars(high, obLook)
+loOff = -ta.lowestbars(low, obLook)
+
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+var float lastSH = na
+var float lastSL = na
+var bool  shBroken = true
+var bool  slBroken = true
+var array<float> liqH = array.new<float>()
+var array<float> liqL = array.new<float>()
+if not na(ph)
+    lastSH := ph
+    shBroken := false
+    array.push(liqH, ph)
+if not na(pl)
+    lastSL := pl
+    slBroken := false
+    array.push(liqL, pl)
+// Liquidité balayée = retirée
+if array.size(liqH) > 0
+    for i = array.size(liqH) - 1 to 0
+        if high > array.get(liqH, i)
+            array.remove(liqH, i)
+if array.size(liqL) > 0
+    for i = array.size(liqL) - 1 to 0
+        if low < array.get(liqL, i)
+            array.remove(liqL, i)
+if array.size(liqH) > 30
+    array.shift(liqH)
+if array.size(liqL) > 30
+    array.shift(liqL)
+
+// Hauts égaux au-dessus d'un OB baissier (bas égaux sous un OB haussier) encore intacts et proches = liquidité dangereuse
+liqDanger(int d, float top, float bot) =>
+    bool danger = false
+    arr = d == -1 ? liqH : liqL
+    n = array.size(arr)
+    if n > 1
+        for i = 0 to n - 2
+            for j = i + 1 to n - 1
+                a = array.get(arr, i)
+                b = array.get(arr, j)
+                near = d == -1 ? math.min(a, b) > top and math.min(a, b) < top + liqDist * atr : math.max(a, b) < bot and math.max(a, b) > bot - liqDist * atr
+                if math.abs(a - b) <= liqTol * atr and near
+                    danger := true
+    danger
+
+starsOf(OB o, bool virgin) => (o.s1 ? 1 : 0) + (o.s2 ? 1 : 0) + (o.s3 ? 1 : 0) + (virgin ? 1 : 0) + (o.s5 ? 1 : 0)
+
+var array<OB>  obs = array.new<OB>()
+var array<Trd> trs = array.new<Trd>()
+
+drawOB(OB o) =>
+    n = starsOf(o, not o.touched)
+    vis = n >= minStars
+    c = o.dir == -1 ? cRed : cGreen
+    tr = not vis ? 100 : n == 5 ? 65 : n == 4 ? 82 : 92
+    txt = vis ? array.get(starTxt, n) + "  F" + ck(o.s1) + " T" + ck(o.s2) + " L" + ck(o.s3) + " V" + ck(not o.touched) + " P" + ck(o.s5) : ""
+    if na(o.bx)
+        o.bx := box.new(o.bar, o.top, bar_index + extBars, o.bot, border_color = color.new(c, vis ? (n == 5 ? 0 : 50) : 100),
+             border_width = n == 5 ? 2 : 1, bgcolor = color.new(c, tr), text = txt, text_color = color.new(color.white, vis ? 0 : 100),
+             text_size = size.small, text_halign = text.align_left, text_valign = text.align_top)
+        o.mid := line.new(o.bar, (o.top + o.bot) / 2, bar_index + extBars, (o.top + o.bot) / 2, color = color.new(c, vis ? 30 : 100), style = line.style_dashed)
+    else
+        box.set_right(o.bx, bar_index + extBars)
+        box.set_text(o.bx, txt)
+        box.set_bgcolor(o.bx, color.new(c, tr))
+        box.set_border_color(o.bx, color.new(c, vis ? (n == 5 ? 0 : 50) : 100))
+        box.set_text_color(o.bx, color.new(color.white, vis ? 0 : 100))
+        line.set_x2(o.mid, bar_index + extBars)
+        line.set_color(o.mid, color.new(c, vis ? 30 : 100))
+
+killOB(OB o) =>
+    box.delete(o.bx)
+    line.delete(o.mid)
+
+// ---------- Création des OB sur cassure de structure ----------
+newOB(int d) =>
+    // Bougie OB : la dernière bougie opposée au mouvement, au sommet (creux) du mouvement ou juste avant
+    off = d == -1 ? hiOff : loOff
+    int j = off
+    for k = off to math.min(off + 5, obLook + 5)
+        if d == -1 ? close[k] > open[k] : close[k] < open[k]
+            j := k
+            break
+    top = high[j]
+    bot = low[j]
+    // Étoile 1 : FVG sur les 3 bougies qui partent de l'OB (ou les 3 suivantes)
+    s1 = false
+    if j >= 2
+        s1 := d == -1 ? low[j] > high[j - 2] : high[j] < low[j - 2]
+    if not s1 and j >= 3
+        s1 := d == -1 ? low[j - 1] > high[j - 3] : high[j - 1] < low[j - 3]
+    s2 = d == -1 ? not trendUp : trendUp
+    s3 = not liqDanger(d, top, bot)
+    eq = (rH + rL) / 2
+    s5 = d == -1 ? (top + bot) / 2 >= eq : (top + bot) / 2 <= eq
+    OB.new(top, bot, bar_index - j, d, s1, s2, s3, s5)
+
+if not slBroken and not na(lastSL) and close < lastSL
+    slBroken := true
+    o = newOB(-1)
+    dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
+    if not dup
+        array.push(obs, o)
+if not shBroken and not na(lastSH) and close > lastSH
+    shBroken := true
+    o = newOB(1)
+    dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
+    if not dup
+        array.push(obs, o)
+while array.size(obs) > maxOb
+    killOB(array.shift(obs))
+
+// ---------- Suivi des OB : contact, réaction, entrée, invalidation ----------
+bool touch5 = false
+bool entry5 = false
+if array.size(obs) > 0
+    for i = array.size(obs) - 1 to 0
+        o = array.get(obs, i)
+        broken = o.dir == -1 ? close > o.top : close < o.bot
+        if not o.touched and bar_index > o.bar + 2 and (o.dir == -1 ? high >= o.bot : low <= o.top)
+            o.tStars := starsOf(o, true)
+            o.touched := true
+            o.touchBar := bar_index
+            touch5 := touch5 or o.tStars == 5
+        if o.touched and not o.done and not broken
+            react = o.dir == -1 ? close < open and close <= o.top : close > open and close >= o.bot
+            if react
+                sl = o.dir == -1 ? o.top + slBuf : o.bot - slBuf
+                rk = math.abs(close - sl)
+                if rk > 0
+                    array.push(trs, Trd.new(o.dir, close, sl, close + o.dir * rrTP * rk, o.tStars, bar_index))
+                    entry5 := entry5 or o.tStars == 5
+                    if o.tStars >= minStars
+                        label.new(bar_index, o.dir == -1 ? high : low, (o.dir == -1 ? "VENTE " : "ACHAT ") + array.get(starTxt, o.tStars),
+                             style = o.dir == -1 ? label.style_label_down : label.style_label_up, color = o.dir == -1 ? cRed : cGreen,
+                             textcolor = color.white, size = size.tiny)
+                o.done := true
+            else if bar_index - o.touchBar >= waitBars
+                o.done := true
+        if broken
+            killOB(o)
+            array.remove(obs, i)
+        else
+            drawOB(o)
+
+// ---------- Résultats des trades simulés ----------
+var int   n5 = 0
+var int   w5 = 0
+var float r5 = 0.0
+var int   n4 = 0
+var int   w4 = 0
+var float r4 = 0.0
+var int   n3 = 0
+var int   w3 = 0
+var float r3 = 0.0
+if array.size(trs) > 0
+    for i = array.size(trs) - 1 to 0
+        t = array.get(trs, i)
+        if bar_index > t.b
+            rk = math.abs(t.e - t.sl)
+            hitSL = t.d == 1 ? low <= t.sl : high >= t.sl
+            hitTP = t.d == 1 ? high >= t.tp : low <= t.tp
+            float res = na
+            if hitSL
+                res := -1.0
+            else if hitTP
+                res := rrTP
+            else if bar_index - t.b >= maxHold
+                res := (t.d == 1 ? close - t.e : t.e - close) / rk
+            if not na(res)
+                res -= costPts / rk
+                if t.st == 5
+                    n5 += 1
+                    w5 += res > 0 ? 1 : 0
+                    r5 += res
+                else if t.st == 4
+                    n4 += 1
+                    w4 += res > 0 ? 1 : 0
+                    r4 += res
+                else
+                    n3 += 1
+                    w3 += res > 0 ? 1 : 0
+                    r3 += res
+                array.remove(trs, i)
+
+var table tab = table.new(position.bottom_right, 5, 4, bgcolor = color.new(color.black, 20), frame_color = cGray, frame_width = 1,
+     border_color = color.new(cGray, 60), border_width = 1)
+row(int r, string name, int n, int w, float rr, color c) =>
+    table.cell(tab, 0, r, name, text_color = c, text_size = size.small)
+    table.cell(tab, 1, r, str.tostring(n), text_color = color.white, text_size = size.small)
+    table.cell(tab, 2, r, n > 0 ? str.tostring(100.0 * w / n, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tab, 3, r, str.tostring(rr, "#.#"), text_color = rr >= 0 ? cGreen : cRed, text_size = size.small)
+    table.cell(tab, 4, r, n > 0 ? str.tostring(rr / n, "#.##") : "—", text_color = color.white, text_size = size.small)
+if barstate.islast and showTab
+    table.cell(tab, 0, 0, "OB (frais compris)", text_color = color.white, text_size = size.small)
+    table.cell(tab, 1, 0, "Trades", text_color = color.white, text_size = size.small)
+    table.cell(tab, 2, 0, "Gagnants", text_color = color.white, text_size = size.small)
+    table.cell(tab, 3, 0, "R total", text_color = color.white, text_size = size.small)
+    table.cell(tab, 4, 0, "R / trade", text_color = color.white, text_size = size.small)
+    row(1, "★★★★★", n5, w5, r5, color.yellow)
+    row(2, "★★★★☆", n4, w4, r4, color.white)
+    row(3, "3★ ou moins", n3, w3, r3, cGray)
+
+alertcondition(touch5, "OB 5★ touché", "XAUUSD : le prix touche un order block 5 étoiles")
+alertcondition(entry5, "Entrée OB 5★", "XAUUSD : bougie de réaction sur un order block 5 étoiles (entrée)")
