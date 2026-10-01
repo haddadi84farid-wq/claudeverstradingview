@@ -13,7 +13,7 @@
 // Trade (comme la méthode) : le prix revient dans l'OB → bougie de réaction dans le sens de l'OB → entrée à sa clôture,
 // stop juste au-delà de l'OB, objectif 2 R. Le tableau compare les OB 5★, 4★ et ≤ 3★ : si les étoiles servent, 5★ doit gagner plus.
 // Ne passe aucun ordre.
-indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true,
+indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true, scale = scale.right,
      max_boxes_count = 200, max_lines_count = 200, max_labels_count = 200, max_bars_back = 500)
 
 gD = "Détection"
