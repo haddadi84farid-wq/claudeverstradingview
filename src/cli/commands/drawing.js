@@ -7,7 +7,7 @@ register('draw', {
     ['shape', {
       description: 'Draw a shape on the chart',
       options: {
-        type: { type: 'string', short: 't', description: 'Shape type: horizontal_line, trend_line, rectangle, text' },
+        type: { type: 'string', short: 't', description: 'Shape type: horizontal_line, trend_line, rectangle, text, note' },
         price: { type: 'string', short: 'p', description: 'Price level' },
         time: { type: 'string', description: 'Unix timestamp' },
         price2: { type: 'string', description: 'Second point price (for trend_line, rectangle)' },

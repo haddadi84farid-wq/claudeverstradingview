@@ -4,7 +4,7 @@ import * as core from '../core/drawing.js';
 
 export function registerDrawingTools(server) {
   server.tool('draw_shape', 'Draw a shape/line on the chart', {
-    shape: z.enum(['horizontal_line', 'vertical_line', 'trend_line', 'rectangle', 'text']).describe('Shape type'),
+    shape: z.enum(['horizontal_line', 'vertical_line', 'trend_line', 'rectangle', 'text', 'note']).describe('Shape type (note = small icon whose text shows on mouse hover)'),
     point: z.object({ time: z.coerce.number(), price: z.coerce.number() }).describe('{ time: unix_timestamp, price: number }'),
     point2: z.object({ time: z.coerce.number(), price: z.coerce.number() }).optional().describe('Second point for two-point shapes (trend_line, rectangle)'),
     overrides: z.string().optional().describe('JSON string of style overrides (e.g., \'{"linecolor": "#ff0000", "linewidth": 2}\')'),
