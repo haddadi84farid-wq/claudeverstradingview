@@ -47,6 +47,7 @@ impPiv    = input.int(12, "Vague : sommet / creux confirmé par N bougies 15 min
 minImpH1  = input.float(1.5, "Vague : taille minimale (× ATR H1)", minval = 0.5, step = 0.1, group = gV)
 lblShift  = input.float(21.0, "Décalage de l'étiquette FLUX vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFib   = input.bool(true, "Dessiner le Fibonacci de la dernière impulsion", group = gV)
+fibAnchor = input.string("Sur la vague (comme l'outil Fibonacci)", "Fibonacci : position", options = ["Sur la vague (comme l'outil Fibonacci)", "À droite, décalé"], group = gV)
 fibShift  = input.float(18.0, "Décalage du Fibonacci vers la droite (heures)", minval = 0, step = 0.5, group = gV)
 showFvgH4 = input.bool(true, "Dessiner la FVG H4 visée (cible)", group = gV)
 modeA     = input.string("Confirmation", "Entrée du PLAN A", options = ["Confirmation", "Limite"], group = gV)
@@ -335,8 +336,10 @@ impData() =>
     swL = ta.valuewhen(not na(pl), pl, 0)
     lenH = math.min(400, math.max(1, nz(bsH) + impPiv + 1))
     lenL = math.min(400, math.max(1, nz(bsL) + impPiv + 1))
-    [swH, ta.lowest(low, lenH), swL, ta.highest(high, lenL)]
-[swH15, loSinceH, swL15, hiSinceL] = request.security(syminfo.tickerid, "15", impData())
+    swHt = ta.valuewhen(not na(ph), time[impPiv], 0)
+    swLt = ta.valuewhen(not na(pl), time[impPiv], 0)
+    [swH, ta.lowest(low, lenH), swL, ta.highest(high, lenL), swHt, swLt]
+[swH15, loSinceH, swL15, hiSinceL, swHt15, swLt15] = request.security(syminfo.tickerid, "15", impData())
 atrH1 = request.security(syminfo.tickerid, "60", ta.atr(14)[1], lookahead = barmerge.lookahead_on)
 // Vague FIGÉE : elle s'allonge tant que le prix fait de nouveaux extrêmes, puis se fige dès que le retracement atteint 38,2 %.
 // Les plans ne bougent donc plus pendant qu'on les attend. Nouvelle vague = nouveau sommet / creux confirmé ou changement de sens.
@@ -344,6 +347,7 @@ var float legEx  = na
 var float legEn  = na
 var int   legDir = 0
 var bool  legFrz = false
+var int   legT   = na
 cEx = dirP == -1 ? swH15 : swL15
 cEn = dirP == -1 ? loSinceH : hiSinceL
 if dirP != legDir or na(legEx) or cEx != legEx
@@ -351,6 +355,7 @@ if dirP != legDir or na(legEx) or cEx != legEx
     legEx  := cEx
     legEn  := cEn
     legFrz := false
+    legT   := dirP == -1 ? swHt15 : swLt15
 else
     extends = dirP == -1 ? cEn < legEn : cEn > legEn
     if extends
@@ -519,9 +524,11 @@ if barstate.islast
             planLine(tA0, tA0 + 3 * H, lvlX, "ANNULATION si clôture 15 min au-delà de " + str.tostring(lvlX, format.mintick), color.orange, 1)
         // Fibonacci de la dernière impulsion, dessiné à l'écart (décalé vers la droite)
         if showFib
-            f0 = time + math.round(fibShift * H)
-            f1 = f0 + 4 * H
-            lv = array.from(0.0, 0.382, 0.5, 0.618, 0.786, 1.0)
+            // Comme l'outil Fibonacci de TradingView : tracé depuis le début de la vague (100 %) jusqu'à droite du prix
+            onWave = fibAnchor == "Sur la vague (comme l'outil Fibonacci)" and not na(legT)
+            f0 = onWave ? legT : time + math.round(fibShift * H)
+            f1 = onWave ? time + 2 * H : f0 + 4 * H
+            lv = array.from(0.0, 0.5, 0.618, 0.786, 1.0)
             for k = 0 to array.size(lv) - 1
                 r = array.get(lv, k)
                 p = fibLvl(enV, sg, rng, r)
@@ -529,7 +536,7 @@ if barstate.islast
                 c = r == 0.0 or r == 1.0 ? color.white : isOte ? cZ : cGray
                 array.push(fibL, line.new(f0, p, f1, p, xloc = xloc.bar_time, color = c, width = isOte ? 2 : 1,
                      style = isOte ? line.style_solid : line.style_dashed))
-                array.push(fibT, label.new(f1, p, str.tostring(r * 100, "#.#") + " %  " + str.tostring(p, format.mintick),
+                array.push(fibT, label.new(f1, p, str.tostring(r * 100, "#.#") + " %  " + str.tostring(p, format.mintick) + (r == 1.0 ? "  (début de la vague)" : r == 0.0 ? "  (fin de la vague)" : ""),
                      xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 100), textcolor = c, size = size.small))
 
 // ---------- RÉSULTATS DES PLANS A et B (simulation sur l'historique affiché, frais compris) ----------
