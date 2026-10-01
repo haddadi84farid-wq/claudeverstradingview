@@ -185,7 +185,7 @@ drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<strin
                      bgcolor = color.new(c, st == 5 ? 70 : 85)))
                 // Fibonacci dans l'OB : 0 / 0,5 / 1
                 array.push(gLn, line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
-                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + array.get(starTxt, st) +
+                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + str.tostring(st) + "/5 " + array.get(starTxt, st) +
                      "\nF" + ck(array.get(fs, i)) + " T" + ck(array.get(rs, i)) + " P" + ck(array.get(ps, i)) + " V" + ck(array.get(vs, i)) + " M" + (cnt >= 3 ? "✓" : "✗") +
                      "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(slp, format.mintick) + " | TP " + str.tostring(tpp, format.mintick) + " (" + str.tostring(rrTP) + " R)"
                 array.push(gLb, label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
