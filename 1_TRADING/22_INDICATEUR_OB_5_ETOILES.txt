@@ -7,6 +7,7 @@
 //   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB).
 //   2. DIRECTION : Supertrend dans le sens de l'OB au moment où il se forme.
 //   3. LIQUIDITÉ : pas de hauts égaux (bas égaux) NON balayés juste au-delà de l'OB (ils attireraient le prix à travers l'OB).
+//      Si le marché les balaie avant de revenir sur l'OB, l'étoile est gagnée (« le marché les a déjà récupérés »).
 //   4. VIERGE : le prix n'est jamais revenu dans l'OB (l'étoile est perdue dès le 1er contact).
 //   5. FIBONACCI : tracé du dernier sommet au dernier creux (la vague) ; OB baissier au-dessus de 50 % (PREMIUM), haussier en dessous.
 // Trade (comme la méthode) : le prix revient dans l'OB → bougie de réaction dans le sens de l'OB → entrée à sa clôture,
@@ -50,6 +51,9 @@ type OB
     bool  s2
     bool  s3
     bool  s5
+    float w0
+    float ext
+    int   cbar
     bool  touched = false
     int   touchBar = na
     bool  done = false
@@ -114,19 +118,27 @@ if array.size(liqH) > 30
 if array.size(liqL) > 30
     array.shift(liqL)
 
-// Hauts égaux au-dessus d'un OB baissier (bas égaux sous un OB haussier) encore intacts et proches = liquidité dangereuse
-liqDanger(int d, float top, float bot) =>
-    bool danger = false
-    arr = d == -1 ? liqH : liqL
+// Niveaux de liquidité = hauts égaux / bas égaux encore intacts (recalculés à chaque bougie, une seule fois)
+eqLevels(array<float> arr, bool isHigh) =>
+    out = array.new<float>()
     n = array.size(arr)
     if n > 1
         for i = 0 to n - 2
             for j = i + 1 to n - 1
                 a = array.get(arr, i)
                 b = array.get(arr, j)
-                near = d == -1 ? math.min(a, b) > top and math.min(a, b) < top + liqDist * atr : math.max(a, b) < bot and math.max(a, b) > bot - liqDist * atr
-                if math.abs(a - b) <= liqTol * atr and near
-                    danger := true
+                if math.abs(a - b) <= liqTol * atr
+                    array.push(out, isHigh ? math.min(a, b) : math.max(a, b))
+    out
+eqH = eqLevels(liqH, true)
+eqL = eqLevels(liqL, false)
+// Liquidité dangereuse : hauts égaux intacts juste AU-DESSUS d'un OB baissier (bas égaux juste SOUS un OB haussier)
+liqDanger(int d, float top, float bot) =>
+    bool danger = false
+    arr = d == -1 ? eqH : eqL
+    for v in arr
+        if d == -1 ? v > top and v < top + liqDist * atr : v < bot and v > bot - liqDist * atr
+            danger := true
     danger
 
 starsOf(OB o, bool virgin) => (o.s1 ? 1 : 0) + (o.s2 ? 1 : 0) + (o.s3 ? 1 : 0) + (virgin ? 1 : 0) + (o.s5 ? 1 : 0)
@@ -189,12 +201,14 @@ newOB(int d) =>
         s1 := d == -1 ? low[j - 1] > high[j - 3] : high[j - 1] < low[j - 3]
     s2 = d == -1 ? not trendUp : trendUp
     s3 = not liqDanger(d, top, bot)
-    // Fibonacci : vague du dernier sommet au plus bas atteint depuis (OB baissier), ou du dernier creux au plus haut (OB haussier)
-    fH = fibMode == "N dernières bougies" ? rH : d == -1 ? lastSH : hhSinceSL
-    fL = fibMode == "N dernières bougies" ? rL : d == -1 ? llSinceSH : lastSL
-    eq = (fH + fL) / 2
+    // Fibonacci : vague du dernier sommet (1) au plus bas atteint (0) pour un OB baissier, et inversement.
+    // Le 0 suit le prix tant que l'OB n'est pas touché (comme quand on retrace le Fibonacci au moment du trade).
+    nb = fibMode == "N dernières bougies"
+    w0 = nb ? (d == -1 ? rH : rL) : d == -1 ? lastSH : lastSL
+    ex = nb ? (d == -1 ? rL : rH) : d == -1 ? llSinceSH : hhSinceSL
+    eq = (w0 + ex) / 2
     s5 = d == -1 ? (top + bot) / 2 >= eq : (top + bot) / 2 <= eq
-    OB.new(top, bot, bar_index - j2, d, s1, s2, s3, s5)
+    OB.new(top, bot, bar_index - j2, d, s1, s2, s3, s5, w0, ex, bar_index)
 
 if not slBroken and not na(lastSL) and close < lastSL
     slBroken := true
@@ -218,7 +232,13 @@ if array.size(obs) > 0
     for i = array.size(obs) - 1 to 0
         o = array.get(obs, i)
         broken = o.dir == -1 ? close > o.top : close < o.bot
-        if not o.touched and bar_index > o.bar + 2 and (o.dir == -1 ? high >= o.bot : low <= o.top)
+        // Étoiles 3 et 5 mises à jour tant que l'OB est vierge : liquidité balayée entre-temps, vague qui s'allonge
+        if not o.touched
+            if fibMode != "N dernières bougies"
+                o.ext := o.dir == -1 ? math.min(o.ext, low) : math.max(o.ext, high)
+            o.s5 := o.dir == -1 ? (o.top + o.bot) / 2 >= (o.w0 + o.ext) / 2 : (o.top + o.bot) / 2 <= (o.w0 + o.ext) / 2
+            o.s3 := not liqDanger(o.dir, o.top, o.bot)
+        if not o.touched and bar_index > o.cbar and (o.dir == -1 ? high >= o.bot : low <= o.top)
             o.tStars := starsOf(o, true)
             o.touched := true
             o.touchBar := bar_index
