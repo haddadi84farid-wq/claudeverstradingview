@@ -179,3 +179,11 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 - Verdict (règle fixée avant le test) : 3 trades en 21 mois < 100 → stratégie Trend Pullback ABANDONNÉE, plus aucun réglage.
 | v3 + scénario dessiné | 15 min, 01/04 → 29/09/2026 | 11 | −1,17 | −0,106 | 36,4 % | 0,84 | 2,29 |
 - 29/09 : méthode Trend Pullback ARRÊTÉE par l'utilisateur (dessins du scénario non affichés, résultats insuffisants).
+
+### Backtest — Order Blocks 5 étoiles (22_INDICATEUR_OB_5_ETOILES, méthode « Kasper Trading »)
+
+| Version | Unité | 5★ (trades / gagnants / R/trade) | 4★ | ≤ 3★ | Total R |
+|---|---|---|---|---|---|
+| v1 (OB au sommet, Fibo 150 bougies) | 15 min | 40 / 23 % / −0,41 | 124 / 37 % / +0,08 | 117 / 25 % / −0,33 | −45,4 |
+| v3 (OB = pause avant la jambe, Fibo sur la vague, étoiles 3 et 5 dynamiques) | 5 min | 63 / 35 % / −0,09 | 126 / 29 % / −0,20 | 156 / 34 % / −0,07 | −42,6 |
+- Entrée sur bougie de réaction dans l'OB, stop au-delà de l'OB, 2 R, frais 0,37 point. Les étoiles ne séparent pas les bons OB des mauvais (5★ ≈ ≤ 3★). Aucun avantage mesuré.
