@@ -64,6 +64,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            CPI / Fed a saisir a la main ; ligne + compte a rebours de la prochaine annonce.
 - 29_PA_5_BOUGIES.txt : PRICE ACTION 5 — figures de bougies notees ★ (seule) / ★★ (sur un niveau) / ★★★ (niveau + tendance),
                            avalement, pin bar, etoile matin/soir, bougie de force ; tableau des resultats reels (1,5 R, frais).
+- 30_PA_BOT_CONFLUENCE.txt : LE BOT : combine tendance + zone S/R + bougie de rejet + annonces + objectif degage (R:R >= 1,5).
+                           Checklist 5 regles en direct, propose ACHAT/VENTE avec SL et TP, resultats sur l'historique. Ne passe aucun ordre.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
