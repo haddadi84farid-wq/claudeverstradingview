@@ -206,3 +206,17 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 |---|---|---|
 | 30 min (01/10) | 126 trades, 40 % gagnants, −10,7 R, −0,08 R/trade | 64 trades, 39 %, −12,4 R, −0,19 R/trade |
 - Aucun des deux plans n'a d'avantage mesuré en 30 min. À vérifier en 15 et 5 min.
+
+## Test PA BOT (confluence des 5 regles) — 02/10/2026, XAUUSD OANDA, 90 jours, frais 0,37 pt
+
+| Reglages | Unite | Trades | Gagnes | R moyen |
+|---|---|---|---|---|
+| objectif max 4 R, marge stop 0,5, range coche | M15 | 43 | 9 % | -0,61 |
+| idem, range decoche | M15 | 10 | 10 % | -0,54 |
+| idem, range coche | M5 | 46 | 13 % | -0,49 |
+| idem, range decoche | M5 | 8 | 13 % | -0,42 |
+| objectif max 2 R, marge stop 2 (test decide a l'avance) | M5 | 46 | 24 % | -0,32 |
+| idem | M15 | 44 | 16 % | -0,56 |
+
+Conclusion (regle fixee avant le test) : negatif en M5 et en M15 -> on arrete d'automatiser ces regles.
+Les indicateurs 24 a 29 restent des outils de lecture ; le trader decide. Methode mesuree positive : tendance Daily 20/10.
