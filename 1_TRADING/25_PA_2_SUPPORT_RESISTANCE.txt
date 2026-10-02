@@ -5,7 +5,6 @@
 //    En H4 et en jour, le M15 est trop fin : ce sont les sommets / creux de l'unité affichée. (Option : autre référence.)
 // 2. Les sommets et creux proches (moins de 0,6 ATR de l'unité de référence) sont regroupés en UNE zone.
 //    Une zone n'est gardée que si le prix y a réagi au moins 2 fois (×2, ×3…). Plus il y a de réactions, plus la zone est forte.
-//    Deux zones collées (écart ≤ 0,3 ATR) sont fusionnées en une seule.
 // 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
 //    Zone TRAVERSÉE (une clôture de chaque côté) = les anciens contacts ne comptent plus. Elle ne revient que si le prix
 //    la touche de nouveau 2 fois APRÈS la traversée (nouveau support / nouvelle résistance).
@@ -21,7 +20,6 @@ pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté"
 lbDays  = input.int(30, "Historique analysé (jours)", minval = 3, maxval = 365)
 nPiv    = input.int(150, "Nombre de sommets / creux analysés", minval = 20, maxval = 300)
 tolK    = input.float(0.6, "Largeur max d'une zone (× ATR de la référence)", minval = 0.1, step = 0.1)
-mrgK    = input.float(0.3, "Fusionner deux zones séparées de moins de (× ATR)", minval = 0, step = 0.1)
 minTch  = input.int(2, "Réactions minimum pour garder une zone", minval = 1, maxval = 6)
 nSide   = input.int(3, "Zones affichées de chaque côté du prix", minval = 1, maxval = 8)
 extH    = input.float(8.0, "Prolonger à droite (heures)", minval = 1, step = 1)
@@ -157,31 +155,7 @@ clusterZones(array<float> dat) =>
                     cTop := pk
                 cTop := math.max(cTop, pk)
                 mem.push(j)
-    // Fusion des zones voisines (écart ≤ mrgK × ATR) : deux zones collées = une seule zone
-    mT = array.new<float>()
-    mB = array.new<float>()
-    m0 = array.new<int>()
-    mN = array.new<int>()
-    mH = array.new<bool>()
-    mL = array.new<bool>()
-    if zT.size() > 0
-        for i = 0 to zT.size() - 1
-            last = mT.size() - 1
-            if last >= 0 and zB.get(i) - mT.get(last) <= mrgK * atrR
-                mT.set(last, math.max(mT.get(last), zT.get(i)))
-                mB.set(last, math.min(mB.get(last), zB.get(i)))
-                m0.set(last, math.min(m0.get(last), z0.get(i)))
-                mN.set(last, mN.get(last) + zN.get(i))
-                mH.set(last, mH.get(last) or zH.get(i))
-                mL.set(last, mL.get(last) or zL.get(i))
-            else
-                mT.push(zT.get(i))
-                mB.push(zB.get(i))
-                m0.push(z0.get(i))
-                mN.push(zN.get(i))
-                mH.push(zH.get(i))
-                mL.push(zL.get(i))
-    [mT, mB, m0, mN, mH, mL, wT, wB, w0, atrR]
+    [zT, zB, z0, zN, zH, zL, wT, wB, w0, atrR]
 
 if barstate.islast
     for b in zBx
