@@ -1,19 +1,28 @@
 //@version=6
 // ORDER BLOCKS MULTI-UNITÉS — la méthode de la vidéo, étape par étape, IDENTIQUE quelle que soit l'unité affichée.
 // 1. Les OB sont détectés sur 5, 10, 15, 30 min et 1 h (+ 1 min en option) avec la même règle :
-//    cassure de structure (clôture sous le dernier creux / au-dessus du dernier sommet) → OB = dernière bougie (ou série) opposée
-//    juste avant la jambe qui casse. On garde le dernier OB vendeur et le dernier OB acheteur de chaque unité, encore valables.
+//    cassure de la structure EXTERNE (vrai sommet / vrai creux, pas un petit pivot interne) → OB = dernière bougie (ou série)
+//    opposée juste avant la jambe qui casse. Filtres OB « institutionnel » : déplacement ≥ 1,5 ATR + FVG obligatoire.
+//    On garde les 3 derniers OB vendeurs et acheteurs de chaque unité, encore valables.
 // 2. On ne garde que les OB qui se SUPERPOSENT sur plusieurs unités (« ×3 », « ×4 »…) : ce sont les niveaux forts.
 // 3. Étoiles sur l'OB le plus précis du groupe (la plus petite unité) : F = FVG, T = Supertrend, P = premium / discount
-//    (Fibonacci du dernier sommet au plus bas atteint, OB vendeur au-dessus de 50 %), V = vierge, M = multi-unités (≥ 3).
+//    (Fibonacci du dernier sommet au plus bas atteint, OB vendeur au-dessus de 50 %), V = vierge, M = multi-unités (≥ 3),
+//    H = le 1 h est dans le groupe (zone la plus fiable). Note sur 6.
 // 4. Fibonacci DANS l'OB (0 / 0,5 / 1) : entrée sur la 2e moitié possible, stop juste au-delà de l'OB, objectif 2 R.
+// 5. Tableau des résultats : chaque groupe (×2 et plus) est testé sur l'historique avec un ordre limite à l'entrée,
+//    stop et objectif du plan, frais inclus, annulé s'il n'est pas touché à temps. Résultats en R par catégorie.
 // Ne passe aucun ordre.
-indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 60, max_lines_count = 120, max_labels_count = 60)
+indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100, max_bars_back = 500)
 
 gD = "Détection"
 pivLen  = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gD)
 use1    = input.bool(false, "Inclure le 1 min (seulement si le graphique est en 1 min)", group = gD)
 minConf = input.int(3, "Afficher les OB présents sur au moins N unités", minval = 1, maxval = 6, group = gD)
+extOnly = input.bool(true, "Seulement cassure de structure externe (ignore les petits pivots internes)", group = gD)
+dispK   = input.float(1.5, "Déplacement minimum de la jambe (× ATR de l'unité)", minval = 0, step = 0.25, group = gD)
+reqF    = input.bool(true, "FVG obligatoire dans la jambe", group = gD)
+keepN   = input.int(3, "OB gardés par unité et par sens", minval = 1, maxval = 5, group = gD)
+h1Pass  = input.bool(true, "Afficher aussi les ×2 si le 1 h en fait partie", group = gD)
 stLen   = input.int(10, "Supertrend : période ATR", minval = 1, group = gD)
 stFac   = input.float(3.0, "Supertrend : facteur", minval = 0.5, step = 0.1, group = gD)
 gT = "Plan"
@@ -21,66 +30,80 @@ slBuf   = input.float(0.3, "Marge du stop au-delà de l'OB (points)", minval = 0
 rrTP    = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
 entryAt = input.string("Bord de l'OB", "Entrée", options = ["Bord de l'OB", "50 % de l'OB (2e moitié)"], group = gT)
 extH    = input.float(6.0, "Prolonger à droite (heures)", minval = 1, step = 1, group = gT)
+gR = "Tableau des résultats"
+showRes = input.bool(true, "Afficher le tableau des résultats (historique)", group = gR)
+expH    = input.float(24.0, "Ordre annulé s'il n'est pas touché après (heures)", minval = 1, step = 1, group = gR)
+costPts = input.float(0.37, "Frais par trade (points : spread + commission)", minval = 0, step = 0.01, group = gR)
 
 cRed   = #F23645
 cGreen = #089981
 
 // ---------- Détection sur UNE unité (exécutée dans chaque unité via request.security) ----------
+type OB
+    int   dir
+    float top
+    float bot
+    int   t
+    int   c
+    bool  f
+    bool  tr
+    bool  v
+    float w0
+    float ex
+    float atr0
+
 obTF() =>
     ph = ta.pivothigh(high, pivLen, pivLen)
     pl = ta.pivotlow(low, pivLen, pivLen)
     [stV, stD] = ta.supertrend(stFac, stLen)
+    atr = ta.atr(14)
     var float sh = na
     var float sl = na
     var int   shBar = na
     var int   slBar = na
     var bool  shB = true
     var bool  slB = true
-    if not na(ph)
+    var array<OB> obs = array.new<OB>()
+    // Structure : en mode externe, un pivot plus bas que le sommet protégé (non cassé) est interne → ignoré
+    if not na(ph) and (not extOnly or shB or na(sh) or ph > sh)
         sh := ph
         shBar := bar_index - pivLen
         shB := false
-    if not na(pl)
+    if not na(pl) and (not extOnly or slB or na(sl) or pl < sl)
         sl := pl
         slBar := bar_index - pivLen
         slB := false
-    llS = ta.lowest(low, math.min(450, math.max(1, bar_index - nz(shBar, bar_index) + 1)))
-    hhS = ta.highest(high, math.min(450, math.max(1, bar_index - nz(slBar, bar_index) + 1)))
-    // OB vendeur (b) et acheteur (u) en cours
-    var float bTop = na
-    var float bBot = na
-    var int   bT = na
-    var int   bC = na
-    var bool  bF = false
-    var bool  bTr = false
-    var bool  bV = false
-    var float bW0 = na
-    var float bEx = na
-    var float uTop = na
-    var float uBot = na
-    var int   uT = na
-    var int   uC = na
-    var bool  uF = false
-    var bool  uTr = false
-    var bool  uV = false
-    var float uW0 = na
-    var float uEx = na
-    // Suivi : cassé → oublié ; touché → plus vierge ; tant que vierge, le 0 du Fibonacci suit le prix
-    if not na(bTop)
-        if close > bTop
-            bTop := na
-        else if bar_index > bC and high >= bBot
-            bV := false
-        else if bV
-            bEx := math.min(bEx, low)
-    if not na(uTop)
-        if close < uBot
-            uTop := na
-        else if bar_index > uC and low <= uTop
-            uV := false
-        else if uV
-            uEx := math.max(uEx, high)
-    // Nouvelle cassure vers le bas → nouvel OB vendeur
+    lenL = math.min(300, math.max(1, bar_index - nz(shBar, bar_index) + 1))
+    lenH = math.min(300, math.max(1, bar_index - nz(slBar, bar_index) + 1))
+    llS = ta.lowest(low, lenL)
+    llO = ta.lowestbars(low, lenL)
+    hhS = ta.highest(high, lenH)
+    hhO = ta.highestbars(high, lenH)
+    // Suivi : cassé → supprimé ; touché → plus vierge ; FVG peut se former dans les 2 bougies après la cassure
+    if obs.size() > 0
+        for i = obs.size() - 1 to 0
+            o = obs.get(i)
+            if o.dir == -1
+                if close > o.top
+                    obs.remove(i)
+                else
+                    if not o.f and bar_index - o.c <= 2 and high < low[2]
+                        o.f := true
+                    if bar_index > o.c and high >= o.bot
+                        o.v := false
+                    else if o.v
+                        o.ex := math.min(o.ex, low)
+            else
+                if close < o.bot
+                    obs.remove(i)
+                else
+                    if not o.f and bar_index - o.c <= 2 and low > high[2]
+                        o.f := true
+                    if bar_index > o.c and low <= o.top
+                        o.v := false
+                    else if o.v
+                        o.ex := math.max(o.ex, high)
+    // Cassure vers le bas → OB vendeur
     if not slB and not na(sl) and close < sl
         slB := true
         int j = 1
@@ -99,16 +122,21 @@ obTF() =>
         for k = j to j2
             tp := math.max(tp, high[k])
             bt := math.min(bt, low[k])
-        bTop := tp
-        bBot := bt
-        bT := time[j2]
-        bC := bar_index
-        bF := (j >= 2 and low[j] > high[j - 2]) or (j >= 3 and low[j - 1] > high[j - 3])
-        bTr := stD > 0
-        bV := true
-        bW0 := sh
-        bEx := llS
-    // Nouvelle cassure vers le haut → nouvel OB acheteur
+        float ex = low
+        for k = 0 to j - 1
+            ex := math.min(ex, low[k])
+        bool f = false
+        if j >= 2
+            for k = 0 to j - 2
+                if high[k] < low[k + 2]
+                    f := true
+        obs.push(OB.new(-1, tp, bt, time[j2], bar_index, f, stD > 0, true, math.max(hhS, tp), ex, atr))
+        if extOnly
+            // nouveau sommet protégé = haut de la jambe qui a cassé
+            sh := hhS
+            shBar := bar_index + hhO
+            shB := false
+    // Cassure vers le haut → OB acheteur
     if not shB and not na(sh) and close > sh
         shB := true
         int j = 1
@@ -127,70 +155,253 @@ obTF() =>
         for k = j to j2
             tp := math.max(tp, high[k])
             bt := math.min(bt, low[k])
-        uTop := tp
-        uBot := bt
-        uT := time[j2]
-        uC := bar_index
-        uF := (j >= 2 and high[j] < low[j - 2]) or (j >= 3 and high[j - 1] < low[j - 3])
-        uTr := stD < 0
-        uV := true
-        uW0 := sl
-        uEx := hhS
-    bP = not na(bTop) and (bTop + bBot) / 2 >= (bW0 + bEx) / 2
-    uP = not na(uTop) and (uTop + uBot) / 2 <= (uW0 + uEx) / 2
-    [bTop, bBot, bT, bF ? 1 : 0, bTr ? 1 : 0, bP ? 1 : 0, bV ? 1 : 0, uTop, uBot, uT, uF ? 1 : 0, uTr ? 1 : 0, uP ? 1 : 0, uV ? 1 : 0]
+        float ex = high
+        for k = 0 to j - 1
+            ex := math.max(ex, high[k])
+        bool f = false
+        if j >= 2
+            for k = 0 to j - 2
+                if low[k] > high[k + 2]
+                    f := true
+        obs.push(OB.new(1, tp, bt, time[j2], bar_index, f, stD < 0, true, math.min(llS, bt), ex, atr))
+        if extOnly
+            sl := llS
+            slBar := bar_index + llO
+            slB := false
+    // On garde les keepN derniers par sens
+    for d in array.from(-1, 1)
+        int cnt = 0
+        for o in obs
+            if o.dir == d
+                cnt += 1
+        while cnt > keepN
+            for i = 0 to obs.size() - 1
+                if obs.get(i).dir == d
+                    obs.remove(i)
+                    break
+            cnt -= 1
+    // Sortie : 9 valeurs par OB → sens, haut, bas, temps, F, T, P, V, déplacement OK
+    out = array.new<float>()
+    for o in obs
+        mid = (o.top + o.bot) / 2
+        p = o.dir == -1 ? mid >= (o.w0 + o.ex) / 2 : mid <= (o.w0 + o.ex) / 2
+        dOk = (o.dir == -1 ? o.top - o.ex : o.ex - o.bot) >= dispK * o.atr0
+        out.push(o.dir)
+        out.push(o.top)
+        out.push(o.bot)
+        out.push(o.t)
+        out.push(o.f ? 1 : 0)
+        out.push(o.tr ? 1 : 0)
+        out.push(p ? 1 : 0)
+        out.push(o.v ? 1 : 0)
+        out.push(dOk ? 1 : 0)
+    out
 
-[b1t, b1b, b1T, b1f, b1r, b1p, b1v, u1t, u1b, u1T, u1f, u1r, u1p, u1v] = request.security(syminfo.tickerid, "1", obTF())
-[b5t, b5b, b5T, b5f, b5r, b5p, b5v, u5t, u5b, u5T, u5f, u5r, u5p, u5v] = request.security(syminfo.tickerid, "5", obTF())
-[bAt, bAb, bAT, bAf, bAr, bAp, bAv, uAt, uAb, uAT, uAf, uAr, uAp, uAv] = request.security(syminfo.tickerid, "10", obTF())
-[bBt, bBb, bBT, bBf, bBr, bBp, bBv, uBt, uBb, uBT, uBf, uBr, uBp, uBv] = request.security(syminfo.tickerid, "15", obTF())
-[bCt, bCb, bCT, bCf, bCr, bCp, bCv, uCt, uCb, uCT, uCf, uCr, uCp, uCv] = request.security(syminfo.tickerid, "30", obTF())
-[bDt, bDb, bDT, bDf, bDr, bDp, bDv, uDt, uDb, uDT, uDf, uDr, uDp, uDv] = request.security(syminfo.tickerid, "60", obTF())
+r1 = request.security(syminfo.tickerid, "1", obTF())
+r5 = request.security(syminfo.tickerid, "5", obTF())
+rA = request.security(syminfo.tickerid, "10", obTF())
+rB = request.security(syminfo.tickerid, "15", obTF())
+rC = request.security(syminfo.tickerid, "30", obTF())
+rD = request.security(syminfo.tickerid, "60", obTF())
 
 // ---------- Regroupement des OB qui se superposent entre unités ----------
 var array<box>   gBx = array.new<box>()
 var array<line>  gLn = array.new<line>()
 var array<label> gLb = array.new<label>()
-var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
-ck(int b) => b == 1 ? "✓" : "✗"
+var starTxt = array.from("☆☆☆☆☆☆", "★☆☆☆☆☆", "★★☆☆☆☆", "★★★☆☆☆", "★★★★☆☆", "★★★★★☆", "★★★★★★")
+var tfNames = array.from("1", "5", "10", "15", "30", "60")
+ck(bool b) => b ? "✓" : "✗"
+with1 = use1 and timeframe.in_seconds() <= 60
 
-drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<string> nm, array<int> fs, array<int> rs, array<int> ps, array<int> vs) =>
-    n = array.size(tps)
-    used = array.new<bool>(n, false)
-    // Les unités sont rangées de la plus petite à la plus grande : le 1er OB d'un groupe est le plus précis
-    for i = 0 to n - 1
-        if not array.get(used, i) and not na(array.get(tps, i))
-            ti = array.get(tps, i)
-            bi = array.get(bts, i)
-            cnt = 1
-            names = array.get(nm, i)
-            for k = 0 to n - 1
-                if k != i and not na(array.get(tps, k))
-                    if math.min(ti, array.get(tps, k)) > math.max(bi, array.get(bts, k))
-                        cnt += 1
-                        names := names + "·" + array.get(nm, k)
-            if cnt >= minConf
+// Ajoute les OB valides d'une unité (sens d) dans les listes
+collect(array<float> r, int tfi, int d, array<float> tps, array<float> bts, array<int> ts, array<int> tfs, array<int> fs, array<int> rs, array<int> ps, array<int> vs) =>
+    n = na(r) ? 0 : int(r.size() / 9)
+    if n > 0
+        for i = 0 to n - 1
+            b = i * 9
+            if r.get(b) == d and r.get(b + 8) == 1 and (not reqF or r.get(b + 4) == 1)
+                tps.push(r.get(b + 1))
+                bts.push(r.get(b + 2))
+                ts.push(int(r.get(b + 3)))
+                tfs.push(tfi)
+                fs.push(int(r.get(b + 4)))
+                rs.push(int(r.get(b + 5)))
+                ps.push(int(r.get(b + 6)))
+                vs.push(int(r.get(b + 7)))
+    n
+
+mkLists(int d) =>
+    tps = array.new<float>()
+    bts = array.new<float>()
+    ts  = array.new<int>()
+    tfs = array.new<int>()
+    fs  = array.new<int>()
+    rs  = array.new<int>()
+    ps  = array.new<int>()
+    vs  = array.new<int>()
+    if with1
+        collect(r1, 0, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(r5, 1, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rA, 2, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rB, 3, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rC, 4, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rD, 5, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    [tps, bts, ts, tfs, fs, rs, ps, vs]
+
+// Groupes (×2 et plus) : indice de l'OB le plus précis, nombre d'unités, noms, présence du 1 h
+grp(array<float> tps, array<float> bts, array<int> tfs) =>
+    n = tps.size()
+    gI = array.new<int>()
+    gN = array.new<int>()
+    gS = array.new<string>()
+    gH = array.new<bool>()
+    if n > 0
+        used = array.new<bool>(n, false)
+        // Les OB sont rangés de la plus petite à la plus grande unité : le 1er d'un groupe est le plus précis
+        for i = 0 to n - 1
+            if not used.get(i)
+                ti = tps.get(i)
+                bi = bts.get(i)
+                seen = array.new<bool>(6, false)
+                seen.set(tfs.get(i), true)
                 for k = 0 to n - 1
-                    if not na(array.get(tps, k)) and math.min(ti, array.get(tps, k)) > math.max(bi, array.get(bts, k))
-                        array.set(used, k, true)
+                    if k != i and not used.get(k) and math.min(ti, tps.get(k)) > math.max(bi, bts.get(k))
+                        seen.set(tfs.get(k), true)
+                int cnt = 0
+                string names = ""
+                for q = 0 to 5
+                    if seen.get(q)
+                        cnt += 1
+                        names := names == "" ? tfNames.get(q) : names + "·" + tfNames.get(q)
+                if cnt >= 2
+                    for k = 0 to n - 1
+                        if not used.get(k) and math.min(ti, tps.get(k)) > math.max(bi, bts.get(k))
+                            used.set(k, true)
+                    gI.push(i)
+                    gN.push(cnt)
+                    gS.push(names)
+                    gH.push(seen.get(5))
+    [gI, gN, gS, gH]
+
+planOf(int d, float ti, float bi) =>
+    e = entryAt == "Bord de l'OB" ? (d == -1 ? bi : ti) : (ti + bi) / 2
+    slp = d == -1 ? ti + slBuf : bi - slBuf
+    tpp = e + (d == -1 ? -1 : 1) * rrTP * math.abs(e - slp)
+    [e, slp, tpp]
+
+[sTp, sBt, sTs, sTf, sF, sR, sP, sV] = mkLists(-1)
+[uTp, uBt, uTs, uTf, uF, uR, uP, uV] = mkLists(1)
+[sgI, sgN, sgS, sgH] = grp(sTp, sBt, sTf)
+[ugI, ugN, ugS, ugH] = grp(uTp, uBt, uTf)
+
+// ---------- Test historique : ordre limite sur chaque nouveau groupe ----------
+type Setup
+    int   dir
+    float e
+    float sl
+    float tp
+    int   st
+    int   cnt
+    bool  h1
+    int   t0
+    int   c
+    bool  filled
+
+var array<Setup>  sets = array.new<Setup>()
+var array<string> keys = array.new<string>()
+// Catégories : 0 note 5-6, 1 note 4, 2 note ≤ 3, 3 avec 1 h, 4 ×3 et plus, 5 ×2 sans 1 h, 6 tous
+var array<int>   stN = array.new<int>(7, 0)
+var array<int>   stW = array.new<int>(7, 0)
+var array<float> stR = array.new<float>(7, 0.0)
+
+addRes(int cat, float r) =>
+    stN.set(cat, stN.get(cat) + 1)
+    stW.set(cat, stW.get(cat) + (r > 0 ? 1 : 0))
+    stR.set(cat, stR.get(cat) + r)
+    cat
+
+regGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> fs, array<int> rs, array<int> ps, array<int> vs, array<int> gI, array<int> gN, array<bool> gH) =>
+    if gI.size() > 0
+        for g = 0 to gI.size() - 1
+            i = gI.get(g)
+            ti = tps.get(i)
+            bi = bts.get(i)
+            key = str.tostring(d) + "|" + str.tostring(ts.get(i)) + "|" + str.tostring(ti)
+            if not keys.includes(key)
+                keys.push(key)
+                if keys.size() > 400
+                    keys.shift()
+                [e, slp, tpp] = planOf(d, ti, bi)
+                // ordre limite seulement si le prix n'a pas déjà dépassé l'entrée
+                if (d == 1 ? close > e : close < e) and math.abs(e - slp) > 0
+                    cnt = gN.get(g)
+                    h1 = gH.get(g)
+                    st = fs.get(i) + rs.get(i) + ps.get(i) + vs.get(i) + (cnt >= 3 ? 1 : 0) + (h1 ? 1 : 0)
+                    sets.push(Setup.new(d, e, slp, tpp, st, cnt, h1, time, bar_index, false))
+    d
+
+// Suivi des ordres en cours (les ordres créés sur cette bougie attendent la suivante)
+if sets.size() > 0
+    for i = sets.size() - 1 to 0
+        s = sets.get(i)
+        if bar_index > s.c
+            bool drop = false
+            float res = na
+            if not s.filled
+                if s.dir == 1 ? low <= s.e : high >= s.e
+                    s.filled := true
+                else if time - s.t0 > expH * 3600000
+                    drop := true
+            if s.filled
+                cst = costPts / math.abs(s.e - s.sl)
+                if s.dir == 1 ? low <= s.sl : high >= s.sl
+                    res := -1 - cst
+                else if s.dir == 1 ? high >= s.tp : low <= s.tp
+                    res := rrTP - cst
+            if not na(res)
+                addRes(s.st >= 5 ? 0 : s.st == 4 ? 1 : 2, res)
+                if s.h1
+                    addRes(3, res)
+                if s.cnt >= 3
+                    addRes(4, res)
+                if s.cnt == 2 and not s.h1
+                    addRes(5, res)
+                addRes(6, res)
+            if drop or not na(res)
+                sets.remove(i)
+
+regGroups(-1, sTp, sBt, sTs, sF, sR, sP, sV, sgI, sgN, sgH)
+regGroups(1, uTp, uBt, uTs, uF, uR, uP, uV, ugI, ugN, ugH)
+
+// ---------- Dessin (dernière bougie) ----------
+drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> fs, array<int> rs, array<int> ps, array<int> vs, array<int> gI, array<int> gN, array<string> gS, array<bool> gH) =>
+    if gI.size() > 0
+        for g = 0 to gI.size() - 1
+            i = gI.get(g)
+            cnt = gN.get(g)
+            h1 = gH.get(g)
+            if cnt >= minConf or (h1Pass and h1 and cnt >= 2)
+                ti = tps.get(i)
+                bi = bts.get(i)
                 c = d == -1 ? cRed : cGreen
-                st = array.get(fs, i) + array.get(rs, i) + array.get(ps, i) + array.get(vs, i) + (cnt >= 3 ? 1 : 0)
-                t0 = array.get(ts, i)
+                st = fs.get(i) + rs.get(i) + ps.get(i) + vs.get(i) + (cnt >= 3 ? 1 : 0) + (h1 ? 1 : 0)
+                strong = h1 or st >= 5
+                t0 = ts.get(i)
                 t1 = time + math.round(extH * 3600000)
                 midp = (ti + bi) / 2
-                e = entryAt == "Bord de l'OB" ? (d == -1 ? bi : ti) : midp
-                slp = d == -1 ? ti + slBuf : bi - slBuf
-                tpp = e + (d == -1 ? -1 : 1) * rrTP * math.abs(e - slp)
-                array.push(gBx, box.new(t0, ti, t1, bi, xloc = xloc.bar_time, border_color = c, border_width = st == 5 ? 2 : 1,
-                     bgcolor = color.new(c, st == 5 ? 70 : 85)))
+                [e, slp, tpp] = planOf(d, ti, bi)
+                gBx.push(box.new(t0, ti, t1, bi, xloc = xloc.bar_time, border_color = c, border_width = strong ? 2 : 1,
+                     bgcolor = color.new(c, strong ? 70 : 85)))
                 // Fibonacci dans l'OB : 0 / 0,5 / 1
-                array.push(gLn, line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
-                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + str.tostring(st) + "/5 " + array.get(starTxt, st) +
-                     "\nF" + ck(array.get(fs, i)) + " T" + ck(array.get(rs, i)) + " P" + ck(array.get(ps, i)) + " V" + ck(array.get(vs, i)) + " M" + (cnt >= 3 ? "✓" : "✗") +
+                gLn.push(line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
+                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + gS.get(g) + ")  " + str.tostring(st) + "/6 " + starTxt.get(st) +
+                     "\nF" + ck(fs.get(i) == 1) + " T" + ck(rs.get(i) == 1) + " P" + ck(ps.get(i) == 1) + " V" + ck(vs.get(i) == 1) + " M" + ck(cnt >= 3) + " H" + ck(h1) +
                      "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(slp, format.mintick) + " | TP " + str.tostring(tpp, format.mintick) + " (" + str.tostring(rrTP) + " R)"
-                array.push(gLb, label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
-                     color = color.new(c, st == 5 ? 0 : 35), textcolor = color.white, size = size.small))
-    n
+                gLb.push(label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
+                     color = color.new(c, strong ? 0 : 35), textcolor = color.white, size = size.small))
+    d
+
+var table tRes = table.new(position.bottom_left, 5, 8, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
 
 if barstate.islast
     for b in gBx
@@ -199,26 +410,24 @@ if barstate.islast
         line.delete(l)
     for l in gLb
         label.delete(l)
-    array.clear(gBx)
-    array.clear(gLn)
-    array.clear(gLb)
-    with1 = use1 and timeframe.in_seconds() <= 60
-    nm = array.from("1", "5", "10", "15", "30", "60")
-    // OB vendeurs
-    bt = array.from(with1 ? b1t : na, b5t, bAt, bBt, bCt, bDt)
-    bb = array.from(with1 ? b1b : na, b5b, bAb, bBb, bCb, bDb)
-    bT = array.from(b1T, b5T, bAT, bBT, bCT, bDT)
-    bf = array.from(b1f, b5f, bAf, bBf, bCf, bDf)
-    br = array.from(b1r, b5r, bAr, bBr, bCr, bDr)
-    bp = array.from(b1p, b5p, bAp, bBp, bCp, bDp)
-    bv = array.from(b1v, b5v, bAv, bBv, bCv, bDv)
-    drawGroups(-1, bt, bb, bT, nm, bf, br, bp, bv)
-    // OB acheteurs
-    ut = array.from(with1 ? u1t : na, u5t, uAt, uBt, uCt, uDt)
-    ub = array.from(with1 ? u1b : na, u5b, uAb, uBb, uCb, uDb)
-    uT = array.from(u1T, u5T, uAT, uBT, uCT, uDT)
-    uf = array.from(u1f, u5f, uAf, uBf, uCf, uDf)
-    ur = array.from(u1r, u5r, uAr, uBr, uCr, uDr)
-    up = array.from(u1p, u5p, uAp, uBp, uCp, uDp)
-    uv = array.from(u1v, u5v, uAv, uBv, uCv, uDv)
-    drawGroups(1, ut, ub, uT, nm, uf, ur, up, uv)
+    gBx.clear()
+    gLn.clear()
+    gLb.clear()
+    drawGroups(-1, sTp, sBt, sTs, sF, sR, sP, sV, sgI, sgN, sgS, sgH)
+    drawGroups(1, uTp, uBt, uTs, uF, uR, uP, uV, ugI, ugN, ugS, ugH)
+    if showRes
+        table.clear(tRes, 0, 0, 4, 7)
+        hd = array.from("OB MTF — résultats", "Trades", "Gagnés", "Total R", "R moyen")
+        for q = 0 to 4
+            table.cell(tRes, q, 0, hd.get(q), text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        nmR = array.from("Note 5-6 / 6", "Note 4 / 6", "Note ≤ 3 / 6", "Avec le 1 h (H)", "×3 et plus", "×2 sans le 1 h", "Tous")
+        for q = 0 to 6
+            n = stN.get(q)
+            tot = stR.get(q)
+            avg = n > 0 ? tot / n : 0.0
+            cc = n == 0 ? color.gray : avg > 0 ? cGreen : cRed
+            table.cell(tRes, 0, q + 1, nmR.get(q), text_color = color.white, text_size = size.small, text_halign = text.align_left)
+            table.cell(tRes, 1, q + 1, str.tostring(n), text_color = color.white, text_size = size.small)
+            table.cell(tRes, 2, q + 1, n > 0 ? str.tostring(math.round(100.0 * stW.get(q) / n)) + " %" : "-", text_color = color.white, text_size = size.small)
+            table.cell(tRes, 3, q + 1, n > 0 ? str.tostring(tot, "#.##") : "-", text_color = cc, text_size = size.small)
+            table.cell(tRes, 4, q + 1, n > 0 ? str.tostring(avg, "#.##") : "-", text_color = cc, text_size = size.small)
