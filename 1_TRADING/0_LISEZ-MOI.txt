@@ -60,6 +60,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            3 contacts = confirmee, cassee = grise a la cloture de l'autre cote.
 - 27_PA_4_FIGURES.txt : PRICE ACTION 4 — figures chartistes dessinees (M15, memes de M1 a H1) : M, W, triple sommet/creux,
                            ETE (et inversee), drapeaux, triangles, biseaux, rectangle, canaux ; historique + en cours, objectif.
+- 28_PA_ANNONCES.txt : zones grises « ne pas trader » autour des annonces : NFP automatique (1er vendredi 14:30 Paris),
+                           CPI / Fed a saisir a la main ; ligne + compte a rebours de la prochaine annonce.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

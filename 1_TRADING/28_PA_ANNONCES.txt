@@ -1,0 +1,96 @@
+//@version=6
+// ANNONCES — zones « NE PAS TRADER » autour des annonces américaines
+// • NFP : calculé automatiquement = 1er vendredi du mois, 8:30 heure de New York (14:30 Paris, heure d'été / d'hiver gérée).
+//   (Rare : si le Département du Travail le décale, ajoute la vraie date dans « Autres annonces ».)
+// • CPI, Fed (FOMC) et autres : dates à saisir à la main (jusqu'à 6), à l'HEURE DE TON GRAPHIQUE (Paris : CPI 14:30, Fed 20:00).
+// Zone grise = de 30 min avant à 15 min après l'annonce (30 min après pour la Fed) : pas de nouvelle position.
+// Ligne verticale + compte à rebours pour la prochaine annonce. Ne passe aucun ordre.
+indicator("Annonces — ne pas trader", shorttitle = "ANNONCES", overlay = true, max_lines_count = 20, max_labels_count = 50)
+
+before = input.int(30, "Minutes avant l'annonce", minval = 0, maxval = 120)
+after  = input.int(15, "Minutes après l'annonce", minval = 0, maxval = 120)
+showNfp = input.bool(true, "NFP automatique (1er vendredi, 8:30 New York)")
+gM = "Autres annonces (heure de Paris ; laisser 2000-01-01 si inutilisé)"
+d1 = input.time(timestamp("2000-01-01T00:00"), "Annonce 1", group = gM)
+n1 = input.string("CPI", "Nom 1", group = gM)
+d2 = input.time(timestamp("2000-01-01T00:00"), "Annonce 2", group = gM)
+n2 = input.string("FOMC (Fed)", "Nom 2", group = gM)
+d3 = input.time(timestamp("2000-01-01T00:00"), "Annonce 3", group = gM)
+n3 = input.string("CPI", "Nom 3", group = gM)
+d4 = input.time(timestamp("2000-01-01T00:00"), "Annonce 4", group = gM)
+n4 = input.string("FOMC (Fed)", "Nom 4", group = gM)
+d5 = input.time(timestamp("2000-01-01T00:00"), "Annonce 5", group = gM)
+n5 = input.string("Autre", "Nom 5", group = gM)
+d6 = input.time(timestamp("2000-01-01T00:00"), "Annonce 6", group = gM)
+n6 = input.string("Autre", "Nom 6", group = gM)
+
+tz = "America/New_York"
+MIN = 60000
+
+// NFP du mois de la date t : 1er vendredi, 8:30 New York
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp(tz, y, m, d, 8, 30)
+        if na(res) and dayofweek(t, tz) == dayofweek.friday
+            res := t
+    res
+
+// Annonces manuelles
+manual = array.from(d1, d2, d3, d4, d5, d6)
+names = array.from(n1, n2, n3, n4, n5, n6)
+
+// Annonce en cours sur cette bougie ? (fenêtre avant / après ; la Fed : 30 min après minimum)
+string cur = ""
+y0 = year(time, tz)
+m0 = month(time, tz)
+if showNfp
+    tn = nfpOfMonth(y0, m0)
+    if time + timeframe.in_seconds() * 1000 > tn - before * MIN and time <= tn + after * MIN
+        cur := "NFP"
+for i = 0 to 5
+    di = manual.get(i)
+    if year(di, "UTC") > 2000
+        te = di
+        aft = str.contains(names.get(i), "FOMC") ? math.max(after, 30) : after
+        if time + timeframe.in_seconds() * 1000 > te - before * MIN and time <= te + aft * MIN
+            cur := names.get(i)
+
+inZone = cur != ""
+bgcolor(inZone ? color.new(color.gray, 70) : na, title = "Zone annonce")
+if inZone and not inZone[1]
+    label.new(bar_index, high, cur + " — PAS DE NOUVELLE POSITION", style = label.style_label_down, color = color.new(color.gray, 20), textcolor = color.white, size = size.small)
+
+// ---------- Prochaine annonce : ligne verticale + compte à rebours ----------
+var line  nxL = na
+var label nxB = na
+var table tb = table.new(position.bottom_center, 1, 1)
+if barstate.islast
+    line.delete(nxL)
+    label.delete(nxB)
+    int best = na
+    string bestN = ""
+    if showNfp
+        for k = 0 to 2
+            mm = m0 + k
+            yy = y0 + (mm > 12 ? 1 : 0)
+            mm := mm > 12 ? mm - 12 : mm
+            tn = nfpOfMonth(yy, mm)
+            if tn > timenow - after * MIN and (na(best) or tn < best)
+                best := tn
+                bestN := "NFP"
+    for i = 0 to 5
+        di = manual.get(i)
+        if year(di, "UTC") > 2000
+            te = di
+            if te > timenow - after * MIN and (na(best) or te < best)
+                best := te
+                bestN := names.get(i)
+    if not na(best)
+        nxL := line.new(best, high, best, low, xloc = xloc.bar_time, extend = extend.both, color = color.new(color.orange, 20), style = line.style_dashed, width = 2)
+        nxB := label.new(best, high, bestN, xloc = xloc.bar_time, style = label.style_label_down, color = color.new(color.orange, 10), textcolor = color.black, size = size.small)
+        mins = math.round((best - timenow) / MIN)
+        txt = mins > 0 ? "Prochaine annonce : " + bestN + " dans " + (mins >= 1440 ? str.tostring(math.floor(mins / 1440)) + " j " : "") + str.tostring(math.floor((mins % 1440) / 60)) + " h " + str.tostring(mins % 60) + " min" : "ANNONCE " + bestN + " EN COURS — NE PAS TRADER"
+        warn = mins <= before
+        table.cell(tb, 0, 0, txt + "  (" + str.format_time(best, "dd/MM HH:mm", "Europe/Paris") + " Paris)", text_color = warn ? color.white : color.black,
+             bgcolor = warn ? color.new(color.red, 10) : color.new(color.orange, 20), text_size = size.small)
