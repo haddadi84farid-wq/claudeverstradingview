@@ -1,36 +1,34 @@
 //@version=6
-// PRICE ACTION 4 — FIGURES CHARTISTES (patterns)
+// PRICE ACTION 4 — FIGURES CHARTISTES (dessinées)
 // Calcul sur la référence FIXE M15 (mêmes figures de M1 à H1 ; H4 / jour : unité affichée), à partir des sommets / creux
-// confirmés (N bougies de chaque côté), reliés en zigzag.
-// Figures détectées (la plus récente de chaque famille) :
-//  RETOURNEMENT
-//  • Double sommet / double creux : 2 sommets (creux) au même niveau (± 0,5 ATR), séparés d'un creux (sommet) d'au moins 1,5 ATR.
-//    Ligne de cou = ce creux (sommet). CONFIRMÉ = clôture de l'autre côté de la ligne de cou. Objectif = hauteur reportée.
-//  • Épaule-tête-épaule (et inversée) : tête plus haute (basse) que les 2 épaules (≥ 0,5 ATR), épaules au même niveau (± 1 ATR).
-//    Ligne de cou = les 2 creux (sommets) entre épaules et tête. Confirmation et objectif idem.
-//  CONTINUATION / COMPRESSION (2 derniers sommets + 2 derniers creux)
-//  • Triangle symétrique, ascendant, descendant ; biseau montant (souvent baissier) ; biseau descendant (souvent haussier).
-//    Sortie = clôture au-dessus de la ligne haute ou sous la ligne basse.
-// En formation = pointillés ; confirmé / sorti = trait plein + objectif. Figure invalidée = effacée. Ne passe aucun ordre.
-indicator("Price action 4 — Figures chartistes", shorttitle = "PA FIGURES", overlay = true, max_lines_count = 40, max_labels_count = 20, max_bars_back = 500)
+// confirmés reliés en zigzag. Le robot parcourt TOUT l'historique récent (pas seulement la dernière figure).
+// RETOURNEMENT (ligne de cou ; CONFIRMÉ = clôture de l'autre côté ; objectif = hauteur reportée)
+//  • M = double sommet          • W = double creux          (2 sommets / creux à ± 0,5 ATR, profondeur ≥ 1,5 ATR)
+//  • Triple sommet / triple creux (3 sommets / creux à ± 0,75 ATR)
+//  • Épaule-tête-épaule / ETE inversée (tête ≥ 0,5 ATR au-delà des épaules, épaules à ± 1 ATR)
+// CONTINUATION / COMPRESSION (2 derniers sommets + 2 derniers creux ; SORTIE = clôture hors des lignes)
+//  • Drapeau haussier / baissier (mât ≥ 3 ATR, consolidation qui reprend ≤ 50 % du mât)
+//  • Triangle symétrique / ascendant / descendant • Biseau montant / descendant • Rectangle • Canal haussier / baissier
+// Pointillés = en formation (seulement les figures en cours) ; trait plein = confirmée / sortie, avec l'objectif.
+// Figure invalidée (cassée dans le mauvais sens) = non affichée. Ne passe aucun ordre.
+indicator("Price action 4 — Figures chartistes", shorttitle = "PA FIGURES", overlay = true, max_lines_count = 150, max_labels_count = 40, max_bars_back = 500)
 
 srcTf  = input.string("15", "Unité de référence (mêmes figures jusqu'au H1)", options = ["15", "60", "240", "Unité affichée"])
 pivLen = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
-dtTol  = input.float(0.5, "Double sommet / creux : écart max entre les 2 (× ATR)", minval = 0.1, step = 0.1)
-dtDep  = input.float(1.5, "Double sommet / creux : profondeur min (× ATR)", minval = 0.5, step = 0.25)
-flatK  = input.float(0.3, "Triangle : ligne « plate » si elle bouge de moins de (× ATR)", minval = 0.05, step = 0.05)
+maxFig = input.int(8, "Nombre maximum de figures affichées", minval = 1, maxval = 20)
+dtTol  = input.float(0.5, "M / W : écart max entre les 2 sommets (× ATR)", minval = 0.1, step = 0.1)
+dtDep  = input.float(1.5, "M / W : profondeur min (× ATR)", minval = 0.5, step = 0.25)
+poleK  = input.float(3.0, "Drapeau : mât minimum (× ATR)", minval = 1, step = 0.5)
+flatK  = input.float(0.3, "Ligne « plate » si elle bouge de moins de (× ATR)", minval = 0.05, step = 0.05)
 extH   = input.float(6.0, "Prolonger à droite (heures)", minval = 1, step = 1)
-showDT = input.bool(true, "Double sommet / double creux")
-showHS = input.bool(true, "Épaule-tête-épaule")
-showTR = input.bool(true, "Triangles et biseaux")
+showRev = input.bool(true, "Figures de retournement (M, W, triple, ETE)")
+showCon = input.bool(true, "Figures de continuation (drapeaux, triangles, biseaux, rectangle, canaux)")
 
 refTf = srcTf == "Unité affichée" or timeframe.in_seconds() > 3600 ? timeframe.period : srcTf
 
-// Niveau d'une droite (b1, p1) → (b2, p2) à la bougie b
 lineAt(int b1, float p1, int b2, float p2, int b) => p1 + (p2 - p1) / math.max(1, b2 - b1) * (b - b1)
 
-// Statut après la bougie bS : 1 = clôture au-dessus de la droite haute, 2 = clôture sous la droite basse (1re qui arrive)
-// Sortie : [statut, temps de la cassure]
+// Après la bougie bS : 1 = 1re clôture au-dessus de la droite haute, 2 = 1re clôture sous la droite basse. [statut, temps]
 breakAfter(int bS, int hb1, float hp1, int hb2, float hp2, int lb1, float lp1, int lb2, float lp2) =>
     int st = 0
     int bt = 0
@@ -48,9 +46,26 @@ breakAfter(int bS, int hb1, float hp1, int hb2, float hp2, int lb1, float lp1, i
                 break
     [st, bt]
 
-// Sortie : suite de figures de 14 valeurs : code, statut, t1, p1, t2, p2, t3, p3, t4, p4, t5, p5, objectif, temps de cassure
-// codes : 1 double sommet, 2 double creux, 3 ETE, 4 ETE inversée, 5 triangle sym., 6 triangle asc., 7 triangle desc.,
-//         8 biseau montant, 9 biseau descendant. Statut : 0 en formation, 1 sortie haute, 2 sortie basse.
+rec(array<float> o, int code, int st, int t1, float p1, int t2, float p2, int t3, float p3, int t4, float p4, int t5, float p5, float tgt, int tb) =>
+    o.push(code)
+    o.push(st)
+    o.push(t1)
+    o.push(p1)
+    o.push(t2)
+    o.push(p2)
+    o.push(t3)
+    o.push(p3)
+    o.push(t4)
+    o.push(p4)
+    o.push(t5)
+    o.push(p5)
+    o.push(tgt)
+    o.push(tb)
+    code
+
+// Codes : 1 M, 2 W, 3 ETE, 4 ETE inversée, 5 triangle sym., 6 triangle asc., 7 triangle desc., 8 biseau montant,
+//         9 biseau descendant, 10 triple sommet, 11 triple creux, 12 rectangle, 13 canal haussier, 14 canal baissier,
+//         15 drapeau haussier, 16 drapeau baissier. Statut : 0 en formation, 1 sortie haute, 2 sortie basse.
 patData() =>
     hp = ta.pivothigh(high, pivLen, pivLen)
     lp = ta.pivotlow(low, pivLen, pivLen)
@@ -59,7 +74,6 @@ patData() =>
     var array<int>   sB = array.new<int>()
     var array<int>   sT = array.new<int>()
     var array<int>   sY = array.new<int>()
-    // zigzag : sommets et creux en alternance (2 du même type de suite → on garde le plus extrême)
     if not na(hp)
         if sY.size() > 0 and sY.last() == 1
             if hp > sP.last()
@@ -82,7 +96,7 @@ patData() =>
             sB.push(bar_index - pivLen)
             sT.push(time[pivLen])
             sY.push(-1)
-    while sP.size() > 12
+    while sP.size() > 60
         sP.shift()
         sB.shift()
         sT.shift()
@@ -90,118 +104,135 @@ patData() =>
     out = array.new<float>()
     n = sP.size()
     if barstate.islast and n >= 3
-        // ---- Double sommet / double creux : 3 derniers points (ou 3 points avant le dernier) ----
-        if showDT
-            bool found = false
-            for e = n - 1 to math.max(2, n - 2)
-                if not found
-                    p1 = sP.get(e - 2)
-                    p2 = sP.get(e - 1)
-                    p3 = sP.get(e)
-                    y = sY.get(e)
-                    if math.abs(p1 - p3) <= dtTol * a and (y == 1 ? math.min(p1, p3) - p2 : p2 - math.max(p1, p3)) >= dtDep * a
-                        ext = y == 1 ? math.max(p1, p3) : math.min(p1, p3)
-                        // ligne de cou horizontale = p2 ; invalidé si clôture au-delà du sommet (creux)
-                        [st, bt] = breakAfter(sB.get(e), sB.get(e), y == 1 ? ext : p2, sB.get(e) + 1, y == 1 ? ext : p2, sB.get(e), y == 1 ? p2 : ext, sB.get(e) + 1, y == 1 ? p2 : ext)
-                        bool inval = y == 1 ? st == 1 : st == 2
-                        if not inval
-                            found := true
-                            h = math.abs((p1 + p3) / 2 - p2)
-                            out.push(y == 1 ? 1 : 2)
-                            out.push(st)
-                            out.push(sT.get(e - 2))
-                            out.push(p1)
-                            out.push(sT.get(e - 1))
-                            out.push(p2)
-                            out.push(sT.get(e))
-                            out.push(p3)
-                            for q = 1 to 4
-                                out.push(0)
-                            out.push(y == 1 ? p2 - h : p2 + h)
-                            out.push(bt)
-        // ---- Épaule-tête-épaule : 5 points ----
-        if showHS and n >= 5
-            bool found = false
-            for e = n - 1 to math.max(4, n - 2)
-                if not found
-                    y = sY.get(e)
-                    s1 = sP.get(e - 4)
-                    n1 = sP.get(e - 3)
-                    hd = sP.get(e - 2)
-                    n2 = sP.get(e - 1)
-                    s2 = sP.get(e)
-                    bool shape = y == 1 ? hd - math.max(s1, s2) >= 0.5 * a : math.min(s1, s2) - hd >= 0.5 * a
-                    if shape and math.abs(s1 - s2) <= 1.0 * a
-                        nb1 = sB.get(e - 3)
-                        nb2 = sB.get(e - 1)
-                        // ligne de cou (n1 → n2) ; invalidé si clôture au-delà de la tête
-                        be = sB.get(e)
-                        [st, bt] = breakAfter(be, y == 1 ? be : nb1, y == 1 ? hd : n1, y == 1 ? be + 1 : nb2, y == 1 ? hd : n2,
-                             y == 1 ? nb1 : be, y == 1 ? n1 : hd, y == 1 ? nb2 : be + 1, y == 1 ? n2 : hd)
-                        bool inval = y == 1 ? st == 1 : st == 2
-                        if not inval
-                            found := true
-                            neckH = lineAt(nb1, n1, nb2, n2, sB.get(e - 2))
-                            h = math.abs(hd - neckH)
-                            neckNow = lineAt(nb1, n1, nb2, n2, bar_index)
-                            out.push(y == 1 ? 3 : 4)
-                            out.push(st)
-                            out.push(sT.get(e - 4))
-                            out.push(s1)
-                            out.push(sT.get(e - 3))
-                            out.push(n1)
-                            out.push(sT.get(e - 2))
-                            out.push(hd)
-                            out.push(sT.get(e - 1))
-                            out.push(n2)
-                            out.push(sT.get(e))
-                            out.push(s2)
-                            out.push(y == 1 ? neckNow - h : neckNow + h)
-                            out.push(bt)
-        // ---- Triangles / biseaux : 2 derniers sommets et 2 derniers creux ----
-        if showTR and n >= 4
-            int h2 = sY.last() == 1 ? n - 1 : n - 2
-            int l2 = sY.last() == -1 ? n - 1 : n - 2
-            int h1 = h2 - 2
-            int l1 = l2 - 2
-            if h1 >= 0 and l1 >= 0
-                hb1 = sB.get(h1)
-                hb2 = sB.get(h2)
-                lb1 = sB.get(l1)
-                lb2 = sB.get(l2)
-                hp1 = sP.get(h1)
-                hp2 = sP.get(h2)
-                lp1 = sP.get(l1)
-                lp2 = sP.get(l2)
-                dH = hp2 - hp1
-                dL = lp2 - lp1
-                b0 = math.min(hb1, lb1)
-                bE = math.max(hb2, lb2)
-                widthStart = lineAt(hb1, hp1, hb2, hp2, b0) - lineAt(lb1, lp1, lb2, lp2, b0)
-                widthEnd = lineAt(hb1, hp1, hb2, hp2, bE) - lineAt(lb1, lp1, lb2, lp2, bE)
-                flatH = math.abs(dH) < flatK * a
-                flatL = math.abs(dL) < flatK * a
-                converge = widthEnd < widthStart * 0.85 and widthEnd > 0
-                int code = 0
-                if converge
-                    code := flatH and dL > 0 ? 6 : flatL and dH < 0 ? 7 : dH < 0 and dL > 0 ? 5 : dH > 0 and dL > 0 ? 8 : dH < 0 and dL < 0 ? 9 : 0
-                if code > 0
-                    [st, bt] = breakAfter(bE, hb1, hp1, hb2, hp2, lb1, lp1, lb2, lp2)
-                    out.push(code)
-                    out.push(st)
-                    out.push(sT.get(h1))
-                    out.push(hp1)
-                    out.push(sT.get(h2))
-                    out.push(hp2)
-                    out.push(sT.get(l1))
-                    out.push(lp1)
-                    out.push(sT.get(l2))
-                    out.push(lp2)
-                    out.push(0)
-                    out.push(0)
-                    // objectif = largeur à l'ouverture, reportée depuis la sortie
-                    out.push(st == 1 ? lineAt(hb1, hp1, hb2, hp2, bar_index) + widthStart : st == 2 ? lineAt(lb1, lp1, lb2, lp2, bar_index) - widthStart : 0)
-                    out.push(bt)
+        usedR = array.new<bool>(n, false)
+        usedC = array.new<bool>(n, false)
+        int nf = 0
+        for e = n - 1 to 2
+            if nf < maxFig and bar_index - sB.get(e - 2) < 440
+                recent = e >= n - 2
+                y = sY.get(e)
+                be = sB.get(e)
+                // ================= RETOURNEMENT =================
+                if showRev and not usedR.get(e)
+                    bool got = false
+                    // --- Épaule-tête-épaule ---
+                    if e >= 4
+                        s1 = sP.get(e - 4)
+                        n1 = sP.get(e - 3)
+                        hd = sP.get(e - 2)
+                        n2 = sP.get(e - 1)
+                        s2 = sP.get(e)
+                        bool shape = y == 1 ? hd - math.max(s1, s2) >= 0.5 * a : math.min(s1, s2) - hd >= 0.5 * a
+                        if shape and math.abs(s1 - s2) <= 1.0 * a
+                            nb1 = sB.get(e - 3)
+                            nb2 = sB.get(e - 1)
+                            [st, bt] = breakAfter(be, y == 1 ? be : nb1, y == 1 ? hd : n1, y == 1 ? be + 1 : nb2, y == 1 ? hd : n2,
+                                 y == 1 ? nb1 : be, y == 1 ? n1 : hd, y == 1 ? nb2 : be + 1, y == 1 ? n2 : hd)
+                            conf = y == 1 ? st == 2 : st == 1
+                            inval = y == 1 ? st == 1 : st == 2
+                            if not inval and (conf or recent)
+                                h = math.abs(hd - lineAt(nb1, n1, nb2, n2, sB.get(e - 2)))
+                                nk = lineAt(nb1, n1, nb2, n2, be)
+                                rec(out, y == 1 ? 3 : 4, st, sT.get(e - 4), s1, sT.get(e - 3), n1, sT.get(e - 2), hd, sT.get(e - 1), n2, sT.get(e), s2, y == 1 ? nk - h : nk + h, bt)
+                                got := true
+                                for q = e - 4 to e
+                                    usedR.set(q, true)
+                    // --- Triple sommet / creux ---
+                    if not got and e >= 4
+                        p1 = sP.get(e - 4)
+                        p3 = sP.get(e - 2)
+                        p5 = sP.get(e)
+                        ex = y == 1 ? math.max(p1, p3, p5) : math.min(p1, p3, p5)
+                        neck = y == 1 ? math.min(sP.get(e - 3), sP.get(e - 1)) : math.max(sP.get(e - 3), sP.get(e - 1))
+                        rng = math.max(p1, p3, p5) - math.min(p1, p3, p5)
+                        avgT = (p1 + p3 + p5) / 3
+                        if rng <= 1.5 * dtTol * a and math.abs(avgT - neck) >= dtDep * a
+                            [st, bt] = breakAfter(be, be, y == 1 ? ex : neck, be + 1, y == 1 ? ex : neck, be, y == 1 ? neck : ex, be + 1, y == 1 ? neck : ex)
+                            conf = y == 1 ? st == 2 : st == 1
+                            inval = y == 1 ? st == 1 : st == 2
+                            if not inval and (conf or recent)
+                                h = math.abs(avgT - neck)
+                                rec(out, y == 1 ? 10 : 11, st, sT.get(e - 4), p1, sT.get(e - 3), sP.get(e - 3), sT.get(e - 2), p3, sT.get(e - 1), sP.get(e - 1), sT.get(e), p5, y == 1 ? neck - h : neck + h, bt)
+                                got := true
+                                for q = e - 4 to e
+                                    usedR.set(q, true)
+                    // --- M / W ---
+                    if not got
+                        p1 = sP.get(e - 2)
+                        p2 = sP.get(e - 1)
+                        p3 = sP.get(e)
+                        if math.abs(p1 - p3) <= dtTol * a and (y == 1 ? math.min(p1, p3) - p2 : p2 - math.max(p1, p3)) >= dtDep * a
+                            ex = y == 1 ? math.max(p1, p3) : math.min(p1, p3)
+                            [st, bt] = breakAfter(be, be, y == 1 ? ex : p2, be + 1, y == 1 ? ex : p2, be, y == 1 ? p2 : ex, be + 1, y == 1 ? p2 : ex)
+                            conf = y == 1 ? st == 2 : st == 1
+                            inval = y == 1 ? st == 1 : st == 2
+                            if not inval and (conf or recent)
+                                h = math.abs((p1 + p3) / 2 - p2)
+                                rec(out, y == 1 ? 1 : 2, st, sT.get(e - 2), p1, sT.get(e - 1), p2, sT.get(e), p3, 0, 0, 0, 0, y == 1 ? p2 - h : p2 + h, bt)
+                                got := true
+                                for q = e - 2 to e
+                                    usedR.set(q, true)
+                    if got
+                        nf += 1
+                // ================= CONTINUATION =================
+                if showCon and e >= 4 and nf < maxFig and not usedC.get(e)
+                    int h2 = y == 1 ? e : e - 1
+                    int l2 = y == -1 ? e : e - 1
+                    int h1 = h2 - 2
+                    int l1 = l2 - 2
+                    if h1 >= 1 and l1 >= 1
+                        hb1 = sB.get(h1)
+                        hb2 = sB.get(h2)
+                        lb1 = sB.get(l1)
+                        lb2 = sB.get(l2)
+                        hp1 = sP.get(h1)
+                        hp2 = sP.get(h2)
+                        lp1 = sP.get(l1)
+                        lp2 = sP.get(l2)
+                        dH = hp2 - hp1
+                        dL = lp2 - lp1
+                        b0 = math.min(hb1, lb1)
+                        wS = lineAt(hb1, hp1, hb2, hp2, b0) - lineAt(lb1, lp1, lb2, lp2, b0)
+                        wE = lineAt(hb1, hp1, hb2, hp2, be) - lineAt(lb1, lp1, lb2, lp2, be)
+                        flatH = math.abs(dH) < flatK * a
+                        flatL = math.abs(dL) < flatK * a
+                        conv = wE > 0 and wE < wS * 0.85
+                        para = wE > 0 and math.abs(wE - wS) <= 0.15 * wS
+                        // drapeaux : mât juste avant la consolidation
+                        poleUp = hp1 - sP.get(h1 - 1)
+                        poleDn = sP.get(l1 - 1) - lp1
+                        int code = 0
+                        int t5 = 0
+                        float p5 = 0
+                        float pole = 0
+                        if h1 < l1 and poleUp >= poleK * a and dH <= flatK * a and dL <= flatK * a and hp1 - math.min(lp1, lp2) <= 0.5 * poleUp
+                            code := 15
+                            t5 := sT.get(h1 - 1)
+                            p5 := sP.get(h1 - 1)
+                            pole := poleUp
+                        else if l1 < h1 and poleDn >= poleK * a and dH >= -flatK * a and dL >= -flatK * a and math.max(hp1, hp2) - lp1 <= 0.5 * poleDn
+                            code := 16
+                            t5 := sT.get(l1 - 1)
+                            p5 := sP.get(l1 - 1)
+                            pole := poleDn
+                        else if flatH and flatL
+                            code := 12
+                        else if conv
+                            code := flatH and dL > 0 ? 6 : flatL and dH < 0 ? 7 : dH < 0 and dL > 0 ? 5 : dH > 0 and dL > 0 ? 8 : dH < 0 and dL < 0 ? 9 : 0
+                        else if para and not flatH and not flatL
+                            code := dH > 0 and dL > 0 ? 13 : dH < 0 and dL < 0 ? 14 : 0
+                        if code > 0
+                            [st, bt] = breakAfter(be, hb1, hp1, hb2, hp2, lb1, lp1, lb2, lp2)
+                            inval = (code == 15 and st == 2) or (code == 16 and st == 1)
+                            if not inval and (st != 0 or recent)
+                                upL = lineAt(hb1, hp1, hb2, hp2, be)
+                                loL = lineAt(lb1, lp1, lb2, lp2, be)
+                                hgt = pole > 0 ? pole : wS
+                                tgt = st == 1 ? upL + hgt : st == 2 ? loL - hgt : 0.0
+                                rec(out, code, st, sT.get(h1), hp1, sT.get(h2), hp2, sT.get(l1), lp1, sT.get(l2), lp2, t5, p5, tgt, bt)
+                                nf += 1
+                                for q = math.min(h1, l1) to e
+                                    usedC.set(q, true)
     out
 
 r = request.security(syminfo.tickerid, refTf, patData())
@@ -210,14 +241,15 @@ var array<line>  fLn = array.new<line>()
 var array<label> fLb = array.new<label>()
 cBear = #F23645
 cBull = #089981
-cTri  = #FF9800
+cNeu  = #FF9800
 fmt(float v) => str.tostring(v, format.mintick)
 
-names = array.from("", "Double sommet", "Double creux", "Épaule-tête-épaule", "ETE inversée", "Triangle symétrique", "Triangle ascendant",
-     "Triangle descendant", "Biseau montant", "Biseau descendant")
+var names = array.from("", "M — double sommet", "W — double creux", "Épaule-tête-épaule", "ETE inversée", "Triangle symétrique", "Triangle ascendant",
+     "Triangle descendant", "Biseau montant", "Biseau descendant", "Triple sommet", "Triple creux", "Rectangle", "Canal haussier", "Canal baissier",
+     "Drapeau haussier", "Drapeau baissier")
 
-seg(int xA, float pa, int xB, float pb, color c, string sty, int w, bool ext) =>
-    fLn.push(line.new(xA, pa, xB, pb, xloc = xloc.bar_time, color = c, style = sty, width = w, extend = ext ? extend.right : extend.none))
+seg(int xA, float yA, int xB, float yB, color c, string sty, int w, bool ext) =>
+    fLn.push(line.new(xA, yA, xB, yB, xloc = xloc.bar_time, color = c, style = sty, width = w, extend = ext ? extend.right : extend.none))
     w
 
 drawFig(int o) =>
@@ -235,39 +267,51 @@ drawFig(int o) =>
     p5 = r.get(o + 11)
     tgt = r.get(o + 12)
     tb = int(r.get(o + 13))
-    tEnd = time + math.round(extH * 3600000)
     bool done = st != 0
+    bear = code == 1 or code == 3 or code == 8 or code == 10 or code == 16
+    bull = code == 2 or code == 4 or code == 9 or code == 11 or code == 15
+    c = bear ? cBear : bull ? cBull : cNeu
     string sty = done ? line.style_solid : line.style_dotted
+    int tEnd = done ? tb + int((tb - t1) / 2) : time + math.round(extH * 3600000)
+    rev = code <= 4 or code == 10 or code == 11
+    string txt = names.get(code)
+    int lt = t2
+    float lp = p2
     if code <= 2
-        c = code == 1 ? cBear : cBull
         seg(t1, p1, t2, p2, c, sty, 2, false)
         seg(t2, p2, t3, p3, c, sty, 2, false)
         seg(t2, p2, done ? tb : tEnd, p2, color.new(c, 20), line.style_dashed, 1, false)
-        txt = names.get(code) + (done ? " CONFIRMÉ — objectif " + fmt(tgt) : " en formation — confirmé si clôture " + (code == 1 ? "sous " : "au-dessus de ") + fmt(p2))
-        fLb.push(label.new(t3, p3, txt, xloc = xloc.bar_time, style = code == 1 ? label.style_label_down : label.style_label_up, color = color.new(c, 25), textcolor = color.white, size = size.small))
-        if done
-            seg(tb, tgt, tEnd, tgt, c, line.style_dashed, 1, false)
-    else if code <= 4
-        c = code == 3 ? cBear : cBull
+        lt := t3
+        lp := p3
+    else if code <= 4 or code == 10 or code == 11
         seg(t1, p1, t2, p2, c, sty, 2, false)
         seg(t2, p2, t3, p3, c, sty, 2, false)
         seg(t3, p3, t4, p4, c, sty, 2, false)
         seg(t4, p4, t5, p5, c, sty, 2, false)
-        // ligne de cou prolongée
-        fLn.push(line.new(t2, p2, t4, p4, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed, extend = extend.right))
-        neckTxt = code == 3 ? "sous la ligne de cou" : "au-dessus de la ligne de cou"
-        txt = names.get(code) + (done ? " CONFIRMÉ — objectif " + fmt(tgt) : " en formation — confirmé si clôture " + neckTxt)
-        fLb.push(label.new(t3, p3, txt, xloc = xloc.bar_time, style = code == 3 ? label.style_label_down : label.style_label_up, color = color.new(c, 25), textcolor = color.white, size = size.small))
-        if done
-            seg(tb, tgt, tEnd, tgt, c, line.style_dashed, 1, false)
+        if code <= 4
+            fLn.push(line.new(t2, p2, t4, p4, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed, extend = done ? extend.none : extend.right))
+        else
+            nk = code == 10 ? math.min(p2, p4) : math.max(p2, p4)
+            seg(t2, nk, done ? tb : tEnd, nk, color.new(c, 20), line.style_dashed, 1, false)
+        lt := t3
+        lp := p3
     else
-        c = code == 8 ? cBear : code == 9 ? cBull : cTri
         seg(t1, p1, t2, p2, c, sty, 2, not done)
         seg(t3, p3, t4, p4, c, sty, 2, not done)
-        outTxt = st == 1 ? " — SORTIE PAR LE HAUT, objectif " + fmt(tgt) : st == 2 ? " — SORTIE PAR LE BAS, objectif " + fmt(tgt) : " — en formation : attendre une clôture hors du triangle"
-        fLb.push(label.new(t4, p4, names.get(code) + outTxt, xloc = xloc.bar_time, style = label.style_label_up, color = color.new(c, 25), textcolor = color.white, size = size.small))
-        if done
-            seg(tb, tgt, tEnd, tgt, st == 1 ? cBull : cBear, line.style_dashed, 1, false)
+        if code >= 15
+            // mât du drapeau
+            seg(t5, p5, code == 15 ? t1 : t3, code == 15 ? p1 : p3, c, line.style_solid, 1, false)
+        lt := t2
+        lp := p2
+    if rev
+        bool up = code == 2 or code == 4 or code == 11
+        txt += done ? " CONFIRMÉ — objectif " + fmt(tgt) : " en formation — confirmé si clôture " + (up ? "au-dessus" : "sous") + " la ligne de cou"
+    else
+        txt += st == 1 ? " — SORTIE HAUT, objectif " + fmt(tgt) : st == 2 ? " — SORTIE BAS, objectif " + fmt(tgt) : " — en formation : attendre une clôture hors des lignes"
+    if done
+        seg(tb, tgt, tEnd, tgt, st == 1 ? cBull : cBear, line.style_dashed, 1, false)
+    fLb.push(label.new(lt, lp, txt, xloc = xloc.bar_time, style = (bear or (not bull and lp >= p3)) ? label.style_label_down : label.style_label_up,
+         color = color.new(c, done ? 25 : 50), textcolor = color.white, size = size.small))
     code
 
 if barstate.islast

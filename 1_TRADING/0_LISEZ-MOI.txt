@@ -58,8 +58,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            du M15 (memes zones de M1 a H1) + 2e couche M5 en pointilles, touchees 2 fois min (x2, x3...) ; zone traversee = supprimee ; haut/bas de la veille.
 - 26_PA_3_OBLIQUES.txt : PRICE ACTION 3 — lignes de tendance automatiques (M15, memes de M1 a H1) : 2 points = tracee,
                            3 contacts = confirmee, cassee = grise a la cloture de l'autre cote.
-- 27_PA_4_FIGURES.txt : PRICE ACTION 4 — figures chartistes dessinees (M15, memes de M1 a H1) : double sommet/creux,
-                           epaule-tete-epaule (et inversee), triangles, biseaux ; en formation / confirme + objectif.
+- 27_PA_4_FIGURES.txt : PRICE ACTION 4 — figures chartistes dessinees (M15, memes de M1 a H1) : M, W, triple sommet/creux,
+                           ETE (et inversee), drapeaux, triangles, biseaux, rectangle, canaux ; historique + en cours, objectif.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
