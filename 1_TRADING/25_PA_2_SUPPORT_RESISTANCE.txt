@@ -1,0 +1,181 @@
+//@version=6
+// PRICE ACTION 2 — SUPPORTS ET RÉSISTANCES (zones, pas des lignes)
+// Méthode :
+// 1. Sommets / creux confirmés sur une unité de RÉFÉRENCE (Auto : 1 h si le graphique est ≤ 15 min, 4 h jusqu'au 1 h, sinon jour).
+//    → les zones restent les mêmes quand tu changes d'unité de temps.
+// 2. Les sommets et creux proches (moins de 0,6 ATR de l'unité de référence) sont regroupés en UNE zone.
+//    Une zone n'est gardée que si le prix y a réagi au moins 2 fois (×2, ×3…). Plus il y a de réactions, plus la zone est forte.
+// 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
+//    « inversée » = la zone a servi de support ET de résistance (ancienne résistance cassée devenue support, ou l'inverse) : niveau fort.
+// 4. On affiche seulement les zones les plus proches (3 au-dessus, 3 en dessous) + plus haut / plus bas de la veille.
+// Ne passe aucun ordre.
+indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, scale = scale.right, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
+
+srcTf   = input.string("Auto", "Unité de référence", options = ["Auto", "Unité affichée", "15", "60", "240", "D"])
+pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
+nPiv    = input.int(80, "Nombre de sommets / creux analysés", minval = 20, maxval = 150)
+tolK    = input.float(0.6, "Largeur max d'une zone (× ATR de la référence)", minval = 0.1, step = 0.1)
+minTch  = input.int(2, "Réactions minimum pour garder une zone", minval = 1, maxval = 6)
+nSide   = input.int(3, "Zones affichées de chaque côté du prix", minval = 1, maxval = 8)
+extH    = input.float(8.0, "Prolonger à droite (heures)", minval = 1, step = 1)
+showPD  = input.bool(true, "Plus haut / plus bas de la veille")
+showTb  = input.bool(true, "Tableau : support et résistance les plus proches")
+
+cUp = #089981
+cDn = #F23645
+cIn = #FF9800
+
+refTf = srcTf == "Unité affichée" ? timeframe.period : srcTf != "Auto" ? srcTf :
+     timeframe.in_seconds() <= 900 ? "60" : timeframe.in_seconds() <= 3600 ? "240" : "D"
+
+// ---------- Sommets / creux sur l'unité de référence ----------
+// Sortie : [ATR, puis pour chaque pivot : prix, temps, type (+1 sommet, -1 creux)]
+pivData() =>
+    hp = ta.pivothigh(high, pivLen, pivLen)
+    lp = ta.pivotlow(low, pivLen, pivLen)
+    var array<float> pv = array.new<float>()
+    if not na(hp)
+        pv.push(hp)
+        pv.push(time[pivLen])
+        pv.push(1)
+    if not na(lp)
+        pv.push(lp)
+        pv.push(time[pivLen])
+        pv.push(-1)
+    while pv.size() > nPiv * 3
+        pv.shift()
+        pv.shift()
+        pv.shift()
+    out = array.from(ta.atr(14))
+    out.concat(pv)
+    out
+
+rd = request.security(syminfo.tickerid, refTf, pivData())
+[pdh, pdl, dT] = request.security(syminfo.tickerid, "D", [high[1], low[1], time], lookahead = barmerge.lookahead_on)
+
+// ---------- Regroupement en zones ----------
+var array<box>   zBx = array.new<box>()
+var array<label> zLb = array.new<label>()
+var array<line>  pdLn = array.new<line>()
+var table tb = table.new(position.bottom_right, 2, 3, border_color = color.new(color.gray, 70), border_width = 1)
+
+fmt(float v) => str.tostring(v, format.mintick)
+
+if barstate.islast
+    for b in zBx
+        box.delete(b)
+    for l in zLb
+        label.delete(l)
+    for l in pdLn
+        line.delete(l)
+    zBx.clear()
+    zLb.clear()
+    pdLn.clear()
+    t1 = time + math.round(extH * 3600000)
+    // Zones : haut, bas, 1er temps, nombre de réactions, a des sommets, a des creux
+    zT = array.new<float>()
+    zB = array.new<float>()
+    z0 = array.new<int>()
+    zN = array.new<int>()
+    zH = array.new<bool>()
+    zL = array.new<bool>()
+    float atrR = na
+    n = na(rd) ? 0 : int((rd.size() - 1) / 3)
+    if n > 0
+        atrR := rd.get(0)
+        tol = tolK * atrR
+        pr = array.new<float>()
+        for i = 0 to n - 1
+            pr.push(rd.get(1 + i * 3))
+        idx = pr.sort_indices(order.ascending)
+        float cTop = na
+        float cBot = na
+        int   cT0 = na
+        int   cN = 0
+        bool  cH = false
+        bool  cL = false
+        for k = 0 to n
+            bool flush = k == n
+            float p = na
+            int   tt = na
+            float ty = na
+            if not flush
+                j = idx.get(k)
+                p := rd.get(1 + j * 3)
+                tt := int(rd.get(2 + j * 3))
+                ty := rd.get(3 + j * 3)
+                flush := cN > 0 and p - cBot > tol
+            if flush and cN >= minTch
+                zT.push(cTop)
+                zB.push(cBot)
+                z0.push(cT0)
+                zN.push(cN)
+                zH.push(cH)
+                zL.push(cL)
+            if k < n
+                if flush or cN == 0
+                    cTop := p
+                    cBot := p
+                    cT0 := tt
+                    cN := 1
+                    cH := ty > 0
+                    cL := ty < 0
+                else
+                    cTop := math.max(cTop, p)
+                    cBot := math.min(cBot, p)
+                    cT0 := math.min(cT0, tt)
+                    cN += 1
+                    cH := cH or ty > 0
+                    cL := cL or ty < 0
+    // Sélection : zones les plus proches au-dessus / en dessous, et celles qui contiennent le prix
+    m = zT.size()
+    float nearR = na
+    float nearS = na
+    if m > 0
+        above = array.new<float>()
+        below = array.new<float>()
+        for i = 0 to m - 1
+            if zB.get(i) > close
+                above.push(zB.get(i))
+            else if zT.get(i) < close
+                below.push(zT.get(i))
+        above.sort(order.ascending)
+        below.sort(order.descending)
+        float limA = above.size() == 0 ? na : above.get(math.min(nSide, above.size()) - 1)
+        float limB = below.size() == 0 ? na : below.get(math.min(nSide, below.size()) - 1)
+        nearR := above.size() > 0 ? above.get(0) : na
+        nearS := below.size() > 0 ? below.get(0) : na
+        for i = 0 to m - 1
+            top = zT.get(i)
+            bot = zB.get(i)
+            isR = bot > close
+            isS = top < close
+            keep = isR ? bot <= limA : isS ? top >= limB : true
+            if keep
+                // largeur minimale pour rester visible
+                if top - bot < 0.15 * atrR
+                    mid = (top + bot) / 2
+                    top := mid + 0.075 * atrR
+                    bot := mid - 0.075 * atrR
+                cnt = zN.get(i)
+                flip = zH.get(i) and zL.get(i)
+                c = isR ? cDn : isS ? cUp : cIn
+                tr = cnt >= 4 ? 55 : cnt == 3 ? 70 : 82
+                zBx.push(box.new(z0.get(i), top, t1, bot, xloc = xloc.bar_time, border_color = color.new(c, 30), border_width = flip ? 2 : 1, bgcolor = color.new(c, tr)))
+                txt = (isR ? "RÉSISTANCE" : isS ? "SUPPORT" : "ZONE (prix dedans)") + " ×" + str.tostring(cnt) + (flip ? " inversée" : "") + "  " + fmt(bot) + " – " + fmt(top)
+                zLb.push(label.new(t1, (top + bot) / 2, txt, xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 20), textcolor = color.white, size = size.small))
+    // Plus haut / plus bas de la veille
+    if showPD and not na(pdh)
+        pdLn.push(line.new(dT, pdh, t1, pdh, xloc = xloc.bar_time, color = color.new(color.white, 30), style = line.style_dashed))
+        pdLn.push(line.new(dT, pdl, t1, pdl, xloc = xloc.bar_time, color = color.new(color.white, 30), style = line.style_dashed))
+        zLb.push(label.new(t1, pdh, "Haut veille " + fmt(pdh), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.black, 100), textcolor = color.white, size = size.small))
+        zLb.push(label.new(t1, pdl, "Bas veille " + fmt(pdl), xloc = xloc.bar_time, style = label.style_label_left, color = color.new(color.black, 100), textcolor = color.white, size = size.small))
+    // Tableau
+    table.clear(tb, 0, 0, 1, 2)
+    if showTb
+        table.cell(tb, 0, 0, "Référence", text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.small)
+        table.cell(tb, 1, 0, refTf == "D" ? "Jour" : refTf == "240" ? "4 h" : refTf == "60" ? "1 h" : refTf + " min", text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.small)
+        table.cell(tb, 0, 1, "Résistance proche", text_color = color.white, bgcolor = color.new(cDn, 40), text_size = size.small)
+        table.cell(tb, 1, 1, na(nearR) ? "-" : fmt(nearR) + "  (+" + str.tostring(nearR - close, "#.##") + ")", text_color = color.white, bgcolor = color.new(cDn, 40), text_size = size.small)
+        table.cell(tb, 0, 2, "Support proche", text_color = color.white, bgcolor = color.new(cUp, 40), text_size = size.small)
+        table.cell(tb, 1, 2, na(nearS) ? "-" : fmt(nearS) + "  (−" + str.tostring(close - nearS, "#.##") + ")", text_color = color.white, bgcolor = color.new(cUp, 40), text_size = size.small)

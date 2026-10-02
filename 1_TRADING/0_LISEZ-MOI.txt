@@ -54,6 +54,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 24_PA_1_TENDANCE.txt : PRICE ACTION 1 — tendance de l'unite affichee : VERT haussiere / ROUGE baissiere / ORANGE transition
                            (2 cassures de suite dans le meme sens = tendance), structure HH/HL/LH/LL, BOS/CHoCH, ligne de tendance,
                            tableau 15 min / 1 h / 4 h / jour.
+- 25_PA_2_SUPPORT_RESISTANCE.txt : PRICE ACTION 2 — zones de support (vert) / resistance (rouge) issues des sommets/creux
+                           de l'unite de reference (1 h auto), regroupes (x2, x3...), zones inversees, haut/bas de la veille.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
