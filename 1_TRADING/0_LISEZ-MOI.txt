@@ -62,6 +62,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            ETE (et inversee), drapeaux, triangles, biseaux, rectangle, canaux ; historique + en cours, objectif.
 - 28_PA_ANNONCES.txt : zones grises « ne pas trader » autour des annonces : NFP automatique (1er vendredi 14:30 Paris),
                            CPI / Fed a saisir a la main ; ligne + compte a rebours de la prochaine annonce.
+- 29_PA_5_BOUGIES.txt : PRICE ACTION 5 — figures de bougies notees ★ (seule) / ★★ (sur un niveau) / ★★★ (niveau + tendance),
+                           avalement, pin bar, etoile matin/soir, bougie de force ; tableau des resultats reels (1,5 R, frais).
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
