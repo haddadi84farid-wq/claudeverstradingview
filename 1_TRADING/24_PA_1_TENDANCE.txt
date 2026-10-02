@@ -1,0 +1,253 @@
+//@version=6
+// PRICE ACTION 1 — LA TENDANCE (suit l'unité de temps affichée)
+// Règle objective, la même sur toutes les unités :
+// 1. Sommets / creux confirmés : N bougies plus basses (plus hautes) de chaque côté.
+// 2. Cassure = CLÔTURE au-dessus du dernier sommet (haussière) ou sous le dernier creux (baissière). Une mèche ne compte pas.
+// 3. VERT  = les 2 dernières cassures sont haussières (BOS) → tendance HAUSSIÈRE : on cherche seulement des achats.
+//    ROUGE = les 2 dernières cassures sont baissières (BOS) → tendance BAISSIÈRE : on cherche seulement des ventes.
+//    ORANGE = la dernière cassure va contre la précédente (CHoCH) → TRANSITION : on attend une 2e cassure qui confirme.
+// Tracés : structure HH / HL / LH / LL, cassures BOS / CHoCH, ligne de tendance (2 derniers creux montants ou sommets descendants).
+// Tableau : tendance de l'unité affichée + 15 min, 1 h, 4 h, jour (lecture du haut vers le bas). Ne passe aucun ordre.
+indicator("Price action 1 — Tendance", shorttitle = "PA TENDANCE", overlay = true, scale = scale.right, max_lines_count = 300, max_labels_count = 300, max_bars_back = 500)
+
+pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 30)
+showZz  = input.bool(true, "Tracer la structure (HH / HL / LH / LL)")
+showBos = input.bool(true, "Tracer les cassures (BOS / CHoCH)")
+showTl  = input.bool(true, "Tracer la ligne de tendance")
+showBg  = input.bool(false, "Colorer le fond selon la tendance")
+showMtf = input.bool(true, "Tableau : ajouter 15 min / 1 h / 4 h / jour")
+maxSeg  = input.int(40, "Nombre de segments de structure gardés", minval = 5, maxval = 140)
+tbPos   = input.string("En haut à droite", "Position du tableau", options = ["En haut à droite", "En haut au centre", "En haut à gauche", "Au milieu à droite", "En bas à droite"])
+maxBos  = input.int(8, "Nombre de cassures (BOS / CHoCH) gardées", minval = 1, maxval = 60)
+
+cUp = #089981
+cDn = #F23645
+cRg = #FF9800
+
+// ---------- Tendance seule (utilisée pour les autres unités) ----------
+trendState() =>
+    tPh = ta.pivothigh(high, pivLen, pivLen)
+    tPl = ta.pivotlow(low, pivLen, pivLen)
+    var float tSh = na
+    var float tSl = na
+    var bool  tShX = true
+    var bool  tSlX = true
+    var int   tB1 = 0
+    var int   tB2 = 0
+    if not na(tPh)
+        tSh := tPh
+        tShX := false
+    if not na(tPl)
+        tSl := tPl
+        tSlX := false
+    if not tShX and not na(tSh) and close > tSh
+        tShX := true
+        tB2 := tB1
+        tB1 := 1
+    if not tSlX and not na(tSl) and close < tSl
+        tSlX := true
+        tB2 := tB1
+        tB1 := -1
+    tB1 == 1 and tB2 == 1 ? 1 : tB1 == -1 and tB2 == -1 ? -1 : 0
+
+// ---------- Unité affichée : même règle + tracés ----------
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+
+var float sh = na
+var int   shB = na
+var bool  shX = true
+var float sl = na
+var int   slB = na
+var bool  slX = true
+var int   b1 = 0
+var int   b2 = 0
+
+// Structure (zigzag)
+var int   zType = 0
+var float zP = na
+var int   zB = na
+var float lastH = na
+var int   lastHB = na
+var float prevH = na
+var int   prevHB = na
+var float lastL = na
+var int   lastLB = na
+var float prevL = na
+var int   prevLB = na
+var array<line>  zLines = array.new<line>()
+var array<label> zLbls = array.new<label>()
+
+addSeg(int x1, float y1, int x2, float y2, string txt, bool isHigh) =>
+    if showZz
+        col = txt == "HH" or txt == "HL" ? cUp : txt == "LH" or txt == "LL" ? cDn : color.gray
+        if not na(y1)
+            zLines.push(line.new(x1, y1, x2, y2, color = color.new(color.gray, 30), width = 1))
+        zLbls.push(label.new(x2, y2, txt, style = isHigh ? label.style_label_down : label.style_label_up,
+             color = color.new(color.black, 100), textcolor = col, size = size.small))
+        while zLines.size() > maxSeg
+            line.delete(zLines.shift())
+        while zLbls.size() > maxSeg
+            label.delete(zLbls.shift())
+    txt
+
+// Remplace le dernier point (deux sommets ou deux creux de suite : on garde le plus extrême)
+moveLast(int x2, float y2, string txt) =>
+    if showZz
+        if zLines.size() > 0
+            ln = zLines.last()
+            line.set_xy2(ln, x2, y2)
+        if zLbls.size() > 0
+            lb = zLbls.last()
+            label.set_xy(lb, x2, y2)
+            label.set_text(lb, txt)
+            label.set_textcolor(lb, txt == "HH" or txt == "HL" ? cUp : txt == "LH" or txt == "LL" ? cDn : color.gray)
+    txt
+
+if not na(ph)
+    pb = bar_index - pivLen
+    sh := ph
+    shB := pb
+    shX := false
+    if zType == 1
+        if ph > zP
+            lastH := ph
+            lastHB := pb
+            zP := ph
+            zB := pb
+            moveLast(pb, ph, na(prevH) ? "" : ph > prevH ? "HH" : "LH")
+    else
+        prevH := lastH
+        prevHB := lastHB
+        lastH := ph
+        lastHB := pb
+        addSeg(zB, zP, pb, ph, na(prevH) ? "" : ph > prevH ? "HH" : "LH", true)
+        zType := 1
+        zP := ph
+        zB := pb
+
+if not na(pl)
+    pb = bar_index - pivLen
+    sl := pl
+    slB := pb
+    slX := false
+    if zType == -1
+        if pl < zP
+            lastL := pl
+            lastLB := pb
+            zP := pl
+            zB := pb
+            moveLast(pb, pl, na(prevL) ? "" : pl > prevL ? "HL" : "LL")
+    else
+        prevL := lastL
+        prevLB := lastLB
+        lastL := pl
+        lastLB := pb
+        addSeg(zB, zP, pb, pl, na(prevL) ? "" : pl > prevL ? "HL" : "LL", false)
+        zType := -1
+        zP := pl
+        zB := pb
+
+// Cassures (clôture)
+var array<line>  bLines = array.new<line>()
+var array<label> bLbls = array.new<label>()
+drawBreak(int x1, float y, bool up, bool choch) =>
+    if showBos
+        c = up ? cUp : cDn
+        bLines.push(line.new(x1, y, bar_index, y, color = c, style = line.style_dashed, width = 1))
+        bLbls.push(label.new(math.round((x1 + bar_index) / 2), y, choch ? "CHoCH" : "BOS", style = up ? label.style_label_down : label.style_label_up,
+             color = color.new(color.black, 100), textcolor = c, size = size.tiny))
+        while bLines.size() > maxBos
+            line.delete(bLines.shift())
+        while bLbls.size() > maxBos
+            label.delete(bLbls.shift())
+    up
+
+if not shX and not na(sh) and close > sh
+    shX := true
+    drawBreak(shB, sh, true, b1 == -1)
+    b2 := b1
+    b1 := 1
+if not slX and not na(sl) and close < sl
+    slX := true
+    drawBreak(slB, sl, false, b1 == 1)
+    b2 := b1
+    b1 := -1
+
+st = b1 == 1 and b2 == 1 ? 1 : b1 == -1 and b2 == -1 ? -1 : 0
+stCol = st == 1 ? cUp : st == -1 ? cDn : cRg
+bgcolor(showBg ? color.new(stCol, 92) : na)
+
+// Ligne de tendance : 2 derniers creux montants (haussier) ou 2 derniers sommets descendants (baissier)
+// Si une bougie CLÔTURE de l'autre côté de la ligne : la ligne s'arrête là, en gris pointillé (« ligne cassée » = 1er signal de faiblesse)
+var line  tl = na
+var label tlLb = na
+drawTl(int x1, float y1, int x2, float y2, bool up) =>
+    slope = (y2 - y1) / math.max(1, x2 - x1)
+    int brk = na
+    n = math.min(bar_index - x2, 400)
+    if n > 0
+        for k = n - 1 to 0
+            yv = y1 + slope * (bar_index - k - x1)
+            if up ? close[k] < yv : close[k] > yv
+                brk := bar_index - k
+                break
+    line  ln = na
+    label lb = na
+    if na(brk)
+        ln := line.new(x1, y1, x2, y2, extend = extend.right, color = up ? cUp : cDn, width = 2)
+    else
+        ln := line.new(x1, y1, brk, y1 + slope * (brk - x1), color = color.gray, style = line.style_dashed, width = 2)
+        lb := label.new(brk, y1 + slope * (brk - x1), "ligne cassée", style = up ? label.style_label_up : label.style_label_down,
+             color = color.new(color.black, 100), textcolor = color.gray, size = size.small)
+    [ln, lb]
+
+if barstate.islast
+    line.delete(tl)
+    label.delete(tlLb)
+    tl := na
+    tlLb := na
+    if showTl
+        if st == 1 and not na(prevL) and lastL > prevL
+            [a1, a2] = drawTl(prevLB, prevL, lastLB, lastL, true)
+            tl := a1
+            tlLb := a2
+        else if st == -1 and not na(prevH) and lastH < prevH
+            [a1, a2] = drawTl(prevHB, prevH, lastHB, lastH, false)
+            tl := a1
+            tlLb := a2
+
+// ---------- Tableau ----------
+tfTxt(string tf) =>
+    s = timeframe.in_seconds(tf)
+    s < 3600 ? str.tostring(s / 60) + " min" : s < 86400 ? str.tostring(s / 3600) + " h" : s == 86400 ? "Jour" : tf
+stTxt(int s) => s == 1 ? "HAUSSIÈRE ▲" : s == -1 ? "BAISSIÈRE ▼" : "TRANSITION ●"
+stC(int s) => s == 1 ? cUp : s == -1 ? cDn : cRg
+
+s15 = request.security(syminfo.tickerid, "15", trendState())
+s60 = request.security(syminfo.tickerid, "60", trendState())
+s240 = request.security(syminfo.tickerid, "240", trendState())
+sD = request.security(syminfo.tickerid, "D", trendState())
+
+tbP = tbPos == "En haut à droite" ? position.top_right : tbPos == "En haut au centre" ? position.top_center : tbPos == "En haut à gauche" ? position.top_left :
+     tbPos == "Au milieu à droite" ? position.middle_right : position.bottom_right
+var table tb = table.new(tbP, 2, 6, border_color = color.new(color.gray, 70), border_width = 1)
+if barstate.islast
+    table.clear(tb, 0, 0, 1, 5)
+    table.cell(tb, 0, 0, "Tendance " + tfTxt(timeframe.period), text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.normal)
+    table.cell(tb, 1, 0, stTxt(st), text_color = color.white, bgcolor = stCol, text_size = size.normal)
+    if showMtf
+        tfs = array.from("15", "60", "240", "D")
+        vals = array.from(s15, s60, s240, sD)
+        int r = 1
+        for i = 0 to 3
+            tf = tfs.get(i)
+            if timeframe.in_seconds(tf) > timeframe.in_seconds(timeframe.period)
+                v = vals.get(i)
+                table.cell(tb, 0, r, tfTxt(tf), text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.small)
+                table.cell(tb, 1, r, stTxt(v), text_color = stC(v), bgcolor = color.new(#131722, 10), text_size = size.small)
+                r += 1
+    if st == 0
+        table.cell(tb, 0, 5, "Orange = 1re cassure contre la tendance (CHoCH) : attendre une 2e cassure qui confirme", text_color = cRg,
+             bgcolor = color.new(#131722, 10), text_size = size.tiny)
+        table.merge_cells(tb, 0, 5, 1, 5)
