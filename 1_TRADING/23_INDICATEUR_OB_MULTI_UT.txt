@@ -79,12 +79,13 @@ obTF() =>
     llO = ta.lowestbars(low, lenL)
     hhS = ta.highest(high, lenH)
     hhO = ta.highestbars(high, lenH)
-    // Suivi : cassé → supprimé ; touché → plus vierge ; FVG peut se former dans les 2 bougies après la cassure
+    // Suivi : stop du plan touché (mèche au-delà de l'OB + marge) → OB mort, supprimé ; touché → plus vierge ;
+    // FVG peut se former dans les 2 bougies après la cassure
     if obs.size() > 0
         for i = obs.size() - 1 to 0
             o = obs.get(i)
             if o.dir == -1
-                if close > o.top
+                if high > o.top + slBuf
                     obs.remove(i)
                 else
                     if not o.f and bar_index - o.c <= 2 and high < low[2]
@@ -94,7 +95,7 @@ obTF() =>
                     else if o.v
                         o.ex := math.min(o.ex, low)
             else
-                if close < o.bot
+                if low < o.bot - slBuf
                     obs.remove(i)
                 else
                     if not o.f and bar_index - o.c <= 2 and low > high[2]
