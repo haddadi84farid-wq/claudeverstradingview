@@ -7,12 +7,14 @@
 // 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
 //    Zone TRAVERSÉE (une clôture de chaque côté depuis sa formation) = supprimée : ce n'est plus un support / une résistance.
 // 4. On affiche seulement les zones les plus proches (3 au-dessus, 3 en dessous) + plus haut / plus bas de la veille.
+//    S'il n'y a aucune zone ×2 d'un côté, on affiche le niveau ×1 non traversé le plus proche (« faible »).
+//    S'il n'y a vraiment rien au-dessus (ou en dessous), le prix est au plus haut (plus bas) de la période : le tableau le dit.
 // Ne passe aucun ordre.
 indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
 
 srcTf   = input.string("Unité affichée", "Unité de référence", options = ["Unité affichée", "Auto", "15", "60", "240", "D"])
 pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
-nPiv    = input.int(80, "Nombre de sommets / creux analysés", minval = 20, maxval = 150)
+nPiv    = input.int(150, "Nombre de sommets / creux analysés", minval = 20, maxval = 300)
 tolK    = input.float(0.6, "Largeur max d'une zone (× ATR de la référence)", minval = 0.1, step = 0.1)
 minTch  = input.int(2, "Réactions minimum pour garder une zone", minval = 1, maxval = 6)
 nSide   = input.int(3, "Zones affichées de chaque côté du prix", minval = 1, maxval = 8)
@@ -88,6 +90,10 @@ if barstate.islast
     zN = array.new<int>()
     zH = array.new<bool>()
     zL = array.new<bool>()
+    // niveaux ×1 non traversés (secours si aucune zone d'un côté)
+    wT = array.new<float>()
+    wB = array.new<float>()
+    w0 = array.new<int>()
     float atrR = na
     n = na(rd) ? 0 : int((rd.size() - 1) / 5)
     if n > 0
@@ -121,13 +127,18 @@ if barstate.islast
                 mn := rd.get(5 + j * 5)
                 flush := cN > 0 and p - cBot > tol
             // zone traversée = clôture au-dessus ET clôture en dessous depuis son 1er pivot → supprimée
-            if flush and cN >= minTch and not (cMx > cTop and cMn < cBot)
-                zT.push(cTop)
-                zB.push(cBot)
-                z0.push(cT0)
-                zN.push(cN)
-                zH.push(cH)
-                zL.push(cL)
+            if flush and cN > 0 and not (cMx > cTop and cMn < cBot)
+                if cN >= minTch
+                    zT.push(cTop)
+                    zB.push(cBot)
+                    z0.push(cT0)
+                    zN.push(cN)
+                    zH.push(cH)
+                    zL.push(cL)
+                else
+                    wT.push(cTop)
+                    wB.push(cBot)
+                    w0.push(cT0)
             if k < n
                 if flush or cN == 0
                     cTop := p
@@ -185,6 +196,37 @@ if barstate.islast
                 zBx.push(box.new(z0.get(i), top, t1, bot, xloc = xloc.bar_time, border_color = color.new(c, 30), border_width = flip ? 2 : 1, bgcolor = color.new(c, tr)))
                 txt = (isR ? "RÉSISTANCE" : isS ? "SUPPORT" : "ZONE (prix dedans)") + " ×" + str.tostring(cnt) + "  " + fmt(bot) + " – " + fmt(top)
                 zLb.push(label.new(t1, (top + bot) / 2, txt, xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 20), textcolor = color.white, size = size.small))
+    // Secours : niveau ×1 le plus proche s'il n'y a aucune zone d'un côté
+    bool weakR = false
+    bool weakS = false
+    if wT.size() > 0 and (na(nearR) or na(nearS))
+        int iA = na
+        int iB = na
+        for i = 0 to wT.size() - 1
+            if wB.get(i) > close and (na(iA) or wB.get(i) < wB.get(iA))
+                iA := i
+            if wT.get(i) < close and (na(iB) or wT.get(i) > wT.get(iB))
+                iB := i
+        for side = 0 to 1
+            int ii = side == 0 ? iA : iB
+            bool need = side == 0 ? na(nearR) : na(nearS)
+            if need and not na(ii)
+                top = wT.get(ii)
+                bot = wB.get(ii)
+                mid = (top + bot) / 2
+                if top - bot < 0.15 * atrR
+                    top := mid + 0.075 * atrR
+                    bot := mid - 0.075 * atrR
+                c = side == 0 ? cDn : cUp
+                zBx.push(box.new(w0.get(ii), top, t1, bot, xloc = xloc.bar_time, border_color = color.new(c, 30), border_style = line.style_dashed, bgcolor = color.new(c, 90)))
+                zLb.push(label.new(t1, mid, (side == 0 ? "RÉSISTANCE" : "SUPPORT") + " ×1 (faible)  " + fmt(wB.get(ii)) + " – " + fmt(wT.get(ii)), xloc = xloc.bar_time,
+                     style = label.style_label_left, color = color.new(c, 50), textcolor = color.white, size = size.small))
+                if side == 0
+                    nearR := wB.get(ii)
+                    weakR := true
+                else
+                    nearS := wT.get(ii)
+                    weakS := true
     // Plus haut / plus bas de la veille
     if showPD and not na(pdh)
         pdLn.push(line.new(dT, pdh, t1, pdh, xloc = xloc.bar_time, color = color.new(color.white, 30), style = line.style_dashed))
@@ -197,6 +239,6 @@ if barstate.islast
         table.cell(tb, 0, 0, "Référence", text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.small)
         table.cell(tb, 1, 0, refTf == "D" ? "Jour" : refTf == "240" ? "4 h" : refTf == "60" ? "1 h" : refTf + " min", text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.small)
         table.cell(tb, 0, 1, "Résistance proche", text_color = color.white, bgcolor = color.new(cDn, 40), text_size = size.small)
-        table.cell(tb, 1, 1, na(nearR) ? "-" : fmt(nearR) + "  (+" + str.tostring(nearR - close, "#.##") + ")", text_color = color.white, bgcolor = color.new(cDn, 40), text_size = size.small)
+        table.cell(tb, 1, 1, na(nearR) ? "aucune : prix au plus haut de la période" : fmt(nearR) + "  (+" + str.tostring(nearR - close, "#.##") + ")" + (weakR ? " faible" : ""), text_color = color.white, bgcolor = color.new(cDn, 40), text_size = size.small)
         table.cell(tb, 0, 2, "Support proche", text_color = color.white, bgcolor = color.new(cUp, 40), text_size = size.small)
-        table.cell(tb, 1, 2, na(nearS) ? "-" : fmt(nearS) + "  (−" + str.tostring(close - nearS, "#.##") + ")", text_color = color.white, bgcolor = color.new(cUp, 40), text_size = size.small)
+        table.cell(tb, 1, 2, na(nearS) ? "aucun : prix au plus bas de la période" : fmt(nearS) + "  (−" + str.tostring(close - nearS, "#.##") + ")" + (weakS ? " faible" : ""), text_color = color.white, bgcolor = color.new(cUp, 40), text_size = size.small)
