@@ -17,6 +17,7 @@ showTl  = input.bool(true, "Tracer la ligne de tendance")
 showBg  = input.bool(false, "Colorer le fond selon la tendance")
 showMtf = input.bool(true, "Tableau : ajouter 15 min / 1 h / 4 h / jour")
 maxSeg  = input.int(40, "Nombre de segments de structure gardés", minval = 5, maxval = 140)
+tbPos   = input.string("En haut à droite", "Position du tableau", options = ["En haut à droite", "En haut au centre", "En haut à gauche", "Au milieu à droite", "En bas à droite"])
 maxBos  = input.int(8, "Nombre de cassures (BOS / CHoCH) gardées", minval = 1, maxval = 60)
 
 cUp = #089981
@@ -228,7 +229,9 @@ s60 = request.security(syminfo.tickerid, "60", trendState())
 s240 = request.security(syminfo.tickerid, "240", trendState())
 sD = request.security(syminfo.tickerid, "D", trendState())
 
-var table tb = table.new(position.top_center, 2, 6, border_color = color.new(color.gray, 70), border_width = 1)
+tbP = tbPos == "En haut à droite" ? position.top_right : tbPos == "En haut au centre" ? position.top_center : tbPos == "En haut à gauche" ? position.top_left :
+     tbPos == "Au milieu à droite" ? position.middle_right : position.bottom_right
+var table tb = table.new(tbP, 2, 6, border_color = color.new(color.gray, 70), border_width = 1)
 if barstate.islast
     table.clear(tb, 0, 0, 1, 5)
     table.cell(tb, 0, 0, "Tendance " + tfTxt(timeframe.period), text_color = color.white, bgcolor = color.new(#131722, 10), text_size = size.normal)
