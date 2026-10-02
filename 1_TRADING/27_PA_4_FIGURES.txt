@@ -16,7 +16,7 @@ indicator("Price action 4 — Figures chartistes", shorttitle = "PA FIGURES", ov
 
 srcTf  = input.string("15", "Unité de référence (mêmes figures jusqu'au H1)", options = ["15", "60", "240", "Unité affichée"])
 pivLen = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
-maxFig = input.int(5, "Nombre maximum de figures affichées", minval = 1, maxval = 20)
+maxFig = input.int(1, "Nombre de figures affichées (1 = seulement la dernière)", minval = 1, maxval = 20)
 dtTol  = input.float(0.5, "M / W : écart max entre les 2 sommets (× ATR)", minval = 0.1, step = 0.1)
 dtDep  = input.float(1.5, "M / W : profondeur min (× ATR)", minval = 0.5, step = 0.25)
 poleK  = input.float(3.0, "Drapeau : mât minimum (× ATR)", minval = 1, step = 0.5)
