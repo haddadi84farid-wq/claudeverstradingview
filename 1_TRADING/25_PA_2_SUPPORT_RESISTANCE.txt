@@ -1,17 +1,16 @@
 //@version=6
 // PRICE ACTION 2 — SUPPORTS ET RÉSISTANCES (zones, pas des lignes)
 // Méthode :
-// 1. Sommets / creux confirmés sur une unité de RÉFÉRENCE (Auto : 1 h si le graphique est ≤ 15 min, 4 h jusqu'au 1 h, sinon jour).
-//    → les zones restent les mêmes quand tu changes d'unité de temps.
+// 1. Sommets / creux confirmés sur l'unité de temps AFFICHÉE (M15 → zones du M15). Option : une autre unité de référence.
 // 2. Les sommets et creux proches (moins de 0,6 ATR de l'unité de référence) sont regroupés en UNE zone.
 //    Une zone n'est gardée que si le prix y a réagi au moins 2 fois (×2, ×3…). Plus il y a de réactions, plus la zone est forte.
 // 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
-//    « inversée » = la zone a servi de support ET de résistance (ancienne résistance cassée devenue support, ou l'inverse) : niveau fort.
+//    Zone TRAVERSÉE (une clôture de chaque côté depuis sa formation) = supprimée : ce n'est plus un support / une résistance.
 // 4. On affiche seulement les zones les plus proches (3 au-dessus, 3 en dessous) + plus haut / plus bas de la veille.
 // Ne passe aucun ordre.
-indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, scale = scale.right, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
+indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
 
-srcTf   = input.string("Auto", "Unité de référence", options = ["Auto", "Unité affichée", "15", "60", "240", "D"])
+srcTf   = input.string("Unité affichée", "Unité de référence", options = ["Unité affichée", "Auto", "15", "60", "240", "D"])
 pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
 nPiv    = input.int(80, "Nombre de sommets / creux analysés", minval = 20, maxval = 150)
 tolK    = input.float(0.6, "Largeur max d'une zone (× ATR de la référence)", minval = 0.1, step = 0.1)
@@ -29,23 +28,33 @@ refTf = srcTf == "Unité affichée" ? timeframe.period : srcTf != "Auto" ? srcTf
      timeframe.in_seconds() <= 900 ? "60" : timeframe.in_seconds() <= 3600 ? "240" : "D"
 
 // ---------- Sommets / creux sur l'unité de référence ----------
-// Sortie : [ATR, puis pour chaque pivot : prix, temps, type (+1 sommet, -1 creux)]
+// Sortie : [ATR, puis pour chaque pivot : prix, temps, type (+1 sommet, -1 creux), plus haute clôture depuis, plus basse clôture depuis]
 pivData() =>
     hp = ta.pivothigh(high, pivLen, pivLen)
     lp = ta.pivotlow(low, pivLen, pivLen)
+    hc = ta.highest(close, pivLen + 1)
+    lc = ta.lowest(close, pivLen + 1)
     var array<float> pv = array.new<float>()
+    // clôtures extrêmes depuis chaque pivot
+    if pv.size() > 0
+        for i = 0 to int(pv.size() / 5) - 1
+            pv.set(i * 5 + 3, math.max(pv.get(i * 5 + 3), close))
+            pv.set(i * 5 + 4, math.min(pv.get(i * 5 + 4), close))
     if not na(hp)
         pv.push(hp)
         pv.push(time[pivLen])
         pv.push(1)
+        pv.push(hc)
+        pv.push(lc)
     if not na(lp)
         pv.push(lp)
         pv.push(time[pivLen])
         pv.push(-1)
-    while pv.size() > nPiv * 3
-        pv.shift()
-        pv.shift()
-        pv.shift()
+        pv.push(hc)
+        pv.push(lc)
+    while pv.size() > nPiv * 5
+        for q = 1 to 5
+            pv.shift()
     out = array.from(ta.atr(14))
     out.concat(pv)
     out
@@ -80,17 +89,19 @@ if barstate.islast
     zH = array.new<bool>()
     zL = array.new<bool>()
     float atrR = na
-    n = na(rd) ? 0 : int((rd.size() - 1) / 3)
+    n = na(rd) ? 0 : int((rd.size() - 1) / 5)
     if n > 0
         atrR := rd.get(0)
         tol = tolK * atrR
         pr = array.new<float>()
         for i = 0 to n - 1
-            pr.push(rd.get(1 + i * 3))
+            pr.push(rd.get(1 + i * 5))
         idx = pr.sort_indices(order.ascending)
         float cTop = na
         float cBot = na
         int   cT0 = na
+        float cMx = na
+        float cMn = na
         int   cN = 0
         bool  cH = false
         bool  cL = false
@@ -99,13 +110,18 @@ if barstate.islast
             float p = na
             int   tt = na
             float ty = na
+            float mx = na
+            float mn = na
             if not flush
                 j = idx.get(k)
-                p := rd.get(1 + j * 3)
-                tt := int(rd.get(2 + j * 3))
-                ty := rd.get(3 + j * 3)
+                p := rd.get(1 + j * 5)
+                tt := int(rd.get(2 + j * 5))
+                ty := rd.get(3 + j * 5)
+                mx := rd.get(4 + j * 5)
+                mn := rd.get(5 + j * 5)
                 flush := cN > 0 and p - cBot > tol
-            if flush and cN >= minTch
+            // zone traversée = clôture au-dessus ET clôture en dessous depuis son 1er pivot → supprimée
+            if flush and cN >= minTch and not (cMx > cTop and cMn < cBot)
                 zT.push(cTop)
                 zB.push(cBot)
                 z0.push(cT0)
@@ -117,13 +133,18 @@ if barstate.islast
                     cTop := p
                     cBot := p
                     cT0 := tt
+                    cMx := mx
+                    cMn := mn
                     cN := 1
                     cH := ty > 0
                     cL := ty < 0
                 else
                     cTop := math.max(cTop, p)
                     cBot := math.min(cBot, p)
-                    cT0 := math.min(cT0, tt)
+                    if tt < cT0
+                        cT0 := tt
+                        cMx := mx
+                        cMn := mn
                     cN += 1
                     cH := cH or ty > 0
                     cL := cL or ty < 0
@@ -162,7 +183,7 @@ if barstate.islast
                 c = isR ? cDn : isS ? cUp : cIn
                 tr = cnt >= 4 ? 55 : cnt == 3 ? 70 : 82
                 zBx.push(box.new(z0.get(i), top, t1, bot, xloc = xloc.bar_time, border_color = color.new(c, 30), border_width = flip ? 2 : 1, bgcolor = color.new(c, tr)))
-                txt = (isR ? "RÉSISTANCE" : isS ? "SUPPORT" : "ZONE (prix dedans)") + " ×" + str.tostring(cnt) + (flip ? " inversée" : "") + "  " + fmt(bot) + " – " + fmt(top)
+                txt = (isR ? "RÉSISTANCE" : isS ? "SUPPORT" : "ZONE (prix dedans)") + " ×" + str.tostring(cnt) + "  " + fmt(bot) + " – " + fmt(top)
                 zLb.push(label.new(t1, (top + bot) / 2, txt, xloc = xloc.bar_time, style = label.style_label_left, color = color.new(c, 20), textcolor = color.white, size = size.small))
     // Plus haut / plus bas de la veille
     if showPD and not na(pdh)

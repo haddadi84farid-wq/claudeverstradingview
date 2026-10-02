@@ -12,7 +12,7 @@
 // 5. Tableau des résultats : chaque groupe (×2 et plus) est testé sur l'historique avec un ordre limite à l'entrée,
 //    stop et objectif du plan, frais inclus, annulé s'il n'est pas touché à temps. Résultats en R par catégorie.
 // Ne passe aucun ordre.
-indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100, max_bars_back = 500)
+indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100, max_bars_back = 500)
 
 gD = "Détection"
 pivLen  = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gD)

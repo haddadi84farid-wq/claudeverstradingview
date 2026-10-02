@@ -8,7 +8,7 @@
 //    ORANGE = la dernière cassure va contre la précédente (CHoCH) → TRANSITION : on attend une 2e cassure qui confirme.
 // Tracés : structure HH / HL / LH / LL, cassures BOS / CHoCH, ligne de tendance (2 derniers creux montants ou sommets descendants).
 // Tableau : tendance de l'unité affichée + 15 min, 1 h, 4 h, jour (lecture du haut vers le bas). Ne passe aucun ordre.
-indicator("Price action 1 — Tendance", shorttitle = "PA TENDANCE", overlay = true, scale = scale.right, max_lines_count = 300, max_labels_count = 300, max_bars_back = 500)
+indicator("Price action 1 — Tendance", shorttitle = "PA TENDANCE", overlay = true, max_lines_count = 300, max_labels_count = 300, max_bars_back = 500)
 
 pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 30)
 showZz  = input.bool(true, "Tracer la structure (HH / HL / LH / LL)")
