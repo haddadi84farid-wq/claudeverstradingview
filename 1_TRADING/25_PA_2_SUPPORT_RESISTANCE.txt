@@ -6,7 +6,8 @@
 // 2. Les sommets et creux proches (moins de 0,6 ATR de l'unité de référence) sont regroupés en UNE zone.
 //    Une zone n'est gardée que si le prix y a réagi au moins 2 fois (×2, ×3…). Plus il y a de réactions, plus la zone est forte.
 // 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
-//    Zone TRAVERSÉE (une clôture de chaque côté depuis sa formation) = supprimée : ce n'est plus un support / une résistance.
+//    Zone TRAVERSÉE (une clôture de chaque côté) = les anciens contacts ne comptent plus. Elle ne revient que si le prix
+//    la touche de nouveau 2 fois APRÈS la traversée (nouveau support / nouvelle résistance).
 // 4. On affiche seulement les zones les plus proches (3 au-dessus, 3 en dessous) + plus haut / plus bas de la veille.
 //    Règle : une zone doit être touchée AU MOINS 2 FOIS. (Option désactivée par défaut : niveaux ×1 « faibles ».)
 //    S'il n'y a vraiment rien au-dessus (ou en dessous), le prix est au plus haut (plus bas) de la période : le tableau le dit.
@@ -105,62 +106,55 @@ clusterZones(array<float> dat) =>
         for i = 0 to n - 1
             pr.push(dat.get(1 + i * 5))
         idx = pr.sort_indices(order.ascending)
-        float cTop = na
+        // membres du groupe en cours (indices des pivots)
+        mem = array.new<int>()
         float cBot = na
-        int   cT0 = na
-        float cMx = na
-        float cMn = na
-        int   cN = 0
-        bool  cH = false
-        bool  cL = false
+        float cTop = na
         for k = 0 to n
             bool flush = k == n
-            float p = na
-            int   tt = na
-            float ty = na
-            float mx = na
-            float mn = na
-            if not flush
-                j = idx.get(k)
-                p := dat.get(1 + j * 5)
-                tt := int(dat.get(2 + j * 5))
-                ty := dat.get(3 + j * 5)
-                mx := dat.get(4 + j * 5)
-                mn := dat.get(5 + j * 5)
-                flush := cN > 0 and p - cBot > tol
-            // zone traversée = clôture au-dessus ET clôture en dessous depuis son 1er pivot → supprimée
-            if flush and cN > 0 and not (cMx > cTop and cMn < cBot)
-                if cN >= minTch
-                    zT.push(cTop)
-                    zB.push(cBot)
-                    z0.push(cT0)
-                    zN.push(cN)
-                    zH.push(cH)
-                    zL.push(cL)
-                else
-                    wT.push(cTop)
-                    wB.push(cBot)
-                    w0.push(cT0)
+            int j = k < n ? idx.get(k) : 0
             if k < n
-                if flush or cN == 0
-                    cTop := p
-                    cBot := p
-                    cT0 := tt
-                    cMx := mx
-                    cMn := mn
-                    cN := 1
-                    cH := ty > 0
-                    cL := ty < 0
-                else
-                    cTop := math.max(cTop, p)
-                    cBot := math.min(cBot, p)
-                    if tt < cT0
-                        cT0 := tt
-                        cMx := mx
-                        cMn := mn
-                    cN += 1
-                    cH := cH or ty > 0
-                    cL := cL or ty < 0
+                flush := mem.size() > 0 and dat.get(1 + j * 5) - cBot > tol
+            if flush and mem.size() > 0
+                // on ne garde que les contacts APRÈS la dernière traversée de la zone :
+                // un pivot est « intact » si, depuis lui, le prix n'a pas clôturé des deux côtés de la zone
+                float iTop = na
+                float iBot = na
+                int   iT0 = na
+                int   iN = 0
+                bool  iH = false
+                bool  iL = false
+                for q in mem
+                    pq = dat.get(1 + q * 5)
+                    mx = dat.get(4 + q * 5)
+                    mn = dat.get(5 + q * 5)
+                    if not (mx > cTop and mn < cBot)
+                        iTop := na(iTop) ? pq : math.max(iTop, pq)
+                        iBot := na(iBot) ? pq : math.min(iBot, pq)
+                        tq = int(dat.get(2 + q * 5))
+                        iT0 := na(iT0) ? tq : math.min(iT0, tq)
+                        iN += 1
+                        iH := iH or dat.get(3 + q * 5) > 0
+                        iL := iL or dat.get(3 + q * 5) < 0
+                if iN >= minTch
+                    zT.push(iTop)
+                    zB.push(iBot)
+                    z0.push(iT0)
+                    zN.push(iN)
+                    zH.push(iH)
+                    zL.push(iL)
+                else if iN >= 1
+                    wT.push(iTop)
+                    wB.push(iBot)
+                    w0.push(iT0)
+                mem.clear()
+            if k < n
+                pk = dat.get(1 + j * 5)
+                if mem.size() == 0
+                    cBot := pk
+                    cTop := pk
+                cTop := math.max(cTop, pk)
+                mem.push(j)
     [zT, zB, z0, zN, zH, zL, wT, wB, w0, atrR]
 
 if barstate.islast
