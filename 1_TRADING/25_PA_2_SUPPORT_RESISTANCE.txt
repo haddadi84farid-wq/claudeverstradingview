@@ -7,7 +7,7 @@
 // 3. Zone au-dessus du prix = RÉSISTANCE (rouge), en dessous = SUPPORT (vert), prix dedans = ORANGE.
 //    Zone TRAVERSÉE (une clôture de chaque côté depuis sa formation) = supprimée : ce n'est plus un support / une résistance.
 // 4. On affiche seulement les zones les plus proches (3 au-dessus, 3 en dessous) + plus haut / plus bas de la veille.
-//    S'il n'y a aucune zone ×2 d'un côté, on affiche le niveau ×1 non traversé le plus proche (« faible »).
+//    Le sommet / creux ×1 non traversé le plus proche est aussi affiché (« faible ») s'il est plus près que la 1re zone ×2.
 //    S'il n'y a vraiment rien au-dessus (ou en dessous), le prix est au plus haut (plus bas) de la période : le tableau le dit.
 // Ne passe aucun ordre.
 indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
@@ -199,7 +199,7 @@ if barstate.islast
     // Secours : niveau ×1 le plus proche s'il n'y a aucune zone d'un côté
     bool weakR = false
     bool weakS = false
-    if wT.size() > 0 and (na(nearR) or na(nearS))
+    if wT.size() > 0
         int iA = na
         int iB = na
         for i = 0 to wT.size() - 1
@@ -209,7 +209,8 @@ if barstate.islast
                 iB := i
         for side = 0 to 1
             int ii = side == 0 ? iA : iB
-            bool need = side == 0 ? na(nearR) : na(nearS)
+            // affiché s'il n'y a pas de zone ×2 de ce côté, ou si le niveau ×1 est plus proche du prix
+            bool need = not na(ii) and (side == 0 ? (na(nearR) or wB.get(ii) < nearR) : (na(nearS) or wT.get(ii) > nearS))
             if need and not na(ii)
                 top = wT.get(ii)
                 bot = wB.get(ii)
