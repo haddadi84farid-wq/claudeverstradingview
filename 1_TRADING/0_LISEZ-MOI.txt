@@ -55,7 +55,7 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            (2 cassures de suite dans le meme sens = tendance), structure HH/HL/LH/LL, BOS/CHoCH, ligne de tendance,
                            tableau 15 min / 1 h / 4 h / jour.
 - 25_PA_2_SUPPORT_RESISTANCE.txt : PRICE ACTION 2 — zones de support (vert) / resistance (rouge) issues des sommets/creux
-                           de l'unite affichee, regroupes (x2, x3...) ; zone traversee = supprimee ; haut/bas de la veille.
+                           du M15 (memes zones de M1 a H1), regroupes (x2, x3...) ; zone traversee = supprimee ; haut/bas de la veille.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
