@@ -4,7 +4,7 @@
 //   ★     = la figure seule
 //   ★★    = la figure se forme SUR UN NIVEAU : creux (sommet) des 20 dernières bougies touché ou balayé (± 0,3 ATR)
 //   ★★★   = sur un niveau ET dans le sens de la tendance (EMA 50 montante pour un achat, descendante pour une vente)
-// Par défaut, seules les ★★ et ★★★ sont affichées.
+// Par défaut, seules les ★★ et ★★★ sont affichées. Passer la souris sur une étiquette = explication complète + idée de plan.
 // Figures : avalement haussier / baissier, pin bar (marteau / étoile filante), étoile du matin / du soir,
 //           bougie de force (gros corps, petites mèches), doji et inside bar (indécision, sans direction).
 // Tableau : résultat réel de chaque figure sur l'historique du graphique — entrée à la clôture, stop au-delà de la mèche
@@ -94,11 +94,26 @@ else if forceD
 q = dir == 0 ? 0 : 1 + ((dir == 1 ? atLow : atHigh) ? 1 : 0) + ((dir == 1 ? atLow and trUp : atHigh and trDn) ? 1 : 0)
 stars = q == 3 ? "★★★" : q == 2 ? "★★" : "★"
 
+// Explication affichée au survol de la souris (infobulle)
+expl(int t, int d) =>
+    t == 0 ? (d == 1 ? "Le corps vert avale entièrement le corps rouge précédent : les acheteurs reprennent la main." : "Le corps rouge avale entièrement le corps vert précédent : les vendeurs reprennent la main.") :
+     t == 1 ? (d == 1 ? "Longue mèche basse : le prix a été rejeté vers le haut, les vendeurs n'ont pas tenu." : "Longue mèche haute : le prix a été rejeté vers le bas, les acheteurs n'ont pas tenu.") :
+     t == 2 ? (d == 1 ? "Grosse bougie rouge, petite bougie d'hésitation, puis bougie verte qui remonte au-dessus du milieu : retournement haussier." : "Grosse bougie verte, petite bougie d'hésitation, puis bougie rouge qui redescend sous le milieu : retournement baissier.") :
+     (d == 1 ? "Gros corps vert, petites mèches : forte pression acheteuse." : "Gros corps rouge, petites mèches : forte pression vendeuse.")
+ctxTxt(int qq) => qq == 3 ? "★★★ Sur un niveau ET dans le sens de la tendance : signal le plus fiable." : qq == 2 ? "★★ Sur un niveau (creux / sommet récent), mais contre la tendance ou tendance neutre." : "★ Figure seule, hors niveau : peu fiable."
+short(int t) => t == 0 ? "AV" : t == 1 ? "PIN" : t == 2 ? "ÉT" : "FORCE"
+
 if dir != 0 and q >= minQ and barstate.isconfirmed
-    label.new(bar_index, dir == 1 ? low : high, nm + "\n" + stars, style = dir == 1 ? label.style_label_up : label.style_label_down,
-         color = color.new(dir == 1 ? cUp : cDn, q == 3 ? 0 : q == 2 ? 30 : 60), textcolor = color.white, size = size.tiny)
+    ext0 = dir == 1 ? (typ == 2 ? pLow : low) : (typ == 2 ? pHigh : high)
+    stp0 = dir == 1 ? ext0 - 0.1 * atr : ext0 + 0.1 * atr
+    tgt0 = close + dir * rrT * math.abs(close - stp0)
+    tip = nm + "  " + stars + "\n\n" + expl(typ, dir) + "\n" + ctxTxt(q) + "\n\nIdée de plan : entrée " + str.tostring(close, format.mintick) +
+         " | stop " + str.tostring(stp0, format.mintick) + " | objectif " + str.tostring(tgt0, format.mintick) + " (" + str.tostring(rrT) + " R)"
+    label.new(bar_index, dir == 1 ? low : high, (dir == 1 ? "▲ " : "▼ ") + short(typ) + " " + stars, style = dir == 1 ? label.style_label_up : label.style_label_down,
+         color = color.new(dir == 1 ? cUp : cDn, q == 3 ? 0 : q == 2 ? 30 : 60), textcolor = color.white, size = size.normal, tooltip = tip)
 else if showDoji and barstate.isconfirmed and (doji or inside) and (atLow or atHigh)
-    label.new(bar_index, high, doji ? "Doji" : "Inside bar", style = label.style_label_down, color = color.new(color.gray, 40), textcolor = color.white, size = size.tiny)
+    label.new(bar_index, high, doji ? "DOJI" : "IB", style = label.style_label_down, color = color.new(color.gray, 40), textcolor = color.white, size = size.normal,
+         tooltip = doji ? "Doji : corps minuscule, indécision. Attendre la bougie suivante pour connaître le sens." : "Inside bar : la bougie reste dans la précédente, compression. La cassure de la bougie mère donne le sens.")
 
 // ---------- Test sur l'historique ----------
 var array<float> oE = array.new<float>()
