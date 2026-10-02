@@ -50,6 +50,7 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 23_INDICATEUR_OB_MULTI_UT.txt : OB detectes sur 5/10/15/30 min/1 h, gardes seulement s'ils se superposent (x3, x4..., ou x2 avec le 1 h),
                            filtres : structure externe, deplacement >= 1,5 ATR, FVG obligatoire ; 3 derniers OB par unite.
                            Note sur 6 (F/T/P/V/M/H), Fibonacci dans l'OB, plan entree/SL/2 R. Meme affichage sur toutes les unites.
+                           Tableau des resultats en bas a gauche (R par note, avec / sans 1 h, x3 / x2), frais inclus.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

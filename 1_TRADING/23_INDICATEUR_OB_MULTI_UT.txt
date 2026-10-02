@@ -9,6 +9,8 @@
 //    (Fibonacci du dernier sommet au plus bas atteint, OB vendeur au-dessus de 50 %), V = vierge, M = multi-unités (≥ 3),
 //    H = le 1 h est dans le groupe (zone la plus fiable). Note sur 6.
 // 4. Fibonacci DANS l'OB (0 / 0,5 / 1) : entrée sur la 2e moitié possible, stop juste au-delà de l'OB, objectif 2 R.
+// 5. Tableau des résultats : chaque groupe (×2 et plus) est testé sur l'historique avec un ordre limite à l'entrée,
+//    stop et objectif du plan, frais inclus, annulé s'il n'est pas touché à temps. Résultats en R par catégorie.
 // Ne passe aucun ordre.
 indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100, max_bars_back = 500)
 
@@ -28,6 +30,10 @@ slBuf   = input.float(0.3, "Marge du stop au-delà de l'OB (points)", minval = 0
 rrTP    = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
 entryAt = input.string("Bord de l'OB", "Entrée", options = ["Bord de l'OB", "50 % de l'OB (2e moitié)"], group = gT)
 extH    = input.float(6.0, "Prolonger à droite (heures)", minval = 1, step = 1, group = gT)
+gR = "Tableau des résultats"
+showRes = input.bool(true, "Afficher le tableau des résultats (historique)", group = gR)
+expH    = input.float(24.0, "Ordre annulé s'il n'est pas touché après (heures)", minval = 1, step = 1, group = gR)
+costPts = input.float(0.37, "Frais par trade (points : spread + commission)", minval = 0, step = 0.01, group = gR)
 
 cRed   = #F23645
 cGreen = #089981
@@ -205,6 +211,7 @@ var array<label> gLb = array.new<label>()
 var starTxt = array.from("☆☆☆☆☆☆", "★☆☆☆☆☆", "★★☆☆☆☆", "★★★☆☆☆", "★★★★☆☆", "★★★★★☆", "★★★★★★")
 var tfNames = array.from("1", "5", "10", "15", "30", "60")
 ck(bool b) => b ? "✓" : "✗"
+with1 = use1 and timeframe.in_seconds() <= 60
 
 // Ajoute les OB valides d'une unité (sens d) dans les listes
 collect(array<float> r, int tfi, int d, array<float> tps, array<float> bts, array<int> ts, array<int> tfs, array<int> fs, array<int> rs, array<int> ps, array<int> vs) =>
@@ -223,8 +230,31 @@ collect(array<float> r, int tfi, int d, array<float> tps, array<float> bts, arra
                 vs.push(int(r.get(b + 7)))
     n
 
-drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> tfs, array<int> fs, array<int> rs, array<int> ps, array<int> vs) =>
+mkLists(int d) =>
+    tps = array.new<float>()
+    bts = array.new<float>()
+    ts  = array.new<int>()
+    tfs = array.new<int>()
+    fs  = array.new<int>()
+    rs  = array.new<int>()
+    ps  = array.new<int>()
+    vs  = array.new<int>()
+    if with1
+        collect(r1, 0, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(r5, 1, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rA, 2, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rB, 3, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rC, 4, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    collect(rD, 5, d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    [tps, bts, ts, tfs, fs, rs, ps, vs]
+
+// Groupes (×2 et plus) : indice de l'OB le plus précis, nombre d'unités, noms, présence du 1 h
+grp(array<float> tps, array<float> bts, array<int> tfs) =>
     n = tps.size()
+    gI = array.new<int>()
+    gN = array.new<int>()
+    gS = array.new<string>()
+    gH = array.new<bool>()
     if n > 0
         used = array.new<bool>(n, false)
         // Les OB sont rangés de la plus petite à la plus grande unité : le 1er d'un groupe est le plus précis
@@ -243,30 +273,135 @@ drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> 
                     if seen.get(q)
                         cnt += 1
                         names := names == "" ? tfNames.get(q) : names + "·" + tfNames.get(q)
-                h1 = seen.get(5)
-                if cnt >= minConf or (h1Pass and h1 and cnt >= 2)
+                if cnt >= 2
                     for k = 0 to n - 1
                         if not used.get(k) and math.min(ti, tps.get(k)) > math.max(bi, bts.get(k))
                             used.set(k, true)
-                    c = d == -1 ? cRed : cGreen
+                    gI.push(i)
+                    gN.push(cnt)
+                    gS.push(names)
+                    gH.push(seen.get(5))
+    [gI, gN, gS, gH]
+
+planOf(int d, float ti, float bi) =>
+    e = entryAt == "Bord de l'OB" ? (d == -1 ? bi : ti) : (ti + bi) / 2
+    slp = d == -1 ? ti + slBuf : bi - slBuf
+    tpp = e + (d == -1 ? -1 : 1) * rrTP * math.abs(e - slp)
+    [e, slp, tpp]
+
+[sTp, sBt, sTs, sTf, sF, sR, sP, sV] = mkLists(-1)
+[uTp, uBt, uTs, uTf, uF, uR, uP, uV] = mkLists(1)
+[sgI, sgN, sgS, sgH] = grp(sTp, sBt, sTf)
+[ugI, ugN, ugS, ugH] = grp(uTp, uBt, uTf)
+
+// ---------- Test historique : ordre limite sur chaque nouveau groupe ----------
+type Setup
+    int   dir
+    float e
+    float sl
+    float tp
+    int   st
+    int   cnt
+    bool  h1
+    int   t0
+    int   c
+    bool  filled
+
+var array<Setup>  sets = array.new<Setup>()
+var array<string> keys = array.new<string>()
+// Catégories : 0 note 5-6, 1 note 4, 2 note ≤ 3, 3 avec 1 h, 4 ×3 et plus, 5 ×2 sans 1 h, 6 tous
+var array<int>   stN = array.new<int>(7, 0)
+var array<int>   stW = array.new<int>(7, 0)
+var array<float> stR = array.new<float>(7, 0.0)
+
+addRes(int cat, float r) =>
+    stN.set(cat, stN.get(cat) + 1)
+    stW.set(cat, stW.get(cat) + (r > 0 ? 1 : 0))
+    stR.set(cat, stR.get(cat) + r)
+    cat
+
+regGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> fs, array<int> rs, array<int> ps, array<int> vs, array<int> gI, array<int> gN, array<bool> gH) =>
+    if gI.size() > 0
+        for g = 0 to gI.size() - 1
+            i = gI.get(g)
+            ti = tps.get(i)
+            bi = bts.get(i)
+            key = str.tostring(d) + "|" + str.tostring(ts.get(i)) + "|" + str.tostring(ti)
+            if not keys.includes(key)
+                keys.push(key)
+                if keys.size() > 400
+                    keys.shift()
+                [e, slp, tpp] = planOf(d, ti, bi)
+                // ordre limite seulement si le prix n'a pas déjà dépassé l'entrée
+                if (d == 1 ? close > e : close < e) and math.abs(e - slp) > 0
+                    cnt = gN.get(g)
+                    h1 = gH.get(g)
                     st = fs.get(i) + rs.get(i) + ps.get(i) + vs.get(i) + (cnt >= 3 ? 1 : 0) + (h1 ? 1 : 0)
-                    strong = h1 or st >= 5
-                    t0 = ts.get(i)
-                    t1 = time + math.round(extH * 3600000)
-                    midp = (ti + bi) / 2
-                    e = entryAt == "Bord de l'OB" ? (d == -1 ? bi : ti) : midp
-                    slp = d == -1 ? ti + slBuf : bi - slBuf
-                    tpp = e + (d == -1 ? -1 : 1) * rrTP * math.abs(e - slp)
-                    gBx.push(box.new(t0, ti, t1, bi, xloc = xloc.bar_time, border_color = c, border_width = strong ? 2 : 1,
-                         bgcolor = color.new(c, strong ? 70 : 85)))
-                    // Fibonacci dans l'OB : 0 / 0,5 / 1
-                    gLn.push(line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
-                    txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + names + ")  " + str.tostring(st) + "/6 " + starTxt.get(st) +
-                         "\nF" + ck(fs.get(i) == 1) + " T" + ck(rs.get(i) == 1) + " P" + ck(ps.get(i) == 1) + " V" + ck(vs.get(i) == 1) + " M" + ck(cnt >= 3) + " H" + ck(h1) +
-                         "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(slp, format.mintick) + " | TP " + str.tostring(tpp, format.mintick) + " (" + str.tostring(rrTP) + " R)"
-                    gLb.push(label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
-                         color = color.new(c, strong ? 0 : 35), textcolor = color.white, size = size.small))
-    n
+                    sets.push(Setup.new(d, e, slp, tpp, st, cnt, h1, time, bar_index, false))
+    d
+
+// Suivi des ordres en cours (les ordres créés sur cette bougie attendent la suivante)
+if sets.size() > 0
+    for i = sets.size() - 1 to 0
+        s = sets.get(i)
+        if bar_index > s.c
+            bool drop = false
+            float res = na
+            if not s.filled
+                if s.dir == 1 ? low <= s.e : high >= s.e
+                    s.filled := true
+                else if time - s.t0 > expH * 3600000
+                    drop := true
+            if s.filled
+                cst = costPts / math.abs(s.e - s.sl)
+                if s.dir == 1 ? low <= s.sl : high >= s.sl
+                    res := -1 - cst
+                else if s.dir == 1 ? high >= s.tp : low <= s.tp
+                    res := rrTP - cst
+            if not na(res)
+                addRes(s.st >= 5 ? 0 : s.st == 4 ? 1 : 2, res)
+                if s.h1
+                    addRes(3, res)
+                if s.cnt >= 3
+                    addRes(4, res)
+                if s.cnt == 2 and not s.h1
+                    addRes(5, res)
+                addRes(6, res)
+            if drop or not na(res)
+                sets.remove(i)
+
+regGroups(-1, sTp, sBt, sTs, sF, sR, sP, sV, sgI, sgN, sgH)
+regGroups(1, uTp, uBt, uTs, uF, uR, uP, uV, ugI, ugN, ugH)
+
+// ---------- Dessin (dernière bougie) ----------
+drawGroups(int d, array<float> tps, array<float> bts, array<int> ts, array<int> fs, array<int> rs, array<int> ps, array<int> vs, array<int> gI, array<int> gN, array<string> gS, array<bool> gH) =>
+    if gI.size() > 0
+        for g = 0 to gI.size() - 1
+            i = gI.get(g)
+            cnt = gN.get(g)
+            h1 = gH.get(g)
+            if cnt >= minConf or (h1Pass and h1 and cnt >= 2)
+                ti = tps.get(i)
+                bi = bts.get(i)
+                c = d == -1 ? cRed : cGreen
+                st = fs.get(i) + rs.get(i) + ps.get(i) + vs.get(i) + (cnt >= 3 ? 1 : 0) + (h1 ? 1 : 0)
+                strong = h1 or st >= 5
+                t0 = ts.get(i)
+                t1 = time + math.round(extH * 3600000)
+                midp = (ti + bi) / 2
+                [e, slp, tpp] = planOf(d, ti, bi)
+                gBx.push(box.new(t0, ti, t1, bi, xloc = xloc.bar_time, border_color = c, border_width = strong ? 2 : 1,
+                     bgcolor = color.new(c, strong ? 70 : 85)))
+                // Fibonacci dans l'OB : 0 / 0,5 / 1
+                gLn.push(line.new(t0, midp, t1, midp, xloc = xloc.bar_time, color = color.new(c, 20), style = line.style_dashed))
+                txt = (d == -1 ? "OB VENTE ×" : "OB ACHAT ×") + str.tostring(cnt) + " (" + gS.get(g) + ")  " + str.tostring(st) + "/6 " + starTxt.get(st) +
+                     "\nF" + ck(fs.get(i) == 1) + " T" + ck(rs.get(i) == 1) + " P" + ck(ps.get(i) == 1) + " V" + ck(vs.get(i) == 1) + " M" + ck(cnt >= 3) + " H" + ck(h1) +
+                     "\nEntrée " + str.tostring(e, format.mintick) + " | SL " + str.tostring(slp, format.mintick) + " | TP " + str.tostring(tpp, format.mintick) + " (" + str.tostring(rrTP) + " R)"
+                gLb.push(label.new(t1, d == -1 ? ti : bi, txt, xloc = xloc.bar_time, style = d == -1 ? label.style_label_lower_left : label.style_label_upper_left,
+                     color = color.new(c, strong ? 0 : 35), textcolor = color.white, size = size.small))
+    d
+
+var table tRes = table.new(position.bottom_left, 5, 8, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
 
 if barstate.islast
     for b in gBx
@@ -278,21 +413,21 @@ if barstate.islast
     gBx.clear()
     gLn.clear()
     gLb.clear()
-    with1 = use1 and timeframe.in_seconds() <= 60
-    for d in array.from(-1, 1)
-        tps = array.new<float>()
-        bts = array.new<float>()
-        ts  = array.new<int>()
-        tfs = array.new<int>()
-        fs  = array.new<int>()
-        rs  = array.new<int>()
-        ps  = array.new<int>()
-        vs  = array.new<int>()
-        if with1
-            collect(r1, 0, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        collect(r5, 1, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        collect(rA, 2, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        collect(rB, 3, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        collect(rC, 4, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        collect(rD, 5, d, tps, bts, ts, tfs, fs, rs, ps, vs)
-        drawGroups(d, tps, bts, ts, tfs, fs, rs, ps, vs)
+    drawGroups(-1, sTp, sBt, sTs, sF, sR, sP, sV, sgI, sgN, sgS, sgH)
+    drawGroups(1, uTp, uBt, uTs, uF, uR, uP, uV, ugI, ugN, ugS, ugH)
+    if showRes
+        table.clear(tRes, 0, 0, 4, 7)
+        hd = array.from("OB MTF — résultats", "Trades", "Gagnés", "Total R", "R moyen")
+        for q = 0 to 4
+            table.cell(tRes, q, 0, hd.get(q), text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        nmR = array.from("Note 5-6 / 6", "Note 4 / 6", "Note ≤ 3 / 6", "Avec le 1 h (H)", "×3 et plus", "×2 sans le 1 h", "Tous")
+        for q = 0 to 6
+            n = stN.get(q)
+            tot = stR.get(q)
+            avg = n > 0 ? tot / n : 0.0
+            cc = n == 0 ? color.gray : avg > 0 ? cGreen : cRed
+            table.cell(tRes, 0, q + 1, nmR.get(q), text_color = color.white, text_size = size.small, text_halign = text.align_left)
+            table.cell(tRes, 1, q + 1, str.tostring(n), text_color = color.white, text_size = size.small)
+            table.cell(tRes, 2, q + 1, n > 0 ? str.tostring(math.round(100.0 * stW.get(q) / n)) + " %" : "-", text_color = color.white, text_size = size.small)
+            table.cell(tRes, 3, q + 1, n > 0 ? str.tostring(tot, "#.##") : "-", text_color = cc, text_size = size.small)
+            table.cell(tRes, 4, q + 1, n > 0 ? str.tostring(avg, "#.##") : "-", text_color = cc, text_size = size.small)
