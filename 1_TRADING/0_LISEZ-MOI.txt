@@ -47,8 +47,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 21_INDICATEUR_PLANS_AB.txt : VERSION RAPIDE du robot (indicateur) : flux, OTE, Fibonacci, plans A / B, cible. Sans backtest.
 - 22_INDICATEUR_OB_5_ETOILES.txt : order blocks notes de 0 a 5 etoiles (FVG, tendance, liquidite, vierge, premium/discount)
                            + entree sur bougie de reaction, stop au-dela de l'OB, 2 R, et tableau des resultats par nombre d'etoiles.
-- 23_INDICATEUR_OB_MULTI_UT.txt : OB detectes sur 5/10/15/30 min/1 h, gardes seulement s'ils se superposent (x3, x4...),
-                           etoiles F/T/P/V/M, Fibonacci dans l'OB, plan entree/SL/2 R. Meme affichage sur toutes les unites.
+- 23_INDICATEUR_OB_MULTI_UT.txt : OB detectes sur 5/10/15/30 min/1 h, gardes seulement s'ils se superposent (x3, x4..., ou x2 avec le 1 h),
+                           filtres : structure externe, deplacement >= 1,5 ATR, FVG obligatoire ; 3 derniers OB par unite.
+                           Note sur 6 (F/T/P/V/M/H), Fibonacci dans l'OB, plan entree/SL/2 R. Meme affichage sur toutes les unites.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
