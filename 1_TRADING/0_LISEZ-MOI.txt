@@ -56,6 +56,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            tableau 15 min / 1 h / 4 h / jour.
 - 25_PA_2_SUPPORT_RESISTANCE.txt : PRICE ACTION 2 — zones de support (vert) / resistance (rouge) issues des sommets/creux
                            du M15 (memes zones de M1 a H1) + 2e couche M5 en pointilles, touchees 2 fois min (x2, x3...) ; zone traversee = supprimee ; haut/bas de la veille.
+- 26_PA_3_OBLIQUES.txt : PRICE ACTION 3 — lignes de tendance automatiques (M15, memes de M1 a H1) : 2 points = tracee,
+                           3 contacts = confirmee, cassee = grise a la cloture de l'autre cote.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
