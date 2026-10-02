@@ -14,7 +14,7 @@
 indicator("Price action 2 — Supports et résistances", shorttitle = "PA S/R", overlay = true, max_boxes_count = 60, max_lines_count = 20, max_labels_count = 60)
 
 srcTf   = input.string("15", "Unité de référence (zones identiques sur toutes les unités jusqu'au H1)", options = ["15", "60", "240", "D", "Unité affichée"])
-pivLen  = input.int(3, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
+pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
 lbDays  = input.int(30, "Historique analysé (jours)", minval = 3, maxval = 365)
 nPiv    = input.int(150, "Nombre de sommets / creux analysés", minval = 20, maxval = 300)
 tolK    = input.float(0.6, "Largeur max d'une zone (× ATR de la référence)", minval = 0.1, step = 0.1)
