@@ -10,7 +10,7 @@
 //    H = le 1 h est dans le groupe (zone la plus fiable). Note sur 6.
 // 4. Fibonacci DANS l'OB (0 / 0,5 / 1) : entrée sur la 2e moitié possible, stop juste au-delà de l'OB, objectif 2 R.
 // Ne passe aucun ordre.
-indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100)
+indicator("Order Blocks multi-unités", shorttitle = "OB MTF", overlay = true, scale = scale.right, max_boxes_count = 100, max_lines_count = 150, max_labels_count = 100, max_bars_back = 500)
 
 gD = "Détection"
 pivLen  = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gD)
@@ -67,8 +67,8 @@ obTF() =>
         sl := pl
         slBar := bar_index - pivLen
         slB := false
-    lenL = math.min(450, math.max(1, bar_index - nz(shBar, bar_index) + 1))
-    lenH = math.min(450, math.max(1, bar_index - nz(slBar, bar_index) + 1))
+    lenL = math.min(300, math.max(1, bar_index - nz(shBar, bar_index) + 1))
+    lenH = math.min(300, math.max(1, bar_index - nz(slBar, bar_index) + 1))
     llS = ta.lowest(low, lenL)
     llO = ta.lowestbars(low, lenL)
     hhS = ta.highest(high, lenH)
