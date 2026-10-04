@@ -241,3 +241,9 @@ M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30
 Prochain test decide a l'avance : cassure = corps >= 1 ATR (vraie cassure institutionnelle), M5 puis M15.
 | cassure corps >= 1 ATR + pas de cassure pendant le NFP (M15, mai -> oct.) | 57 | 8,8 % | 0,53 | -165 $ (-16,5 %) | 18,7 % |
 Dernier test decide a l'avance : stop au-dela du milieu du range. Si negatif -> abandon de la continuation, on garde BT AMD (retournement).
+
+## OB 5 etoiles en 4 h (methode type Kasper) — 05/10/2026
+| Marche | Entree | 5 etoiles | 4 etoiles | 3 et moins |
+|---|---|---|---|---|
+| EURUSD 4h (frais 1,2 pip) | bougie de reaction, 2 R | 66 trades, 39 %, +10,2 R (+0,15 R/trade) | 142, 31 %, -17,3 R (-0,12) | 159, 33 %, -13,3 R (-0,08) |
+Seules les 5 etoiles sont positives. A comparer : entree au contact (ordre limite) et or 4h.
