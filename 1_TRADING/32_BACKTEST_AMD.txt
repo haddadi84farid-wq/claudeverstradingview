@@ -33,6 +33,7 @@ rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step 
 nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
 maxAge = input.int(150, "Range abandonné après (bougies)", minval = 20, group = gD)
 gM = "Manipulation"
+keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
 swK    = input.float(0.05, "Balayage minimum (× hauteur du range)", minval = 0, step = 0.05, group = gM)
 backN  = input.int(8, "Retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
 farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
@@ -61,6 +62,7 @@ var int   side = 0
 var float ext = na
 var int   outN = 0
 var int   coolUntil = 0
+var int   nMan = 0
 var box   rBox = na
 
 // 1. Range
@@ -69,6 +71,7 @@ if phase == 0 and bar_index > rLen and bar_index > coolUntil
     if h <= rMaxK * atrL and h >= rMinK * atrL
         if touches(rLen, true, hh, 0.15 * h) >= nTouch and touches(rLen, false, ll, 0.15 * h) >= nTouch
             phase := 1
+            nMan := 0
             rTop := hh
             rBot := ll
             rStart := bar_index - rLen + 1
@@ -162,9 +165,14 @@ if sig
                 strategy.exit("Sortie " + id, id, stop = stp, limit = tgt)
     if not na(rBox)
         box.set_bgcolor(rBox, color.new(#FF9800, 85))
-    phase := 0
-    rBox := na
-    coolUntil := bar_index + int(rLen / 2)
+    nMan += 1
+    if keepR and nMan < 2
+        // le range reste actif : un 2e balayage de l'autre bord reste possible (ex. NFP)
+        phase := 1
+    else
+        phase := 0
+        rBox := na
+        coolUntil := bar_index + int(rLen / 2)
 
 // Attente du retour au milieu
 if wDir != 0 and not sig

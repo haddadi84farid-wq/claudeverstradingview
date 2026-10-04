@@ -19,6 +19,7 @@ rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step 
 nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
 maxAge = input.int(150, "Range abandonné après (bougies sans manipulation)", minval = 20, group = gD)
 gM = "Manipulation"
+keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
 swK    = input.float(0.05, "Balayage minimum au-delà du bord (× hauteur du range)", minval = 0, step = 0.05, group = gM)
 backN  = input.int(8, "Fausse cassure : retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
 farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
@@ -105,6 +106,7 @@ if pDir != 0 and bar_index > pB
 hh = ta.highest(high, rLen)
 ll = ta.lowest(low, rLen)
 var int coolUntil = 0
+var int nMan = 0
 if phase == 0 and bar_index > rLen and bar_index > coolUntil
     h = hh - ll
     if h <= rMaxK * atrL and h >= rMinK * atrL
@@ -112,6 +114,7 @@ if phase == 0 and bar_index > rLen and bar_index > coolUntil
         b = touches(rLen, false, ll, 0.15 * h)
         if a >= nTouch and b >= nTouch
             phase := 1
+            nMan := 0
             rTop := hh
             rBot := ll
             rStart := bar_index - rLen + 1
@@ -186,8 +189,13 @@ if sig == 1 and barstate.isconfirmed
          color = color.new(cMn, 10), textcolor = color.black, size = size.small,
          tooltip = "Le prix est allé chercher les stops " + (side == 1 ? "au-dessus du range" : "sous le range") + " puis est revenu dedans : piège pour ceux qui ont joué la cassure.")
     box.set_bgcolor(rBox, color.new(cMn, 85))
-    phase := 0
-    coolUntil := bar_index + int(rLen / 2)
+    nMan += 1
+    if keepR and nMan < 2
+        // le range reste actif : un 2e balayage de l'autre bord reste possible (ex. NFP)
+        phase := 1
+    else
+        phase := 0
+        coolUntil := bar_index + int(rLen / 2)
     if not na(tgt) and pDir == 0
         pDir := d
         pE := entry
