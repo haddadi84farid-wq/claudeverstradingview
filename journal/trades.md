@@ -247,3 +247,7 @@ Dernier test decide a l'avance : stop au-dela du milieu du range. Si negatif -> 
 |---|---|---|---|---|
 | EURUSD 4h (frais 1,2 pip) | bougie de reaction, 2 R | 66 trades, 39 %, +10,2 R (+0,15 R/trade) | 142, 31 %, -17,3 R (-0,12) | 159, 33 %, -13,3 R (-0,08) |
 Seules les 5 etoiles sont positives. A comparer : entree au contact (ordre limite) et or 4h.
+| XAUUSD 4h (frais 0,37) | bougie de reaction, 2 R | 81 trades, 31 %, -8,1 R (-0,10) | 135, 41 %, +21,1 R (+0,16) | ?, 28 %, -28,1 R (-0,21) |
+| XAUUSD 15m | bougie de reaction, 2 R | 54, 26 %, -15,6 R (-0,29) | 125, 35 %, -0,5 R | 136, 31 %, -15,2 R (-0,11) |
+Constat : le classement par etoiles n'est pas stable (5 etoiles positif sur EURUSD, negatif sur l'or ; l'inverse pour 4 etoiles).
+Ecarts de +-0,15 R sur 70-140 trades = dans le bruit statistique (erreur type ~0,13 R). Pas d'avantage prouve des OB en 4 h.
