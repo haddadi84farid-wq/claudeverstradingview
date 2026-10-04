@@ -27,6 +27,7 @@ liqDist  = input.float(3.0, "Étoile 3 — liquidité dangereuse si à moins de 
 fibMode  = input.string("Dernière vague (sommet → creux)", "Étoile 5 — Fibonacci tracé sur", options = ["Dernière vague (sommet → creux)", "N dernières bougies"], group = gS)
 rngLen   = input.int(150, "Étoile 5 — N bougies (si choisi)", minval = 20, maxval = 480, group = gS)
 gT = "Trade"
+entMode  = input.string("Bougie de réaction", "Entrée", options = ["Bougie de réaction", "Au contact de l'OB (ordre limite, comme Kasper)"], group = gT)
 waitBars = input.int(3, "Bougie de réaction : au plus N bougies après le 1er contact", minval = 1, maxval = 10, group = gT)
 slBuf    = input.float(0.3, "Marge du stop au-delà de l'OB (points, ≈ spread)", minval = 0, step = 0.05, group = gT)
 rrTP     = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
@@ -251,6 +252,20 @@ if array.size(obs) > 0
             o.touched := true
             o.touchBar := bar_index
             touch5 := touch5 or o.tStars == 5
+            // Mode Kasper : ordre limite posé au bord de l'OB, exécuté au 1er contact (sans attendre de confirmation)
+            if entMode != "Bougie de réaction"
+                ePx = o.dir == -1 ? o.bot : o.top
+                sl = o.dir == -1 ? o.top + bufEff : o.bot - bufEff
+                rk = math.abs(ePx - sl)
+                if rk > 0
+                    // b = bougie précédente : la bougie du contact compte déjà (stop prioritaire si touché dans la même bougie)
+                    array.push(trs, Trd.new(o.dir, ePx, sl, ePx + o.dir * rrTP * rk, o.tStars, bar_index - 1))
+                    entry5 := entry5 or o.tStars == 5
+                    if o.tStars >= minStars
+                        label.new(bar_index, o.dir == -1 ? high : low, (o.dir == -1 ? "VENTE " : "ACHAT ") + str.tostring(o.tStars) + "/5 (limite)",
+                             style = o.dir == -1 ? label.style_label_down : label.style_label_up, color = o.dir == -1 ? cRed : cGreen,
+                             textcolor = color.white, size = size.tiny)
+                o.done := true
         if o.touched and not o.done and not broken
             react = o.dir == -1 ? close < open and close <= o.top : close > open and close >= o.bot
             if react
