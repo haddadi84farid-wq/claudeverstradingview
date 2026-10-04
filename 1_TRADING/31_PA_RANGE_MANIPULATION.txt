@@ -20,6 +20,7 @@ nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, 
 maxAge = input.int(150, "Range abandonné après (bougies sans manipulation)", minval = 20, group = gD)
 gM = "Manipulation"
 keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
+maxMan = input.int(2, "Manipulations max par range", minval = 1, maxval = 5, group = gM)
 swK    = input.float(0.05, "Balayage minimum au-delà du bord (× hauteur du range)", minval = 0, step = 0.05, group = gM)
 backN  = input.int(8, "Fausse cassure : retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
 farK   = input.float(4.0, "Au-delà de (× hauteur) = vraie cassure (la vraie cassure se juge surtout au TEMPS passé dehors)", minval = 0.5, step = 0.5, group = gM)
@@ -190,7 +191,7 @@ if sig == 1 and barstate.isconfirmed
          tooltip = "Le prix est allé chercher les stops " + (side == 1 ? "au-dessus du range" : "sous le range") + " puis est revenu dedans : piège pour ceux qui ont joué la cassure.")
     box.set_bgcolor(rBox, color.new(cMn, 85))
     nMan += 1
-    if keepR and nMan < 2
+    if keepR and nMan < maxMan
         // le range reste actif : un 2e balayage de l'autre bord reste possible (ex. NFP)
         phase := 1
     else
