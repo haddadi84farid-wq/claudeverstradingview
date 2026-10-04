@@ -239,3 +239,5 @@ M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30
 |---|---|---|---|---|---|
 | defaut (toute cloture hors du range, stop 0,5 pt au-dela de l'OB) | 109 | 11,9 % | 0,85 | -106 $ (-10,6 %) | 21,5 % |
 Prochain test decide a l'avance : cassure = corps >= 1 ATR (vraie cassure institutionnelle), M5 puis M15.
+| cassure corps >= 1 ATR + pas de cassure pendant le NFP (M15, mai -> oct.) | 57 | 8,8 % | 0,53 | -165 $ (-16,5 %) | 18,7 % |
+Dernier test decide a l'avance : stop au-dela du milieu du range. Si negatif -> abandon de la continuation, on garde BT AMD (retournement).
