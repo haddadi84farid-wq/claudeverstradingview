@@ -206,8 +206,6 @@ if strategy.position_size != 0 and tId != "" and strategy.opentrades > 0 and str
         if tStage <= 1
             strategy.exit("TP2", tId, qty_percent = 33, stop = tS, limit = t2)
         strategy.exit("TP3", tId, qty_percent = 34, stop = tS, limit = t3)
-else if strategy.position_size == 0
-    tId := ""
 
 // Fin de période : tout fermer
 if time > tEnd and strategy.position_size != 0
