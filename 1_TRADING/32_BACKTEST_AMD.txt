@@ -85,11 +85,11 @@ if phase >= 1
     if not na(rBox)
         box.set_right(rBox, bar_index)
     if phase == 1
-        if high > rTop + swK * h and close <= rTop
+        if high > rTop + swK * h and close <= rTop and close >= rBot and not (low < rBot - swK * h)
             side := 1
             ext := high
             sig := true
-        else if low < rBot - swK * h and close >= rBot
+        else if low < rBot - swK * h and close >= rBot and close <= rTop and not (high > rTop + swK * h)
             side := -1
             ext := low
             sig := true
