@@ -1,0 +1,187 @@
+//@version=6
+// BACKTEST « RANGE → CASSURE → RETOUR SUR L'OB » (stratégie dessinée par Farid), sur une PÉRIODE CHOISIE.
+// À créer comme NOUVEAU script STRATÉGIE (pensé pour le M5), puis ouvrir le « Testeur de stratégie ».
+// Règles (version VENTE ; l'ACHAT est l'inverse) :
+//  1. RANGE : prix enfermé sur N bougies (hauteur 1,5 à 4 ATR 50), haut ET bas touchés ≥ 2 fois.
+//  2. CASSURE (« manipulation ») : une bougie CLÔTURE sous le bas du range (option : grosse bougie ≥ X ATR).
+//  3. OB = la DERNIÈRE bougie verte avant la grosse bougie de cassure (zone de son plus bas à son plus haut).
+//  4. ENTRÉE : ordre limite VENTE au bas de l'OB, dès que le prix remonte le toucher.
+//  5. STOP : au-dessus du haut de l'OB (+ marge).
+//  6. TP1 = le plus bas atteint par la cassure avant l'entrée ; TP2 = TP1 − 1 hauteur de range ; TP3 = TP1 − 2 hauteurs.
+//     Stop remonté : TP1 touché → stop à l'entrée ; TP2 touché → stop sur TP1. (Option : 1/3 à chaque TP.)
+//  7. ANNULATION : clôture au-dessus de l'OB avant l'entrée, ou OB pas touché après N bougies.
+// Taille = risque fixe en % du capital. Frais 0,37 point par aller-retour. Ne passe AUCUN ordre réel.
+strategy("Backtest range + OB (Farid)", shorttitle = "BT RANGE OB",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_boxes_count = 300, max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période et gestion"
+tStart  = input.time(timestamp("2026-07-01T00:00"), "Début", group = gP)
+tEnd    = input.time(timestamp("2026-10-03T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+exitMode = input.string("Tout garder, stop remonté à chaque TP", "Sorties", options = ["Tout garder, stop remonté à chaque TP", "1/3 à chaque TP + stop remonté"], group = gP)
+gD = "Range"
+rLen   = input.int(24, "Range : nombre de bougies", minval = 10, maxval = 200, group = gD)
+rMaxK  = input.float(4.0, "Range : hauteur max (× ATR 50)", minval = 1, step = 0.5, group = gD)
+rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step = 0.5, group = gD)
+nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
+maxAge = input.int(150, "Range abandonné après (bougies)", minval = 20, group = gD)
+gO = "Cassure et OB"
+dispK  = input.float(0.0, "Cassure : corps minimum de la bougie (× ATR 50, 0 = toute clôture dehors)", minval = 0, step = 0.25, group = gO)
+obLook = input.int(10, "OB : chercher la dernière bougie opposée sur (bougies)", minval = 1, maxval = 30, group = gO)
+bufPts = input.float(0.5, "Marge du stop au-delà de l'OB (points)", minval = 0, step = 0.1, group = gO)
+waitN  = input.int(36, "Annuler si l'OB n'est pas touché après (bougies)", minval = 2, maxval = 200, group = gO)
+
+cRg = #2962FF
+cOb = #FF9800
+cUp = #089981
+cDn = #F23645
+
+inWin = time >= tStart and time <= tEnd
+atrL = ta.atr(50)
+hh = ta.highest(high, rLen)
+ll = ta.lowest(low, rLen)
+fmt(float v) => str.tostring(v, format.mintick)
+
+touches(int n, bool top, float lvl, float tol) =>
+    int c = 0
+    int last = -10
+    for k = n - 1 to 0
+        hit = top ? high[k] >= lvl - tol : low[k] <= lvl + tol
+        if hit and (n - 1 - k) - last >= 3
+            c += 1
+            last := n - 1 - k
+    c
+
+// phase : 0 recherche, 1 range, 3 attente du retour sur l'OB (ordre limite posé)
+var int   phase = 0
+var float rTop = na
+var float rBot = na
+var int   rStart = na
+var int   coolUntil = 0
+var box   rBox = na
+var int   dir = 0
+var float obT = na
+var float obB = na
+var float ext = na
+var int   wStart = na
+var float rH = na
+var box   oBox = na
+// trade
+var float tE = na
+var float tS = na
+var float t1 = na
+var float t2 = na
+var float t3 = na
+var int   tStage = 0
+var string tId = ""
+
+// ---------- 1. Range ----------
+if phase == 0 and bar_index > rLen and bar_index > coolUntil and strategy.position_size == 0
+    h = hh - ll
+    if h <= rMaxK * atrL and h >= rMinK * atrL
+        if touches(rLen, true, hh, 0.15 * h) >= nTouch and touches(rLen, false, ll, 0.15 * h) >= nTouch
+            phase := 1
+            rTop := hh
+            rBot := ll
+            rStart := bar_index - rLen + 1
+            rBox := inWin ? box.new(rStart, rTop, bar_index, rBot, border_color = color.new(cRg, 30), bgcolor = color.new(cRg, 90)) : na
+
+// ---------- 2. Cassure + OB ----------
+if phase == 1
+    if not na(rBox)
+        box.set_right(rBox, bar_index)
+    bodyOk = math.abs(close - open) >= dispK * atrL
+    brkDn = close < rBot and bodyOk
+    brkUp = close > rTop and bodyOk
+    if brkDn or brkUp
+        d = brkDn ? -1 : 1
+        // OB = dernière bougie opposée (verte pour une vente, rouge pour un achat) avant la bougie de cassure
+        int kOb = na
+        for k = 1 to obLook
+            if na(kOb) and (d == -1 ? close[k] > open[k] : close[k] < open[k])
+                kOb := k
+        dirOk = dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+        if not na(kOb) and dirOk and inWin
+            dir := d
+            obT := high[kOb]
+            obB := low[kOb]
+            ext := d == -1 ? low : high
+            rH := rTop - rBot
+            wStart := bar_index
+            phase := 3
+            oBox := box.new(bar_index - kOb, obT, bar_index + 10, obB, border_color = cOb, bgcolor = color.new(cOb, 75))
+            if not na(rBox)
+                box.set_bgcolor(rBox, color.new(d == -1 ? cDn : cUp, 88))
+        else
+            phase := 0
+            coolUntil := bar_index + int(rLen / 2)
+    else if bar_index - rStart > maxAge
+        phase := 0
+        coolUntil := bar_index + int(rLen / 2)
+
+// ---------- 3. Attente du retour sur l'OB : ordre limite ----------
+if phase == 3 and strategy.position_size == 0
+    if not na(oBox)
+        box.set_right(oBox, bar_index)
+    // extrême de la cassure = futur TP1
+    ext := dir == -1 ? math.min(ext, low) : math.max(ext, high)
+    invalid = dir == -1 ? close > obT : close < obB
+    if invalid or bar_index - wStart > waitN
+        strategy.cancel("Vente OB")
+        strategy.cancel("Achat OB")
+        phase := 0
+        coolUntil := bar_index + int(rLen / 2)
+    else
+        entry = dir == -1 ? obB : obT
+        stp = dir == -1 ? obT + bufPts : obB - bufPts
+        rk = math.abs(entry - stp)
+        qty = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        // le TP1 (extrême de la cassure) doit être du bon côté de l'entrée
+        if qty > 0 and (dir == -1 ? ext < entry : ext > entry)
+            tId := dir == -1 ? "Vente OB" : "Achat OB"
+            strategy.entry(tId, dir == -1 ? strategy.short : strategy.long, qty = qty, limit = entry)
+            tE := entry
+            tS := stp
+            t1 := ext
+            t2 := dir == -1 ? ext - rH : ext + rH
+            t3 := dir == -1 ? ext - 2 * rH : ext + 2 * rH
+            tStage := 0
+            // sorties posées tout de suite : actives dès que l'ordre limite est exécuté
+            if exitMode == "Tout garder, stop remonté à chaque TP"
+                strategy.exit("Sortie", tId, stop = tS, limit = t3)
+            else
+                strategy.exit("TP1", tId, qty_percent = 33, stop = tS, limit = t1)
+                strategy.exit("TP2", tId, qty_percent = 33, stop = tS, limit = t2)
+                strategy.exit("TP3", tId, qty_percent = 34, stop = tS, limit = t3)
+
+// ---------- 4. Gestion : stop remonté à chaque TP ----------
+if strategy.position_size != 0 and strategy.opentrades > 0 and strategy.opentrades.entry_id(0) == tId
+    if phase == 3
+        phase := 0
+        coolUntil := bar_index + int(rLen / 2)
+        label.new(bar_index, tE, (dir == -1 ? "VENTE OB " : "ACHAT OB ") + fmt(tE) + "\nSL " + fmt(tS) + "\nTP1 " + fmt(t1) + " | TP2 " + fmt(t2) + " | TP3 " + fmt(t3),
+             style = dir == -1 ? label.style_label_down : label.style_label_up, color = dir == -1 ? cDn : cUp, textcolor = color.white, size = size.tiny)
+    up = strategy.position_size > 0
+    if tStage == 0 and (up ? high >= t1 : low <= t1)
+        tStage := 1
+        tS := tE
+    if tStage == 1 and (up ? high >= t2 : low <= t2)
+        tStage := 2
+        tS := t1
+    if exitMode == "Tout garder, stop remonté à chaque TP"
+        strategy.exit("Sortie", tId, stop = tS, limit = t3)
+    else
+        if tStage == 0
+            strategy.exit("TP1", tId, qty_percent = 33, stop = tS, limit = t1)
+        if tStage <= 1
+            strategy.exit("TP2", tId, qty_percent = 33, stop = tS, limit = t2)
+        strategy.exit("TP3", tId, qty_percent = 34, stop = tS, limit = t3)
+
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")

@@ -70,6 +70,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            cassure puis retour) et propose le trade de distribution (SL au-dela du balayage, TP milieu / bord oppose).
 - 32_BACKTEST_AMD.txt : STRATEGIE (Testeur de strategie) du schema range -> manipulation -> distribution, sur une periode
                            choisie (debut / fin), risque en % du capital, frais 0,37 pt, achats / ventes / les deux.
+- 33_BACKTEST_RANGE_OB.txt : STRATEGIE de Farid (M5) : range -> cassure -> ordre limite sur l'OB (derniere bougie opposee),
+                           stop au-dela de l'OB, TP1 = extreme de la cassure, TP2/TP3 = +1/+2 hauteurs, stop remonte.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
