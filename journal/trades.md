@@ -233,3 +233,9 @@ M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30
 | BT AMD mode « milieu du range », tout garder + stop remonte, risque 1 % | juillet -> 2 oct. 2026, M15 | 42 | 35,7 % | 4,06 | +162 $ (+16 %) | 4,1 % |
 | BT AMD milieu + range garde apres 1re manipulation | juillet -> 2 oct. 2026, M15 | 54 | 38,9 % | 3,06 | +158 $ (+16 %) | 3,5 % |
 | BT AMD milieu, balayage = cloture dans le range | juillet -> 2 oct. 2026, M15 | 52 | 38,5 % | 3,07 | +157 $ (+16 %) | 3,4 % |
+
+## Test BT RANGE OB (strategie dessinee par Farid) — XAUUSD OANDA M5, 10 aout -> 2 oct. 2026, risque 1 %, frais 0,37
+| Reglages | Trades | Gagnes | Facteur de profit | P&L | Baisse max |
+|---|---|---|---|---|---|
+| defaut (toute cloture hors du range, stop 0,5 pt au-dela de l'OB) | 109 | 11,9 % | 0,85 | -106 $ (-10,6 %) | 21,5 % |
+Prochain test decide a l'avance : cassure = corps >= 1 ATR (vraie cassure institutionnelle), M5 puis M15.
