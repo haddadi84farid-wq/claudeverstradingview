@@ -3,7 +3,8 @@
 // À créer comme NOUVEAU script STRATÉGIE (pensé pour le M5), puis ouvrir le « Testeur de stratégie ».
 // Règles (version VENTE ; l'ACHAT est l'inverse) :
 //  1. RANGE : prix enfermé sur N bougies (hauteur 1,5 à 4 ATR 50), haut ET bas touchés ≥ 2 fois.
-//  2. CASSURE (« manipulation ») : une bougie CLÔTURE sous le bas du range (option : grosse bougie ≥ X ATR).
+//  2. CASSURE (« manipulation ») : une GROSSE bougie (corps ≥ 1 ATR 50) CLÔTURE sous le bas du range,
+//     en dehors du NFP (les cassures d'annonce sont très souvent fausses).
 //  3. OB = la DERNIÈRE bougie verte avant la grosse bougie de cassure (zone de son plus bas à son plus haut).
 //  4. ENTRÉE : ordre limite VENTE au bas de l'OB, dès que le prix remonte le toucher.
 //  5. STOP : au-dessus du haut de l'OB (+ marge).
@@ -31,7 +32,8 @@ rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step 
 nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
 maxAge = input.int(150, "Range abandonné après (bougies)", minval = 20, group = gD)
 gO = "Cassure et OB"
-dispK  = input.float(0.0, "Cassure : corps minimum de la bougie (× ATR 50, 0 = toute clôture dehors)", minval = 0, step = 0.25, group = gO)
+dispK  = input.float(1.0, "Cassure : corps minimum de la bougie (× ATR 50, 0 = toute clôture dehors)", minval = 0, step = 0.25, group = gO)
+noNews = input.bool(true, "Ignorer les cassures pendant le NFP (30 min avant → 1 h après)", group = gO)
 obLook = input.int(10, "OB : chercher la dernière bougie opposée sur (bougies)", minval = 1, maxval = 30, group = gO)
 bufPts = input.float(0.5, "Marge du stop au-delà de l'OB (points)", minval = 0, step = 0.1, group = gO)
 waitN  = input.int(36, "Annuler si l'OB n'est pas touché après (bougies)", minval = 2, maxval = 200, group = gO)
@@ -46,6 +48,17 @@ atrL = ta.atr(50)
 hh = ta.highest(high, rLen)
 ll = ta.lowest(low, rLen)
 fmt(float v) => str.tostring(v, format.mintick)
+
+// NFP = 1er vendredi du mois, 8:30 New York (14:30 Paris)
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+inNews = time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 60 * 60000
 
 touches(int n, bool top, float lvl, float tol) =>
     int c = 0
@@ -96,8 +109,9 @@ if phase == 1
     if not na(rBox)
         box.set_right(rBox, bar_index)
     bodyOk = math.abs(close - open) >= dispK * atrL
-    brkDn = close < rBot and bodyOk
-    brkUp = close > rTop and bodyOk
+    newsOk = not (noNews and inNews)
+    brkDn = close < rBot and bodyOk and newsOk
+    brkUp = close > rTop and bodyOk and newsOk
     if brkDn or brkUp
         d = brkDn ? -1 : 1
         // OB = dernière bougie opposée (verte pour une vente, rouge pour un achat) avant la bougie de cassure
