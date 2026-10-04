@@ -220,3 +220,13 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 
 Conclusion (regle fixee avant le test) : negatif en M5 et en M15 -> on arrete d'automatiser ces regles.
 Les indicateurs 24 a 29 restent des outils de lecture ; le trader decide. Methode mesuree positive : tendance Daily 20/10.
+
+## Test BT AMD (range -> manipulation -> distribution) — 04/10/2026, XAUUSD OANDA M15
+
+| Test | Periode reelle | Trades | Gagnes | Facteur de profit | P&L | Baisse max |
+|---|---|---|---|---|---|---|
+| Strategie BT AMD, risque 1 %, frais 0,37 | debut juillet -> 2 oct. 2026 (historique M15 dispo) | 79 | 45,6 % | 1,945 | +533 $ (+53 %) | 7,8 % |
+| Indicateur PA AMD (stop prioritaire si meme bougie) | historique du graphique | 133 | 36 % | - | R moyen +0,21 | - |
+
+1er resultat positif de toutes les methodes intraday testees. A confirmer AVANT tout argent reel :
+M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30 trades en forward test (paper, 0,5 %).
