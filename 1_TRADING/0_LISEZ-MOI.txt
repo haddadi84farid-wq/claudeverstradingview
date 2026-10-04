@@ -66,6 +66,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            avalement, pin bar, etoile matin/soir, bougie de force ; tableau des resultats reels (1,5 R, frais).
 - 30_PA_BOT_CONFLUENCE.txt : LE BOT : combine tendance + zone S/R + bougie de rejet + annonces + objectif degage (R:R >= 1,5).
                            Checklist 5 regles en direct, propose ACHAT/VENTE avec SL et TP, resultats sur l'historique. Ne passe aucun ordre.
+- 31_PA_RANGE_MANIPULATION.txt : PA AMD — detecte le range (accumulation), la manipulation (balayage d'un bord / fausse
+                           cassure puis retour) et propose le trade de distribution (SL au-dela du balayage, TP milieu / bord oppose).
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

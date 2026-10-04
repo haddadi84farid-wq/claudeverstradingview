@@ -1,0 +1,222 @@
+//@version=6
+// RANGE → MANIPULATION → DISTRIBUTION (schéma « AMD » / Wyckoff : spring et upthrust)
+// 1. ACCUMULATION : le robot repère un RANGE = prix enfermé (hauteur ≤ 4 ATR) sur N bougies, haut ET bas touchés
+//    au moins 2 fois chacun. Les institutionnels y construisent leur position sans faire bouger le prix.
+// 2. MANIPULATION : le prix sort du range pour aller chercher les stops (balayage d'un bord), puis REVIENT dedans :
+//    • mèche qui dépasse et clôture qui revient dans la même bougie, ou
+//    • fausse cassure : clôture dehors, puis retour dans le range en moins de N bougies (et pas plus loin que 2 hauteurs).
+//    Si le prix reste dehors (ou part trop loin) = vraie cassure : pas de trade.
+// 3. DISTRIBUTION : le vrai mouvement part dans l'autre sens. Plan proposé à la clôture de retour dans le range :
+//    entrée = clôture, stop = au-delà de l'extrême de la manipulation, TP1 = milieu du range, TP2 = bord opposé,
+//    TP3 = bord opposé + 1 hauteur. Objectif du test = TP2 si R:R ≥ 1, sinon TP3 si R:R ≥ 1, sinon pas de trade.
+// Tableau : état en direct + résultats sur l'historique (frais inclus). Ne passe AUCUN ordre.
+indicator("Range → manipulation → distribution", shorttitle = "PA AMD", overlay = true, max_boxes_count = 100, max_lines_count = 100, max_labels_count = 200, max_bars_back = 500)
+
+gD = "Range"
+rLen   = input.int(24, "Range : nombre de bougies", minval = 10, maxval = 200, group = gD)
+rMaxK  = input.float(4.0, "Range : hauteur max (× ATR 50)", minval = 1, step = 0.5, group = gD)
+rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step = 0.5, group = gD)
+nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
+maxAge = input.int(150, "Range abandonné après (bougies sans manipulation)", minval = 20, group = gD)
+gM = "Manipulation"
+swK    = input.float(0.05, "Balayage minimum au-delà du bord (× hauteur du range)", minval = 0, step = 0.05, group = gM)
+backN  = input.int(8, "Fausse cassure : retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
+farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
+gT = "Plan et test"
+bufK   = input.float(0.2, "Marge du stop au-delà de l'extrême (× ATR 50)", minval = 0, step = 0.05, group = gT)
+costPts = input.float(0.37, "Frais par trade (points)", minval = 0, step = 0.01, group = gT)
+showTb = input.bool(true, "Afficher le tableau", group = gT)
+
+cRg = #2962FF
+cUp = #089981
+cDn = #F23645
+cMn = #FF9800
+
+atrL = ta.atr(50)
+fmt(float v) => str.tostring(v, format.mintick)
+
+// NFP (1er vendredi 8:30 New York) : signalé, pas bloquant (les manipulations ont souvent lieu sur les annonces)
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+isNfp = time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 60 * 60000
+
+// Compte les contacts distincts (séparés d'au moins 3 bougies) d'un bord sur les n dernières bougies
+touches(int n, bool top, float lvl, float tol) =>
+    int c = 0
+    int last = -10
+    for k = n - 1 to 0
+        hit = top ? high[k] >= lvl - tol : low[k] <= lvl + tol
+        if hit and (n - 1 - k) - last >= 3
+            c += 1
+            last := n - 1 - k
+    c
+
+// ---------- État ----------
+// phase : 0 recherche, 1 range, 2 sortie en cours (cassure ou manipulation ?)
+var int   phase = 0
+var float rTop = na
+var float rBot = na
+var int   rStart = na
+var int   tT = 0
+var int   tB = 0
+var int   side = 0
+var float ext = na
+var int   outN = 0
+var box   rBox = na
+var label rLbl = na
+var string lastEvt = ""
+// trade en cours
+var int   pDir = 0
+var float pE = na
+var float pS = na
+var float pT = na
+var int   pB = na
+var int   nT = 0
+var int   nW = 0
+var float sumR = 0.0
+var line  l1 = na
+var line  l2 = na
+var line  l3 = na
+var line  lS = na
+
+// ---------- Suivi du trade ----------
+if pDir != 0 and bar_index > pB
+    float res = na
+    rk = math.abs(pE - pS)
+    if pDir == 1 ? low <= pS : high >= pS
+        res := -1 - costPts / rk
+    else if pDir == 1 ? high >= pT : low <= pT
+        res := math.abs(pT - pE) / rk - costPts / rk
+    if not na(res)
+        nT += 1
+        nW += res > 0 ? 1 : 0
+        sumR += res
+        label.new(bar_index, pDir == 1 ? high : low, (res > 0 ? "✓ +" : "✗ ") + str.tostring(res, "#.#") + " R", style = pDir == 1 ? label.style_label_down : label.style_label_up,
+             color = color.new(res > 0 ? cUp : cDn, 40), textcolor = color.white, size = size.small)
+        pDir := 0
+
+// ---------- 1. Détection du range ----------
+hh = ta.highest(high, rLen)
+ll = ta.lowest(low, rLen)
+var int coolUntil = 0
+if phase == 0 and bar_index > rLen and bar_index > coolUntil
+    h = hh - ll
+    if h <= rMaxK * atrL and h >= rMinK * atrL
+        a = touches(rLen, true, hh, 0.15 * h)
+        b = touches(rLen, false, ll, 0.15 * h)
+        if a >= nTouch and b >= nTouch
+            phase := 1
+            rTop := hh
+            rBot := ll
+            rStart := bar_index - rLen + 1
+            tT := a
+            tB := b
+            rBox := box.new(rStart, rTop, bar_index, rBot, border_color = color.new(cRg, 20), bgcolor = color.new(cRg, 88), border_width = 1)
+            rLbl := label.new(rStart, rTop, "RANGE (accumulation)  haut ×" + str.tostring(a) + " / bas ×" + str.tostring(b), style = label.style_label_lower_left,
+                 color = color.new(cRg, 30), textcolor = color.white, size = size.small,
+                 tooltip = "Les institutionnels construisent leur position dans ce range. On attend qu'un bord soit balayé (manipulation) puis que le prix revienne dedans.")
+            lastEvt := "Range détecté " + fmt(rBot) + " – " + fmt(rTop)
+
+// ---------- 2. Manipulation / cassure ----------
+float sig = 0
+if phase >= 1
+    h = rTop - rBot
+    box.set_right(rBox, bar_index)
+    if phase == 1
+        upSweep = high > rTop + swK * h
+        dnSweep = low < rBot - swK * h
+        if upSweep and close <= rTop
+            side := 1
+            ext := high
+            sig := 1
+        else if dnSweep and close >= rBot
+            side := -1
+            ext := low
+            sig := 1
+        else if close > rTop or close < rBot
+            phase := 2
+            side := close > rTop ? 1 : -1
+            ext := side == 1 ? high : low
+            outN := 1
+        else if bar_index - rStart > maxAge
+            phase := 0
+            coolUntil := bar_index + int(rLen / 2)
+            box.set_border_style(rBox, line.style_dotted)
+            lastEvt := "Range abandonné (trop long sans manipulation)"
+        else
+            // contacts supplémentaires du range
+            tT := high >= rTop - 0.15 * h and high[1] < rTop - 0.15 * h ? tT + 1 : tT
+            tB := low <= rBot + 0.15 * h and low[1] > rBot + 0.15 * h ? tB + 1 : tB
+    else if phase == 2
+        ext := side == 1 ? math.max(ext, high) : math.min(ext, low)
+        outN += 1
+        back = side == 1 ? close <= rTop : close >= rBot
+        tooFar = side == 1 ? ext > rTop + farK * h : ext < rBot - farK * h
+        if back and not tooFar
+            sig := 1
+        else if tooFar or outN > backN
+            phase := 0
+            coolUntil := bar_index + int(rLen / 2)
+            box.set_bgcolor(rBox, color.new(side == 1 ? cUp : cDn, 85))
+            label.new(bar_index, side == 1 ? high : low, "VRAIE CASSURE " + (side == 1 ? "↑" : "↓") + " (pas de manipulation)", style = side == 1 ? label.style_label_down : label.style_label_up,
+                 color = color.new(color.gray, 20), textcolor = color.white, size = size.small)
+            lastEvt := "Vraie cassure " + (side == 1 ? "haussière" : "baissière") + " : pas de trade de retour"
+
+// ---------- 3. Signal de distribution ----------
+if sig == 1 and barstate.isconfirmed
+    h = rTop - rBot
+    d = -side
+    entry = close
+    stp = side == 1 ? ext + bufK * atrL : ext - bufK * atrL
+    rk = math.abs(entry - stp)
+    tp1 = (rTop + rBot) / 2
+    tp2 = d == -1 ? rBot : rTop
+    tp3 = d == -1 ? rBot - h : rTop + h
+    rr2 = rk > 0 ? math.abs(tp2 - entry) / rk : 0
+    rr3 = rk > 0 ? math.abs(tp3 - entry) / rk : 0
+    tgt = rr2 >= 1 ? tp2 : rr3 >= 1 ? tp3 : na
+    nfpTxt = isNfp ? " (NFP)" : ""
+    label.new(bar_index, side == 1 ? ext : ext, "MANIPULATION " + (side == 1 ? "↑ haut balayé" : "↓ bas balayé") + nfpTxt, style = side == 1 ? label.style_label_down : label.style_label_up,
+         color = color.new(cMn, 10), textcolor = color.black, size = size.small,
+         tooltip = "Le prix est allé chercher les stops " + (side == 1 ? "au-dessus du range" : "sous le range") + " puis est revenu dedans : piège pour ceux qui ont joué la cassure.")
+    box.set_bgcolor(rBox, color.new(cMn, 85))
+    phase := 0
+    coolUntil := bar_index + int(rLen / 2)
+    if not na(tgt) and pDir == 0
+        pDir := d
+        pE := entry
+        pS := stp
+        pT := tgt
+        pB := bar_index
+        line.delete(l1)
+        line.delete(l2)
+        line.delete(l3)
+        line.delete(lS)
+        lS := line.new(bar_index, stp, bar_index + 25, stp, color = cDn, width = 2)
+        l1 := line.new(bar_index, tp1, bar_index + 25, tp1, color = color.new(cUp, 40), style = line.style_dashed)
+        l2 := line.new(bar_index, tp2, bar_index + 25, tp2, color = cUp, width = 2)
+        l3 := line.new(bar_index, tp3, bar_index + 25, tp3, color = color.new(cUp, 40), style = line.style_dashed)
+        txt = (d == 1 ? "ACHAT " : "VENTE ") + fmt(entry) + " (distribution)\nSL " + fmt(stp) + " | TP1 " + fmt(tp1) + " | TP2 " + fmt(tp2) + " | TP3 " + fmt(tp3)
+        label.new(bar_index, entry, txt, style = d == 1 ? label.style_label_left : label.style_label_left, color = d == 1 ? cUp : cDn, textcolor = color.white, size = size.normal,
+             tooltip = "Retour dans le range après la manipulation. Entrée à la clôture, stop au-delà de l'extrême balayé. TP1 = milieu, TP2 = bord opposé, TP3 = bord opposé + 1 hauteur. Objectif du test : " + fmt(tgt))
+        lastEvt := (d == 1 ? "ACHAT " : "VENTE ") + fmt(entry) + " | SL " + fmt(stp) + " | TP2 " + fmt(tp2) + " | TP3 " + fmt(tp3)
+    else
+        lastEvt := "Manipulation " + (side == 1 ? "haute" : "basse") + " mais stop trop loin (R:R < 1) : pas de trade"
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 1, 4, bgcolor = color.new(#131722, 5), border_color = color.new(color.gray, 60), border_width = 1)
+if barstate.islast and showTb
+    st = phase == 1 ? "RANGE en cours " + fmt(rBot) + " – " + fmt(rTop) + " (haut ×" + str.tostring(tT) + ", bas ×" + str.tostring(tB) + ") → attendre un balayage d'un bord" :
+         phase == 2 ? "SORTIE " + (side == 1 ? "par le haut" : "par le bas") + " en cours : manipulation si retour dans le range (" + str.tostring(backN - outN) + " bougies max)" :
+         "Pas de range en cours"
+    table.cell(tb, 0, 0, "PA AMD — range → manipulation → distribution", text_color = color.white, bgcolor = color.new(cRg, 30), text_size = size.small)
+    table.cell(tb, 0, 1, st, text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(tb, 0, 2, "Dernier évènement : " + lastEvt, text_color = color.white, text_size = size.small, text_halign = text.align_left)
+    table.cell(tb, 0, 3, "Historique : " + str.tostring(nT) + " trades | " + (nT > 0 ? str.tostring(math.round(100.0 * nW / nT)) + " % gagnés | R moyen " + str.tostring(sumR / nT, "#.##") : "-"),
+         text_color = nT > 0 and sumR > 0 ? cUp : color.gray, text_size = size.small, text_halign = text.align_left)
