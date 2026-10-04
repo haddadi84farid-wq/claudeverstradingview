@@ -68,6 +68,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            Checklist 5 regles en direct, propose ACHAT/VENTE avec SL et TP, resultats sur l'historique. Ne passe aucun ordre.
 - 31_PA_RANGE_MANIPULATION.txt : PA AMD — detecte le range (accumulation), la manipulation (balayage d'un bord / fausse
                            cassure puis retour) et propose le trade de distribution (SL au-dela du balayage, TP milieu / bord oppose).
+- 32_BACKTEST_AMD.txt : STRATEGIE (Testeur de strategie) du schema range -> manipulation -> distribution, sur une periode
+                           choisie (debut / fin), risque en % du capital, frais 0,37 pt, achats / ventes / les deux.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

@@ -1,0 +1,139 @@
+//@version=6
+// BACKTEST « RANGE → MANIPULATION → DISTRIBUTION » (même règles que l'indicateur PA AMD), sur une PÉRIODE CHOISIE.
+// À créer comme NOUVEAU script STRATÉGIE, puis ouvrir le « Testeur de stratégie » (en bas) : performance, liste des trades.
+// Règles :
+//  1. Range = prix enfermé sur N bougies (hauteur entre 1,5 et 4 ATR 50), haut ET bas touchés ≥ 2 fois.
+//  2. Manipulation = un bord est balayé (mèche au-delà puis clôture dedans, ou clôture dehors puis retour en ≤ 8 bougies,
+//     sans aller au-delà de 2 hauteurs). Sinon = vraie cassure, pas de trade.
+//  3. Trade dans l'autre sens à la clôture de retour : stop au-delà de l'extrême balayé (+ 0,2 ATR),
+//     objectif = bord opposé (TP2) si R:R ≥ 1, sinon bord opposé + 1 hauteur (TP3) si R:R ≥ 1, sinon pas de trade.
+//  4. Taille = risque fixe en % du capital. Frais réalistes : 0,37 point par aller-retour (spread + commission).
+// Trades seulement entre la date de début et la date de fin. Ne passe AUCUN ordre réel.
+strategy("Backtest AMD — range, manipulation, distribution", shorttitle = "BT AMD",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_boxes_count = 200, max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période du test"
+tStart = input.time(timestamp("2026-07-01T00:00"), "Début", group = gP)
+tEnd   = input.time(timestamp("2026-10-03T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+gD = "Range"
+rLen   = input.int(24, "Range : nombre de bougies", minval = 10, maxval = 200, group = gD)
+rMaxK  = input.float(4.0, "Range : hauteur max (× ATR 50)", minval = 1, step = 0.5, group = gD)
+rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step = 0.5, group = gD)
+nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
+maxAge = input.int(150, "Range abandonné après (bougies)", minval = 20, group = gD)
+gM = "Manipulation"
+swK    = input.float(0.05, "Balayage minimum (× hauteur du range)", minval = 0, step = 0.05, group = gM)
+backN  = input.int(8, "Retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
+farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
+bufK   = input.float(0.2, "Marge du stop (× ATR 50)", minval = 0, step = 0.05, group = gM)
+
+inWin = time >= tStart and time <= tEnd
+atrL = ta.atr(50)
+hh = ta.highest(high, rLen)
+ll = ta.lowest(low, rLen)
+
+touches(int n, bool top, float lvl, float tol) =>
+    int c = 0
+    int last = -10
+    for k = n - 1 to 0
+        hit = top ? high[k] >= lvl - tol : low[k] <= lvl + tol
+        if hit and (n - 1 - k) - last >= 3
+            c += 1
+            last := n - 1 - k
+    c
+
+var int   phase = 0
+var float rTop = na
+var float rBot = na
+var int   rStart = na
+var int   side = 0
+var float ext = na
+var int   outN = 0
+var int   coolUntil = 0
+var box   rBox = na
+
+// 1. Range
+if phase == 0 and bar_index > rLen and bar_index > coolUntil
+    h = hh - ll
+    if h <= rMaxK * atrL and h >= rMinK * atrL
+        if touches(rLen, true, hh, 0.15 * h) >= nTouch and touches(rLen, false, ll, 0.15 * h) >= nTouch
+            phase := 1
+            rTop := hh
+            rBot := ll
+            rStart := bar_index - rLen + 1
+            if inWin
+                rBox := box.new(rStart, rTop, bar_index, rBot, border_color = color.new(#2962FF, 30), bgcolor = color.new(#2962FF, 90))
+
+// 2. Manipulation
+bool sig = false
+if phase >= 1
+    h = rTop - rBot
+    if not na(rBox)
+        box.set_right(rBox, bar_index)
+    if phase == 1
+        if high > rTop + swK * h and close <= rTop
+            side := 1
+            ext := high
+            sig := true
+        else if low < rBot - swK * h and close >= rBot
+            side := -1
+            ext := low
+            sig := true
+        else if close > rTop or close < rBot
+            phase := 2
+            side := close > rTop ? 1 : -1
+            ext := side == 1 ? high : low
+            outN := 1
+        else if bar_index - rStart > maxAge
+            phase := 0
+            rBox := na
+            coolUntil := bar_index + int(rLen / 2)
+    else
+        ext := side == 1 ? math.max(ext, high) : math.min(ext, low)
+        outN += 1
+        back = side == 1 ? close <= rTop : close >= rBot
+        tooFar = side == 1 ? ext > rTop + farK * h : ext < rBot - farK * h
+        if back and not tooFar
+            sig := true
+        else if tooFar or outN > backN
+            phase := 0
+            rBox := na
+            coolUntil := bar_index + int(rLen / 2)
+
+// 3. Distribution : ordre
+if sig
+    h = rTop - rBot
+    d = -side
+    stp = side == 1 ? ext + bufK * atrL : ext - bufK * atrL
+    rk = math.abs(close - stp)
+    tp2 = d == -1 ? rBot : rTop
+    tp3 = d == -1 ? rBot - h : rTop + h
+    rr2 = rk > 0 ? math.abs(tp2 - close) / rk : 0.0
+    rr3 = rk > 0 ? math.abs(tp3 - close) / rk : 0.0
+    tgt = rr2 >= 1 ? tp2 : rr3 >= 1 ? tp3 : na
+    dirOk = dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+    if inWin and dirOk and not na(tgt) and strategy.position_size == 0 and rk > 0
+        qty = math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100
+        if qty > 0
+            id = d == 1 ? "Achat AMD" : "Vente AMD"
+            strategy.entry(id, d == 1 ? strategy.long : strategy.short, qty = qty)
+            strategy.exit("Sortie " + id, id, stop = stp, limit = tgt)
+            label.new(bar_index, d == 1 ? low : high, (d == 1 ? "ACHAT" : "VENTE") + "\nSL " + str.tostring(stp, format.mintick) + "\nTP " + str.tostring(tgt, format.mintick),
+                 style = d == 1 ? label.style_label_up : label.style_label_down, color = d == 1 ? #089981 : #F23645, textcolor = color.white, size = size.tiny)
+    if not na(rBox)
+        box.set_bgcolor(rBox, color.new(#FF9800, 85))
+    phase := 0
+    rBox := na
+    coolUntil := bar_index + int(rLen / 2)
+
+// Fin de période : tout fermer
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")
