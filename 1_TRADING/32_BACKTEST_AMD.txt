@@ -4,7 +4,7 @@
 // Règles :
 //  1. Range = prix enfermé sur N bougies (hauteur entre 1,5 et 4 ATR 50), haut ET bas touchés ≥ 2 fois.
 //  2. Manipulation = un bord est balayé (mèche au-delà puis clôture dedans, ou clôture dehors puis retour en ≤ 8 bougies,
-//     sans aller au-delà de 2 hauteurs). Sinon = vraie cassure, pas de trade.
+//     sans aller au-delà de 4 hauteurs). Sinon = vraie cassure, pas de trade.
 //  3. Trade dans l'autre sens à la clôture de retour : stop au-delà de l'extrême balayé (+ 0,2 ATR),
 //     objectif = bord opposé (TP2) si R:R ≥ 1, sinon bord opposé + 1 hauteur (TP3) si R:R ≥ 1, sinon pas de trade.
 //  4. Taille = risque fixe en % du capital. Frais réalistes : 0,37 point par aller-retour (spread + commission).
@@ -36,7 +36,7 @@ gM = "Manipulation"
 keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
 swK    = input.float(0.05, "Balayage minimum (× hauteur du range)", minval = 0, step = 0.05, group = gM)
 backN  = input.int(8, "Retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
-farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
+farK   = input.float(4.0, "Au-delà de (× hauteur) = vraie cassure (la vraie cassure se juge surtout au TEMPS passé dehors)", minval = 0.5, step = 0.5, group = gM)
 bufK   = input.float(0.2, "Marge du stop (× ATR 50)", minval = 0, step = 0.05, group = gM)
 
 inWin = time >= tStart and time <= tEnd

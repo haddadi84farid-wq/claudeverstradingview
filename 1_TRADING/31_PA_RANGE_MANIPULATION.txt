@@ -4,7 +4,7 @@
 //    au moins 2 fois chacun. Les institutionnels y construisent leur position sans faire bouger le prix.
 // 2. MANIPULATION : le prix sort du range pour aller chercher les stops (balayage d'un bord), puis REVIENT dedans :
 //    • mèche qui dépasse et clôture qui revient dans la même bougie, ou
-//    • fausse cassure : clôture dehors, puis retour dans le range en moins de N bougies (et pas plus loin que 2 hauteurs).
+//    • fausse cassure : clôture dehors, puis retour dans le range en moins de N bougies (et pas plus loin que 4 hauteurs).
 //    Si le prix reste dehors (ou part trop loin) = vraie cassure : pas de trade.
 // 3. DISTRIBUTION : le vrai mouvement part dans l'autre sens. Plan proposé à la clôture de retour dans le range :
 //    entrée = clôture, stop = au-delà de l'extrême de la manipulation, TP1 = milieu du range, TP2 = bord opposé,
@@ -22,7 +22,7 @@ gM = "Manipulation"
 keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
 swK    = input.float(0.05, "Balayage minimum au-delà du bord (× hauteur du range)", minval = 0, step = 0.05, group = gM)
 backN  = input.int(8, "Fausse cassure : retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
-farK   = input.float(2.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
+farK   = input.float(4.0, "Au-delà de (× hauteur) = vraie cassure (la vraie cassure se juge surtout au TEMPS passé dehors)", minval = 0.5, step = 0.5, group = gM)
 gT = "Plan et test"
 bufK   = input.float(0.2, "Marge du stop au-delà de l'extrême (× ATR 50)", minval = 0, step = 0.05, group = gT)
 costPts = input.float(0.37, "Frais par trade (points)", minval = 0, step = 0.01, group = gT)

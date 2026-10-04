@@ -232,3 +232,4 @@ Les indicateurs 24 a 29 restent des outils de lecture ; le trader decide. Method
 M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30 trades en forward test (paper, 0,5 %).
 | BT AMD mode « milieu du range », tout garder + stop remonte, risque 1 % | juillet -> 2 oct. 2026, M15 | 42 | 35,7 % | 4,06 | +162 $ (+16 %) | 4,1 % |
 | BT AMD milieu + range garde apres 1re manipulation | juillet -> 2 oct. 2026, M15 | 54 | 38,9 % | 3,06 | +158 $ (+16 %) | 3,5 % |
+| BT AMD milieu, balayage = cloture dans le range | juillet -> 2 oct. 2026, M15 | 52 | 38,5 % | 3,07 | +157 $ (+16 %) | 3,4 % |
