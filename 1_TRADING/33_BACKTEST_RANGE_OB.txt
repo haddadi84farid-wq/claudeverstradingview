@@ -35,7 +35,7 @@ gO = "Cassure et OB"
 dispK  = input.float(1.0, "Cassure : corps minimum de la bougie (× ATR 50, 0 = toute clôture dehors)", minval = 0, step = 0.25, group = gO)
 noNews = input.bool(true, "Ignorer les cassures pendant le NFP (30 min avant → 1 h après)", group = gO)
 obLook = input.int(10, "OB : chercher la dernière bougie opposée sur (bougies)", minval = 1, maxval = 30, group = gO)
-stopMode = input.string("Au-delà de l'OB", "Stop", options = ["Au-delà de l'OB", "Au-delà du milieu du range"], group = gO)
+stopMode = input.string("Au-delà du milieu du range", "Stop", options = ["Au-delà de l'OB", "Au-delà du milieu du range"], group = gO)
 bufPts = input.float(0.5, "Marge du stop au-delà de l'OB (points)", minval = 0, step = 0.1, group = gO)
 waitN  = input.int(36, "Annuler si l'OB n'est pas touché après (bougies)", minval = 2, maxval = 200, group = gO)
 
