@@ -32,6 +32,14 @@ slBuf    = input.float(0.3, "Marge du stop au-delà de l'OB (points, ≈ spread)
 rrTP     = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
 maxHold  = input.int(96, "Sortie forcée après N bougies", minval = 5, group = gT)
 costPts  = input.float(0.37, "Frais par trade (points : spread + commission)", minval = 0, step = 0.01, group = gT)
+gF = "Forex (utilisé automatiquement sur les paires de devises)"
+costPips = input.float(1.2, "Forex : frais par trade (pips)", minval = 0, step = 0.1, group = gF)
+bufPips  = input.float(2.0, "Forex : marge du stop au-delà de l'OB (pips)", minval = 0, step = 0.5, group = gF)
+// Sur le forex, les « points » de l'or n'ont aucun sens (0,37 = 3 700 pips) : on passe en pips
+isFx = syminfo.type == "forex"
+pipSz = syminfo.mintick * 10
+bufEff = isFx ? bufPips * pipSz : slBuf
+costEff = isFx ? costPips * pipSz : costPts
 gA = "Affichage"
 minStars = input.int(3, "Afficher les OB à partir de (étoiles)", minval = 0, maxval = 5, group = gA)
 maxOb    = input.int(12, "OB suivis au maximum", minval = 1, maxval = 50, group = gA)
@@ -246,7 +254,7 @@ if array.size(obs) > 0
         if o.touched and not o.done and not broken
             react = o.dir == -1 ? close < open and close <= o.top : close > open and close >= o.bot
             if react
-                sl = o.dir == -1 ? o.top + slBuf : o.bot - slBuf
+                sl = o.dir == -1 ? o.top + bufEff : o.bot - bufEff
                 rk = math.abs(close - sl)
                 if rk > 0
                     array.push(trs, Trd.new(o.dir, close, sl, close + o.dir * rrTP * rk, o.tStars, bar_index))
@@ -289,7 +297,7 @@ if array.size(trs) > 0
             else if bar_index - t.b >= maxHold
                 res := (t.d == 1 ? close - t.e : t.e - close) / rk
             if not na(res)
-                res -= costPts / rk
+                res -= costEff / rk
                 if t.st == 5
                     n5 += 1
                     w5 += res > 0 ? 1 : 0
