@@ -72,6 +72,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            choisie (debut / fin), risque en % du capital, frais 0,37 pt, achats / ventes / les deux.
 - 33_BACKTEST_RANGE_OB.txt : STRATEGIE de Farid (M5) : range -> cassure -> ordre limite sur l'OB (derniere bougie opposee),
                            stop au-dela de l'OB, TP1 = extreme de la cassure, TP2/TP3 = +1/+2 hauteurs, stop remonte.
+- 34_OB_ORDER_FLOW_5_ETOILES.txt : OB + ORDER FLOW 5 etoiles (L liquidite, D deplacement+FVG, V volume, delta, P discount/premium)
+                           sur les unites cochees (M15/H1/H4/Jour), zones vierges seulement, confirmation du flux en direct,
+                           tableau : % des zones retouchees qui ont reagi >= 2 R.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
