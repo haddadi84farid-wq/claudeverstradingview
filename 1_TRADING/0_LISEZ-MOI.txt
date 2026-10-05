@@ -75,6 +75,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 34_OB_ORDER_FLOW_5_ETOILES.txt : OB + ORDER FLOW 5 etoiles (L liquidite, D deplacement+FVG, V volume, delta, P discount/premium)
                            sur les unites cochees (M15/H1/H4/Jour), zones vierges seulement, confirmation du flux en direct,
                            tableau : % des zones retouchees qui ont reagi >= 2 R.
+- 35_PROMPT_SCAN_OB.txt : SCAN DES MARCHES par Claude (PC) : lit OB FLOW 5 etoiles sur 13 marches (metaux, forex, indices,
+                           petrole, crypto), classe les meilleures zones a surveiller + plan pour les 3 premieres. Commandes : scan, zoom.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
