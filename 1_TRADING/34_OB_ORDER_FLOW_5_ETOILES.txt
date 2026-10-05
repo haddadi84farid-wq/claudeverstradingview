@@ -1,5 +1,6 @@
 //@version=6
-// OB + ORDER FLOW 5 ÉTOILES — les order blocks qui portent la SIGNATURE des institutionnels, sur les unités choisies.
+// OB + ORDER FLOW 5 ÉTOILES — les order blocks qui portent la SIGNATURE des institutionnels, sur les unités cochées
+// (M1, M3, M5, M15, H1, H4, Jour). Pour ne voir QUE les 5 étoiles : « Afficher les OB à partir de » = 5.
 // Un OB est créé à chaque cassure de structure (dernière bougie opposée avant l'impulsion). Il reçoit 1 étoile par critère :
 //  L  LIQUIDITÉ  : la zone de l'OB a d'abord balayé les plus bas (plus hauts) des 30 bougies précédentes (chasse aux stops).
 //  D  DÉPLACEMENT: l'impulsion qui part de l'OB fait ≥ 1,5 ATR ET laisse un FVG (ordres urgents, prix « jeté »).
@@ -15,6 +16,9 @@
 indicator("OB + order flow 5 étoiles", shorttitle = "OB FLOW 5★", overlay = true, max_boxes_count = 80, max_labels_count = 120, max_bars_back = 500)
 
 gU = "Unités de temps (cocher celles à afficher)"
+use1 = input.bool(false, "M1", group = gU, inline = "u")
+use3 = input.bool(false, "M3", group = gU, inline = "u")
+use5 = input.bool(false, "M5", group = gU, inline = "u")
 use15 = input.bool(false, "M15", group = gU, inline = "u")
 use60 = input.bool(true, "H1", group = gU, inline = "u")
 use240 = input.bool(true, "H4", group = gU, inline = "u")
@@ -170,6 +174,9 @@ obFlow() =>
             out.push(nW.get(q))
     out
 
+r1 = request.security(syminfo.tickerid, "1", obFlow())
+r3 = request.security(syminfo.tickerid, "3", obFlow())
+r5 = request.security(syminfo.tickerid, "5", obFlow())
 r15 = request.security(syminfo.tickerid, "15", obFlow())
 r60 = request.security(syminfo.tickerid, "60", obFlow())
 r240 = request.security(syminfo.tickerid, "240", obFlow())
@@ -181,7 +188,7 @@ var array<label> zLb = array.new<label>()
 var array<float> zTop = array.new<float>()
 var array<float> zBot = array.new<float>()
 var array<int>   zDir = array.new<int>()
-var table tb = table.new(position.bottom_right, 4, 14, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
+var table tb = table.new(position.bottom_right, 4, 23, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
 var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
 ck(float f) => f == 1 ? "✓" : "✗"
 
@@ -245,6 +252,12 @@ if barstate.islast
     zTop.clear()
     zBot.clear()
     zDir.clear()
+    if use1
+        drawTf(r1, "M1")
+    if use3
+        drawTf(r3, "M3")
+    if use5
+        drawTf(r5, "M5")
     if use15
         drawTf(r15, "M15")
     if use60
@@ -254,12 +267,18 @@ if barstate.islast
     if useD
         drawTf(rD, "Jour")
     if showTb
-        table.clear(tb, 0, 0, 3, 13)
+        table.clear(tb, 0, 0, 3, 22)
         table.cell(tb, 0, 0, "Unité", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         table.cell(tb, 1, 0, "Note", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         table.cell(tb, 2, 0, "Retouchées", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         table.cell(tb, 3, 0, "Réaction ≥ 2 R", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         int row = 1
+        if use1
+            row := statRows(r1, "M1", row)
+        if use3
+            row := statRows(r3, "M3", row)
+        if use5
+            row := statRows(r5, "M5", row)
         if use15
             row := statRows(r15, "M15", row)
         if use60

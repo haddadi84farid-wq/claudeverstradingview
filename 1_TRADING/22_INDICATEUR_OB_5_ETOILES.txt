@@ -78,6 +78,7 @@ type Trd
     int   st
     int   b
     label lb
+    float mx = 0.0
 
 var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
 ck(bool b) => b ? "✓" : "✗"
@@ -314,13 +315,20 @@ if array.size(trs) > 0
                 res := rrTP
             else if bar_index - t.b >= maxHold
                 res := (t.d == 1 ? close - t.e : t.e - close) / rk
+            // meilleur gain atteint pendant le trade (en R)
+            t.mx := math.max(t.mx, (t.d == 1 ? high - t.e : t.e - low) / rk)
+            base = (t.d == -1 ? "VENTE " : "ACHAT ") + str.tostring(t.st) + "/5"
             if not na(res)
                 res -= costEff / rk
                 // le signal affiche son résultat (sinon on ne sait pas ce qu'est devenue une zone effacée)
                 if not na(t.lb)
-                    label.set_text(t.lb, label.get_text(t.lb) + (hitSL ? "  ✗ stop −1 R" : hitTP ? "  ✓ objectif +" + str.tostring(rrTP) + " R" : "  ⏱ sortie temps " + str.tostring(res, "#.#") + " R"))
+                    label.set_text(t.lb, base + (hitSL ? "  ✗ stop −1 R (max atteint +" + str.tostring(t.mx, "#.#") + " R)" : hitTP ? "  ✓ objectif +" + str.tostring(rrTP) + " R" : "  ⏱ sortie temps " + str.tostring(res, "#.#") + " R"))
                     if hitSL
                         label.set_color(t.lb, color.new(color.gray, 20))
+            else if not na(t.lb)
+                // trade en cours : R actuel et meilleur R atteint, mis à jour à chaque bougie
+                cur = (t.d == 1 ? close - t.e : t.e - close) / rk
+                label.set_text(t.lb, base + "  EN COURS " + (cur >= 0 ? "+" : "") + str.tostring(cur, "#.#") + " R (max +" + str.tostring(t.mx, "#.#") + " R)")
                 if t.st == 5
                     n5 += 1
                     w5 += res > 0 ? 1 : 0
