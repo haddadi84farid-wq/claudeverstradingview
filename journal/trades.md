@@ -251,3 +251,11 @@ Seules les 5 etoiles sont positives. A comparer : entree au contact (ordre limit
 | XAUUSD 15m | bougie de reaction, 2 R | 54, 26 %, -15,6 R (-0,29) | 125, 35 %, -0,5 R | 136, 31 %, -15,2 R (-0,11) |
 Constat : le classement par etoiles n'est pas stable (5 etoiles positif sur EURUSD, negatif sur l'or ; l'inverse pour 4 etoiles).
 Ecarts de +-0,15 R sur 70-140 trades = dans le bruit statistique (erreur type ~0,13 R). Pas d'avantage prouve des OB en 4 h.
+
+## OB FLOW 5 etoiles — mesure stricte (stop = meche, stop compte en premier), or, 05/10/2026
+| Unite | 5 etoiles | 4 etoiles | 3 et moins |
+|---|---|---|---|
+| M5 | 18 zones, 33 % | 126, 37 % | 1156, 35 % |
+| M15 | 11, 27 % | 48, 33 % | 368, 35 % |
+Seuil 2 R = 34 % avant frais -> tout est au point mort. Les etoiles (liquidite, deplacement, volume, delta, discount) n'ameliorent pas la reaction.
+Conclusion : OB = carte des zones, pas un signal. Avantage mesure seulement sur BT AMD (M15) et tendance Daily 20/10.
