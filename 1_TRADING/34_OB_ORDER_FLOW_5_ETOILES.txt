@@ -9,7 +9,8 @@
 // Seuls les OB VIERGES (pas encore retouchés) sont affichés. Quand le prix revient dedans, l'unité affichée vérifie
 // le flux en direct : « FLUX ✓ » si la bougie montre des acheteurs (vendeurs) agressifs qui reprennent la main.
 // Tableau : pour chaque unité et chaque note, combien de zones ont été retouchées et combien ont donné une réaction ≥ 2 R
-// (entrée au bord, stop au-delà de l'OB) AVANT d'être cassées. Rien n'est « garanti » : le tableau mesure la probabilité.
+// (entrée au bord, stop = MÈCHE au-delà de l'OB, stop compté en premier si les deux arrivent dans la même bougie).
+// Rien n'est « garanti » : le tableau mesure la probabilité. Seuil de rentabilité à 2 R ≈ 34 % (avant frais).
 // Volume : sur un CFD (XAUUSD) c'est un volume de ticks, approché ; sur un future (GC1!) c'est le vrai volume. Ne passe aucun ordre.
 indicator("OB + order flow 5 étoiles", shorttitle = "OB FLOW 5★", overlay = true, max_boxes_count = 80, max_labels_count = 120, max_bars_back = 500)
 
@@ -81,10 +82,11 @@ obFlow() =>
                 if not o.touched and low <= o.top
                     o.touched := true
                     nT.set(o.st, nT.get(o.st) + 1)
-                if o.touched and high >= o.top + 2 * risk
-                    nW.set(o.st, nW.get(o.st) + 1)
+                // stop = mèche sous l'OB (− 0,1 ATR), vérifié AVANT l'objectif (calcul prudent)
+                if low < o.bot - 0.1 * a
                     obs.remove(i)
-                else if close < o.bot
+                else if o.touched and high >= o.top + 2 * risk
+                    nW.set(o.st, nW.get(o.st) + 1)
                     obs.remove(i)
                 else if not o.touched
                     o.ext := math.max(o.ext, high)
@@ -92,10 +94,10 @@ obFlow() =>
                 if not o.touched and high >= o.bot
                     o.touched := true
                     nT.set(o.st, nT.get(o.st) + 1)
-                if o.touched and low <= o.bot - 2 * risk
-                    nW.set(o.st, nW.get(o.st) + 1)
+                if high > o.top + 0.1 * a
                     obs.remove(i)
-                else if close > o.top
+                else if o.touched and low <= o.bot - 2 * risk
+                    nW.set(o.st, nW.get(o.st) + 1)
                     obs.remove(i)
                 else if not o.touched
                     o.ext := math.min(o.ext, low)
