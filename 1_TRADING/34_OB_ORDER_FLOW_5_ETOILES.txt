@@ -6,7 +6,7 @@
 //  V  VOLUME     : le volume de l'impulsion est anormal (une bougie ≥ 1,5 × la moyenne 20).
 //  Δ  DELTA      : l'impulsion est dominée par les agresseurs du bon côté (delta approché ≥ 30 % du volume).
 //  P  PRIX       : l'OB est en zone discount (achat) / premium (vente) de la vague qu'il a créée.
-// Seuls les OB VIERGES (pas encore retouchés) sont affichés. Quand le prix revient dedans, l'unité affichée vérifie
+// OB VIERGES = trait plein ; OB déjà touchés mais pas cassés = pointillés (option). Un OB cassé (mèche au-delà) disparaît. Quand le prix revient dedans, l'unité affichée vérifie
 // le flux en direct : « FLUX ✓ » si la bougie montre des acheteurs (vendeurs) agressifs qui reprennent la main.
 // Tableau : pour chaque unité et chaque note, combien de zones ont été retouchées et combien ont donné une réaction ≥ 2 R
 // (entrée au bord, stop = MÈCHE au-delà de l'OB, stop compté en premier si les deux arrivent dans la même bougie).
@@ -28,6 +28,7 @@ volK = input.float(1.5, "V : volume minimum (× moyenne 20)", minval = 1, step =
 dltK = input.float(0.3, "Δ : delta minimum (part du volume)", minval = 0.05, step = 0.05, group = gS)
 gA = "Affichage"
 extH = input.float(12, "Prolonger à droite (heures)", minval = 1, step = 1, group = gA)
+showTouch = input.bool(true, "Afficher aussi les zones déjà touchées mais pas cassées (pointillés)", group = gA)
 showFlow = input.bool(true, "Confirmation du flux quand le prix est dans une zone", group = gA)
 showTb = input.bool(true, "Tableau des réactions (historique)", group = gA)
 
@@ -149,13 +150,9 @@ obFlow() =>
                             break
     out = array.new<float>()
     if barstate.islast
-        int n = 0
+        out.push(obs.size())
         for o in obs
-            if not o.touched
-                n += 1
-        out.push(n)
-        for o in obs
-            if not o.touched
+            if true
                 out.push(o.dir)
                 out.push(o.top)
                 out.push(o.bot)
@@ -166,7 +163,7 @@ obFlow() =>
                 out.push(o.fV ? 1 : 0)
                 out.push(o.fF ? 1 : 0)
                 out.push(o.fP ? 1 : 0)
-                out.push(0)
+                out.push(o.touched ? 1 : 0)
         for q = 0 to 5
             out.push(nT.get(q))
         for q = 0 to 5
@@ -196,14 +193,15 @@ drawTf(array<float> r, string tfName) =>
             b = 1 + i * 11
             d = int(r.get(b))
             st = int(r.get(b + 4))
-            if st >= minStars
+            tch = r.get(b + 10) == 1
+            if st >= minStars and (showTouch or not tch)
                 top = r.get(b + 1)
                 bot = r.get(b + 2)
                 c = d == 1 ? cBuy : cSell
                 zBx.push(box.new(int(r.get(b + 3)), top, tEnd, bot, xloc = xloc.bar_time, border_color = c, border_width = st == 5 ? 2 : 1,
-                     bgcolor = color.new(c, st == 5 ? 70 : 85)))
+                     border_style = tch ? line.style_dashed : line.style_solid, bgcolor = color.new(c, tch ? 92 : st == 5 ? 70 : 85)))
                 txt = (d == 1 ? "OB ACHAT " : "OB VENTE ") + tfName + "  " + starTxt.get(st) + "  L" + ck(r.get(b + 5)) + " D" + ck(r.get(b + 6)) +
-                     " V" + ck(r.get(b + 7)) + " Δ" + ck(r.get(b + 8)) + " P" + ck(r.get(b + 9))
+                     " V" + ck(r.get(b + 7)) + " Δ" + ck(r.get(b + 8)) + " P" + ck(r.get(b + 9)) + (tch ? "  (déjà touchée)" : "  (vierge)")
                 zLb.push(label.new(tEnd, d == 1 ? bot : top, txt, xloc = xloc.bar_time, style = d == 1 ? label.style_label_upper_left : label.style_label_lower_left,
                      color = color.new(c, st == 5 ? 0 : 35), textcolor = color.white, size = size.small,
                      tooltip = "L = liquidité balayée avant l'OB\nD = déplacement ≥ " + str.tostring(dispK) + " ATR avec FVG\nV = volume anormal\nΔ = agresseurs dominants dans l'impulsion\nP = zone discount (achat) / premium (vente)\nEntrée au bord, stop au-delà de l'OB."))
