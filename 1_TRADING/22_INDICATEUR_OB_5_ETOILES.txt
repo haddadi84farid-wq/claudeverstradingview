@@ -20,6 +20,7 @@ indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true,
 gD = "Détection"
 pivLen   = input.int(5, "Structure : sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20, group = gD)
 obLook   = input.int(20, "Recherche de la bougie OB (bougies avant la cassure)", minval = 5, maxval = 60, group = gD)
+obZone   = input.string("Dernière bougie opposée seule (comme OB FLOW)", "Zone de l'OB", options = ["Dernière bougie opposée seule (comme OB FLOW)", "Série de bougies opposées collées"], group = gD)
 needFvg  = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gD)
 gS = "Étoiles"
 stLen    = input.int(10, "Étoile 2 — Supertrend : période ATR", minval = 1, group = gS)
@@ -196,11 +197,12 @@ newOB(int d) =>
     if na(j)
         j := d == -1 ? hiOff : loOff
     int j2 = j
-    for k = j + 1 to j + 4
-        if d == -1 ? close[k] > open[k] : close[k] < open[k]
-            j2 := k
-        else
-            break
+    if obZone == "Série de bougies opposées collées"
+        for k = j + 1 to j + 4
+            if d == -1 ? close[k] > open[k] : close[k] < open[k]
+                j2 := k
+            else
+                break
     float top = high[j]
     float bot = low[j]
     for k = j to j2
