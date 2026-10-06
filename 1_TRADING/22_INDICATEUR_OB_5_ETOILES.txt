@@ -4,7 +4,8 @@
 // Zone = la dernière bougie (ou série de bougies) OPPOSÉE juste avant la jambe qui casse la structure, mèches comprises.
 // Trait pointillé = 50 % de l'OB (2 parties).
 // Les 5 étoiles :
-//   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB).
+//   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB). OBLIGATOIRE par défaut : sans FVG juste après,
+//      ce n'est pas un OB (pas affiché, pas compté).
 //   2. DIRECTION : Supertrend dans le sens de l'OB au moment où il se forme.
 //   3. LIQUIDITÉ : pas de hauts égaux (bas égaux) NON balayés juste au-delà de l'OB (ils attireraient le prix à travers l'OB).
 //      Si le marché les balaie avant de revenir sur l'OB, l'étoile est gagnée (« le marché les a déjà récupérés »).
@@ -19,6 +20,7 @@ indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true,
 gD = "Détection"
 pivLen   = input.int(5, "Structure : sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20, group = gD)
 obLook   = input.int(20, "Recherche de la bougie OB (bougies avant la cassure)", minval = 5, maxval = 60, group = gD)
+needFvg  = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gD)
 gS = "Étoiles"
 stLen    = input.int(10, "Étoile 2 — Supertrend : période ATR", minval = 1, group = gS)
 stFac    = input.float(3.0, "Étoile 2 — Supertrend : facteur", minval = 0.5, step = 0.1, group = gS)
@@ -225,13 +227,13 @@ if not slBroken and not na(lastSL) and close < lastSL
     slBroken := true
     o = newOB(-1)
     dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
-    if not dup
+    if not dup and (not needFvg or o.s1)
         array.push(obs, o)
 if not shBroken and not na(lastSH) and close > lastSH
     shBroken := true
     o = newOB(1)
     dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
-    if not dup
+    if not dup and (not needFvg or o.s1)
         array.push(obs, o)
 while array.size(obs) > maxOb
     killOB(array.shift(obs))

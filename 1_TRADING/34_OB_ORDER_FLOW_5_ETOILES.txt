@@ -1,7 +1,8 @@
 //@version=6
 // OB + ORDER FLOW 5 ÉTOILES — les order blocks qui portent la SIGNATURE des institutionnels, sur les unités cochées
 // (M1, M3, M5, M15, H1, H4, Jour). Pour ne voir QUE les 5 étoiles : « Afficher les OB à partir de » = 5.
-// Un OB est créé à chaque cassure de structure (dernière bougie opposée avant l'impulsion). Il reçoit 1 étoile par critère :
+// Un OB est créé à chaque cassure de structure (dernière bougie opposée avant l'impulsion), SEULEMENT s'il laisse une
+// IMBALANCE (FVG) juste après lui (option, activée par défaut). Il reçoit ensuite 1 étoile par critère :
 //  L  LIQUIDITÉ  : la zone de l'OB a d'abord balayé les plus bas (plus hauts) des 30 bougies précédentes (chasse aux stops).
 //  D  DÉPLACEMENT: l'impulsion qui part de l'OB fait ≥ 1,5 ATR ET laisse un FVG (ordres urgents, prix « jeté »).
 //  V  VOLUME     : le volume de l'impulsion est anormal (une bougie ≥ 1,5 × la moyenne 20).
@@ -27,6 +28,7 @@ gS = "Sélection"
 minStars = input.int(4, "Afficher les OB à partir de (étoiles)", minval = 1, maxval = 5, group = gS)
 keepN = input.int(3, "OB vierges gardés par unité et par sens", minval = 1, maxval = 5, group = gS)
 pivLen = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gS)
+needFvg = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gS)
 dispK = input.float(1.5, "D : déplacement minimum (× ATR)", minval = 0.5, step = 0.25, group = gS)
 volK = input.float(1.5, "V : volume minimum (× moyenne 20)", minval = 1, step = 0.1, group = gS)
 dltK = input.float(0.3, "Δ : delta minimum (part du volume)", minval = 0.05, step = 0.05, group = gS)
@@ -118,7 +120,13 @@ obFlow() =>
             for k = 1 to 15
                 if na(j) and (d == 1 ? close[k] < open[k] : close[k] > open[k])
                     j := k
-            if not na(j)
+            // Imbalance juste après l'OB : FVG sur les 3 bougies qui partent de l'OB (ou les 3 suivantes)
+            bool fvg0 = false
+            if not na(j) and j >= 2
+                fvg0 := d == 1 ? low[j - 2] > high[j] : high[j - 2] < low[j]
+            if not na(j) and not fvg0 and j >= 3
+                fvg0 := d == 1 ? low[j - 3] > high[j - 1] : high[j - 3] < low[j - 1]
+            if not na(j) and (not needFvg or fvg0)
                 top = high[j]
                 bot = low[j]
                 // impulsion = bougies j-1 … 0
