@@ -80,6 +80,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 36_BACKTEST_FVG.txt   : BACKTEST "BT FVG" (strategie) : balayage d'un plus haut/bas -> cloture a travers un FVG (IFVG)
                            -> ordre limite sur le BPR (ou bord / milieu de l'IFVG), stop au-dela du balayage, 2R/3R/liquidite.
                            Filtres tendance H4/Jour, seances, NFP. Tableau des resultats en R.
+- 37_BACKTEST_BPR.txt   : BACKTEST "BT BPR" (strategie) : detecte chaque BPR (FVG haussier + FVG baissier qui se chevauchent),
+                           ordre limite au 1er retour sur la zone (meme des heures apres), stop au-dela de l'extreme,
+                           objectif 2R/3R/extreme oppose. Zones violettes actives, grises une fois consommees. Tableau en R.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
