@@ -1,0 +1,296 @@
+//@version=6
+// BACKTEST « BALAYAGE → IFVG / BPR » (modèle ICT), sur une PÉRIODE CHOISIE. Pensé pour l'or en M5 / M15.
+// À créer comme NOUVEAU script STRATÉGIE, puis ouvrir le « Testeur de stratégie ». Tableau des résultats en R en bas à droite.
+// Règles (version VENTE ; l'ACHAT est l'inverse) :
+//  1. BALAYAGE : le prix dépasse un plus haut « ancien » (plus haut des N dernières bougies, posé il y a au moins 5 bougies).
+//  2. IFVG : dans les bougies qui suivent, une bougie CLÔTURE sous un FVG haussier récent (laissé par la montée).
+//     Ce FVG change de rôle : il devient une résistance (IFVG baissier).
+//  3. BPR : si la chute a laissé un FVG baissier qui chevauche l'IFVG, la partie commune = BPR (zone violette).
+//  4. ENTRÉE : ordre limite VENTE au bord bas du BPR (sinon de l'IFVG), au bord bas de l'IFVG, ou à son milieu (CE 50 %).
+//  5. STOP : au-dessus du sommet du balayage (+ marge). OBJECTIF : 2 R, 3 R, ou la liquidité opposée (bas de la jambe).
+//  6. ANNULATION : clôture au-dessus de l'IFVG, objectif atteint sans nous, ou ordre pas exécuté après N bougies.
+// Filtres en option : tendance H4 / Jour, séances Londres + New York, NFP. Ne passe AUCUN ordre réel.
+strategy("Backtest balayage + IFVG / BPR", shorttitle = "BT FVG",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_boxes_count = 300, max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période et gestion"
+tStart  = input.time(timestamp("2026-07-01T00:00"), "Début", group = gP)
+tEnd    = input.time(timestamp("2030-01-01T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+entMode = input.string("BPR (chevauchement), sinon bord de l'IFVG", "Entrée",
+     options = ["BPR (chevauchement), sinon bord de l'IFVG", "Bord de l'IFVG", "Milieu de l'IFVG (CE 50 %)"], group = gP)
+tpMode  = input.string("2 R", "Objectif", options = ["2 R", "3 R", "Liquidité opposée (ignoré si < 2 R)"], group = gP)
+beOn    = input.bool(false, "Stop à l'entrée quand le trade fait +1 R", group = gP)
+gS = "Balayage et IFVG"
+swLen   = input.int(30, "Balayage : plus haut / plus bas des N dernières bougies", minval = 10, maxval = 200, group = gS)
+invWait = input.int(12, "IFVG : clôture à travers le FVG en moins de (bougies après le balayage)", minval = 1, maxval = 50, group = gS)
+fvgLook = input.int(15, "FVG pris en compte s'il est né au plus tôt (bougies avant le balayage)", minval = 1, maxval = 50, group = gS)
+minFvgK = input.float(0.1, "Taille minimum du FVG (× ATR 50)", minval = 0, step = 0.05, group = gS)
+dispK   = input.float(0.0, "Bougie d'inversion : corps minimum (× ATR 50, 0 = toute clôture)", minval = 0, step = 0.25, group = gS)
+bufK    = input.float(0.1, "Marge du stop au-delà du balayage (× ATR 50)", minval = 0, step = 0.05, group = gS)
+waitN   = input.int(24, "Annuler l'ordre s'il n'est pas exécuté après (bougies)", minval = 2, maxval = 200, group = gS)
+gF = "Filtres"
+trendMode = input.string("Aucun", "Tendance de fond", options = ["Aucun", "H4 (EMA 50)", "Jour (EMA 20)"], group = gF)
+sessOn  = input.bool(false, "Seulement Londres 9h–12h et New York 14h30–18h (heure de Paris)", group = gF)
+noNews  = input.bool(true, "Ignorer les signaux pendant le NFP (30 min avant → 1 h après)", group = gF)
+
+cUp = #089981
+cDn = #F23645
+cIf = #FF9800
+cBp = #9C27B0
+
+inWin = time >= tStart and time <= tEnd
+atrL = ta.atr(50)
+fmt(float v) => str.tostring(v, format.mintick)
+
+// NFP = 1er vendredi du mois, 8:30 New York (14:30 Paris)
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+inNews = time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 60 * 60000
+
+// Séances (heure de Paris)
+inSess = not na(time(timeframe.period, "0900-1200,1430-1800", "Europe/Paris"))
+
+// Tendance de fond, sans repeindre (bougie H4 / Jour précédente, déjà clôturée)
+h4Bull = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+dBull  = request.security(syminfo.tickerid, "D", close[1] > ta.ema(close, 20)[1], lookahead = barmerge.lookahead_on)
+
+trendOk(int d) =>
+    bool ok = true
+    if trendMode == "H4 (EMA 50)"
+        ok := d == 1 ? h4Bull : not h4Bull
+    else if trendMode == "Jour (EMA 20)"
+        ok := d == 1 ? dBull : not dBull
+    ok
+
+dirOk(int d) =>
+    dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+
+// ---------- FVG : mémoire des derniers FVG haussiers et baissiers ----------
+var array<float> buTop = array.new_float()
+var array<float> buBot = array.new_float()
+var array<int>   buBar = array.new_int()
+var array<float> beTop = array.new_float()
+var array<float> beBot = array.new_float()
+var array<int>   beBar = array.new_int()
+if bar_index > 2
+    if low > high[2] and low - high[2] >= minFvgK * atrL
+        array.push(buTop, low)
+        array.push(buBot, high[2])
+        array.push(buBar, bar_index - 1)
+        if array.size(buTop) > 30
+            array.shift(buTop)
+            array.shift(buBot)
+            array.shift(buBar)
+    if high < low[2] and low[2] - high >= minFvgK * atrL
+        array.push(beTop, low[2])
+        array.push(beBot, high)
+        array.push(beBar, bar_index - 1)
+        if array.size(beTop) > 30
+            array.shift(beTop)
+            array.shift(beBot)
+            array.shift(beBar)
+
+// ---------- Balayage d'un plus haut / plus bas « ancien » ----------
+liqH = ta.highest(high, swLen)[1]
+liqL = ta.lowest(low, swLen)[1]
+recH = ta.highest(high, 4)[1]
+recL = ta.lowest(low, 4)[1]
+sweepUp = high > liqH and recH < liqH
+sweepDn = low < liqL and recL > liqL
+
+// phase : 0 recherche, 1 balayage fait (attente de l'IFVG), 2 ordre limite posé
+var int   phase = 0
+var int   dir = 0
+var int   sBar = na
+var float ext = na
+var float oppL = na
+var float legX = na
+var float zT = na
+var float zB = na
+var float pT = na
+var float pB = na
+var int   iBar = na
+var box   zBox = na
+var box   pBox = na
+// trade
+var float tE = na
+var float tS = na
+var float tTp = na
+var float tRk = na
+var float tRisk = na
+var int   tStage = 0
+var string tId = ""
+// résultats en R
+var int   ctSeen = 0
+var int   nT = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL = 0.0
+newClosed = strategy.closedtrades > ctSeen
+
+// ---------- Résultats en R (avant tout nouvel ordre) ----------
+if newClosed
+    for i = ctSeen to strategy.closedtrades - 1
+        r = tRisk > 0 ? strategy.closedtrades.profit(i) / tRisk : 0.0
+        nT += 1
+        sumR += r
+        if r > 0
+            nW += 1
+            gW += r
+        else
+            gL -= r
+    ctSeen := strategy.closedtrades
+
+
+// ---------- Gestion du trade ouvert ----------
+if strategy.position_size != 0 and strategy.opentrades > 0 and strategy.opentrades.entry_id(0) == tId
+    if phase == 2
+        phase := 0
+        if not na(zBox)
+            box.set_right(zBox, bar_index)
+        if not na(pBox)
+            box.set_right(pBox, bar_index)
+        label.new(bar_index, tE, (dir == -1 ? "VENTE FVG " : "ACHAT FVG ") + fmt(tE) + "\nSL " + fmt(tS) + "\nTP " + fmt(tTp),
+             style = dir == -1 ? label.style_label_down : label.style_label_up, color = dir == -1 ? cDn : cUp, textcolor = color.white, size = size.tiny)
+    if beOn and tStage == 0
+        up = strategy.position_size > 0
+        if up ? high >= tE + tRk : low <= tE - tRk
+            tStage := 1
+            tS := tE
+            strategy.exit("Sortie", tId, stop = tS, limit = tTp)
+
+// ---------- Ordre posé, pas encore exécuté : annulation ? ----------
+if phase == 2 and strategy.position_size == 0
+    if newClosed
+        // exécuté puis clôturé sur la même bougie
+        phase := 0
+    else
+        inv = dir == -1 ? close > zT : close < zB
+        missed = dir == -1 ? low <= tTp : high >= tTp
+        if inv or missed or bar_index - iBar > waitN
+            strategy.cancel(tId)
+            phase := 0
+            if not na(zBox)
+                box.set_right(zBox, bar_index)
+                box.set_bgcolor(zBox, color.new(color.gray, 85))
+                box.set_border_color(zBox, color.new(color.gray, 50))
+            if not na(pBox)
+                box.set_right(pBox, bar_index)
+                box.set_bgcolor(pBox, color.new(color.gray, 85))
+                box.set_border_color(pBox, color.new(color.gray, 50))
+
+// ---------- 1. Balayage ----------
+if phase == 0 and strategy.position_size == 0 and bar_index > swLen and not (sweepUp and sweepDn)
+    if sweepUp or sweepDn
+        dir := sweepUp ? -1 : 1
+        phase := 1
+        sBar := bar_index
+        ext := sweepUp ? high : low
+        oppL := sweepUp ? liqL : liqH
+        legX := sweepUp ? low : high
+
+// ---------- 2. IFVG (+ BPR) puis ordre limite ----------
+if phase == 1
+    if bar_index > sBar
+        ext := dir == -1 ? math.max(ext, high) : math.min(ext, low)
+        legX := dir == -1 ? math.min(legX, low) : math.max(legX, high)
+    // FVG de la jambe du balayage (haussier pour une vente) que cette bougie traverse en clôture
+    float fT = na
+    float fB = na
+    int   fI = na
+    n = dir == -1 ? array.size(buTop) : array.size(beTop)
+    if n > 0
+        for k = n - 1 to 0
+            bi = dir == -1 ? array.get(buBar, k) : array.get(beBar, k)
+            ft = dir == -1 ? array.get(buTop, k) : array.get(beTop, k)
+            fb = dir == -1 ? array.get(buBot, k) : array.get(beBot, k)
+            crossed = dir == -1 ? close < fb and close[1] >= fb : close > ft and close[1] <= ft
+            if na(fI) and bi >= sBar - fvgLook and bi < bar_index and crossed
+                fT := ft
+                fB := fb
+                fI := bi
+    bodyOk = math.abs(close - open) >= dispK * atrL
+    if not na(fI) and bodyOk
+        okF = inWin and dirOk(dir) and trendOk(dir) and (not sessOn or inSess) and not (noNews and inNews)
+        phase := 0
+        if okF
+            zT := fT
+            zB := fB
+            iBar := bar_index
+            // BPR = partie commune avec un FVG opposé né depuis (baissier pour une vente)
+            pT := na
+            pB := na
+            m = dir == -1 ? array.size(beTop) : array.size(buTop)
+            if m > 0
+                for k = m - 1 to 0
+                    bi = dir == -1 ? array.get(beBar, k) : array.get(buBar, k)
+                    ot = math.min(zT, dir == -1 ? array.get(beTop, k) : array.get(buTop, k))
+                    ob = math.max(zB, dir == -1 ? array.get(beBot, k) : array.get(buBot, k))
+                    if na(pT) and bi >= fI and ot > ob
+                        pT := ot
+                        pB := ob
+            entry = entMode == "Milieu de l'IFVG (CE 50 %)" ? (zT + zB) / 2 :
+                 entMode == "BPR (chevauchement), sinon bord de l'IFVG" and not na(pT) ? (dir == -1 ? pB : pT) :
+                 (dir == -1 ? zB : zT)
+            stp = dir == -1 ? ext + bufK * atrL : ext - bufK * atrL
+            rk = math.abs(entry - stp)
+            liq = dir == -1 ? math.min(oppL, legX) : math.max(oppL, legX)
+            tgt = tpMode == "2 R" ? entry + dir * 2 * rk : tpMode == "3 R" ? entry + dir * 3 * rk : liq
+            rrOk = rk > 0 and (dir == -1 ? tgt < entry : tgt > entry) and math.abs(tgt - entry) >= 2 * rk * 0.999
+            sideOk = dir == -1 ? entry > close : entry < close
+            qty = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+            if qty > 0 and rrOk and sideOk
+                tId := dir == -1 ? "Vente FVG" : "Achat FVG"
+                strategy.entry(tId, dir == -1 ? strategy.short : strategy.long, qty = qty, limit = entry)
+                // sorties posées tout de suite : actives dès que l'ordre limite est exécuté
+                strategy.exit("Sortie", tId, stop = stp, limit = tgt)
+                tE := entry
+                tS := stp
+                tTp := tgt
+                tRk := rk
+                tRisk := qty * rk
+                tStage := 0
+                phase := 2
+                zBox := box.new(fI, zT, bar_index + waitN, zB, border_color = cIf, bgcolor = color.new(cIf, 80),
+                     text = "IFVG", text_color = cIf, text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top)
+                pBox := not na(pT) ? box.new(fI, pT, bar_index + waitN, pB, border_color = cBp, bgcolor = color.new(cBp, 65),
+                     text = "BPR", text_color = cBp, text_size = size.tiny, text_halign = text.align_right, text_valign = text.align_top) : na
+    if phase == 1 and bar_index - sBar > invWait
+        phase := 0
+
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+
+var table tb = table.new(position.bottom_right, 2, 7, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(color.gray, 70))
+if barstate.islast
+    pf = gL > 0 ? gW / gL : na
+    avgR = nT > 0 ? sumR / nT : na
+    table.cell(tb, 0, 0, "BT FVG", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, entMode == "Milieu de l'IFVG (CE 50 %)" ? "CE 50 %" : entMode == "Bord de l'IFVG" ? "Bord IFVG" : "BPR", text_color = cBp, text_size = size.small)
+    table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nT), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nT > 0 ? str.tostring(100.0 * nW / nT, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen / trade", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Fiable à partir de", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, "≈ 100 trades", text_color = color.gray, text_size = size.small)
+
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")
