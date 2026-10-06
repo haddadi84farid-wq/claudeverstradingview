@@ -259,3 +259,8 @@ Ecarts de +-0,15 R sur 70-140 trades = dans le bruit statistique (erreur type ~0
 | M15 | 11, 27 % | 48, 33 % | 368, 35 % |
 Seuil 2 R = 34 % avant frais -> tout est au point mort. Les etoiles (liquidite, deplacement, volume, delta, discount) n'ameliorent pas la reaction.
 Conclusion : OB = carte des zones, pas un signal. Avantage mesure seulement sur BT AMD (M15) et tendance Daily 20/10.
+
+## BT FVG (balayage -> IFVG -> limite sur BPR, 2 R), XAUUSD M15, 01/05 -> 06/10/2026, 06/10/2026
+- Reglages par defaut : 96 trades, 30,2 % gagnants, PF 0,83, -10,5 %, DD max 23,3 %.
+- Seuil 2 R avec frais ~35 % -> negatif. L'entree BPR/IFVG seule n'a pas d'avantage (meme constat que les OB).
+- A tester (une fois, sans sur-optimiser) : CE 50 %, filtre H4, seances Londres/NY. Si aucun > PF 1,3 sur >= 50 trades -> abandon.
