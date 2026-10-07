@@ -1,0 +1,276 @@
+//@version=6
+// BOT PRICE ACTION — CONFLUENCE DES 5 RÈGLES → PROPOSITION D'ENTRÉE EN DIRECT
+// Une entrée n'est proposée que si TOUTES les règles sont vraies sur la bougie qui vient de clôturer :
+//  1. TENDANCE (PA TENDANCE) : M15 vert et H1 pas rouge → achats ; M15 rouge et H1 pas vert → ventes.
+//     Option « range » : M15 orange → achats sur support / ventes sur résistance, objectif = l'autre bord.
+//  2. ZONE (PA S/R) : le prix touche une zone M15 touchée ≥ 2 fois et non traversée (support pour un achat, résistance pour une vente)
+//     et la bougie clôture du bon côté de la zone.
+//  3. BOUGIE (PA BOUGIES) : avalement, pin bar ou étoile du matin / du soir dans le sens du trade.
+//  4. ANNONCES : pas dans la fenêtre NFP (30 min avant → 15 min après).
+//  5. OBJECTIF DÉGAGÉ : objectif = la zone opposée la plus proche ; R:R ≥ 1,5 (sinon trade refusé : objectif bloqué).
+// Stop = au-delà de la zone ET de la mèche (+ marge). Tableau « checklist » en direct + résultats sur l'historique (frais inclus).
+// Ne passe AUCUN ordre : c'est toi qui décides et qui passes l'ordre.
+indicator("Bot price action — confluence", shorttitle = "PA BOT", overlay = true, max_labels_count = 200, max_lines_count = 50, max_bars_back = 500)
+
+gR = "Règles"
+allowRange = input.bool(true, "Autoriser les trades de range (M15 orange)", group = gR)
+minRR   = input.float(1.5, "R:R minimum jusqu'à la zone opposée", minval = 1, step = 0.25, group = gR)
+maxRR   = input.float(4.0, "Objectif plafonné à (R)", minval = 1.5, step = 0.5, group = gR)
+touchK  = input.float(0.15, "Contact avec la zone : tolérance (× ATR M15)", minval = 0, step = 0.05, group = gR)
+bufPts  = input.float(0.5, "Marge du stop au-delà de la zone / mèche (points)", minval = 0, step = 0.1, group = gR)
+useNfp  = input.bool(true, "Bloquer autour du NFP (1er vendredi 14:30 Paris)", group = gR)
+gZ = "Zones (comme PA S/R)"
+pivLen  = input.int(5, "Sommet / creux confirmé par N bougies (M15)", minval = 2, maxval = 20, group = gZ)
+lbDays  = input.int(30, "Historique analysé (jours)", minval = 5, maxval = 120, group = gZ)
+nPiv    = input.int(120, "Sommets / creux analysés", minval = 20, maxval = 200, group = gZ)
+tolK    = input.float(0.6, "Largeur max d'une zone (× ATR M15)", minval = 0.1, step = 0.1, group = gZ)
+gT = "Tableaux"
+costPts = input.float(0.37, "Frais par trade (points)", minval = 0, step = 0.01, group = gT)
+showRes = input.bool(true, "Tableau des résultats sur l'historique", group = gT)
+
+cUp = #089981
+cDn = #F23645
+
+// ---------- 1. Tendance (même règle que PA TENDANCE) ----------
+trendState() =>
+    tPh = ta.pivothigh(high, 5, 5)
+    tPl = ta.pivotlow(low, 5, 5)
+    var float tSh = na
+    var float tSl = na
+    var bool  tShX = true
+    var bool  tSlX = true
+    var int   tB1 = 0
+    var int   tB2 = 0
+    if not na(tPh)
+        tSh := tPh
+        tShX := false
+    if not na(tPl)
+        tSl := tPl
+        tSlX := false
+    if not tShX and not na(tSh) and close > tSh
+        tShX := true
+        tB2 := tB1
+        tB1 := 1
+    if not tSlX and not na(tSl) and close < tSl
+        tSlX := true
+        tB2 := tB1
+        tB1 := -1
+    tB1 == 1 and tB2 == 1 ? 1 : tB1 == -1 and tB2 == -1 ? -1 : 0
+
+tM15 = request.security(syminfo.tickerid, "15", trendState())
+tH1 = request.security(syminfo.tickerid, "60", trendState())
+
+// ---------- 2. Zones M15 (même règle que PA S/R), recalculées à chaque bougie M15 ----------
+// Sortie : support le plus proche (haut, bas, contacts), résistance la plus proche (haut, bas, contacts), ATR M15
+zonesNow() =>
+    hp = ta.pivothigh(high, pivLen, pivLen)
+    lp = ta.pivotlow(low, pivLen, pivLen)
+    hc = ta.highest(close, pivLen + 1)
+    lc = ta.lowest(close, pivLen + 1)
+    a = ta.atr(14)
+    var array<float> pv = array.new<float>()
+    float sT = na
+    float sB = na
+    int   sN = 0
+    float rT = na
+    float rB = na
+    int   rN = 0
+    if time >= timenow - lbDays * 86400000
+        if pv.size() > 0
+            for i = 0 to int(pv.size() / 4) - 1
+                pv.set(i * 4 + 2, math.max(pv.get(i * 4 + 2), close))
+                pv.set(i * 4 + 3, math.min(pv.get(i * 4 + 3), close))
+        if not na(hp)
+            pv.push(hp)
+            pv.push(1)
+            pv.push(hc)
+            pv.push(lc)
+        if not na(lp)
+            pv.push(lp)
+            pv.push(-1)
+            pv.push(hc)
+            pv.push(lc)
+        while pv.size() > nPiv * 4
+            for q = 1 to 4
+                pv.shift()
+        n = int(pv.size() / 4)
+        if n >= 2
+            tol = tolK * a
+            pr = array.new<float>()
+            for i = 0 to n - 1
+                pr.push(pv.get(i * 4))
+            idx = pr.sort_indices(order.ascending)
+            mem = array.new<int>()
+            float cBot = na
+            float cTop = na
+            for k = 0 to n
+                bool flush = k == n
+                int j = k < n ? idx.get(k) : 0
+                if k < n
+                    flush := mem.size() > 0 and pv.get(j * 4) - cBot > tol
+                if flush and mem.size() > 0
+                    float iTop = na
+                    float iBot = na
+                    int   iN = 0
+                    for m in mem
+                        pm = pv.get(m * 4)
+                        if not (pv.get(m * 4 + 2) > cTop and pv.get(m * 4 + 3) < cBot)
+                            iTop := na(iTop) ? pm : math.max(iTop, pm)
+                            iBot := na(iBot) ? pm : math.min(iBot, pm)
+                            iN += 1
+                    if iN >= 2
+                        mid = (iTop + iBot) / 2
+                        if close >= mid and (na(sT) or iTop > sT)
+                            sT := iTop
+                            sB := iBot
+                            sN := iN
+                        if close < mid and (na(rB) or iBot < rB)
+                            rT := iTop
+                            rB := iBot
+                            rN := iN
+                    mem.clear()
+                if k < n
+                    pk = pv.get(j * 4)
+                    if mem.size() == 0
+                        cBot := pk
+                        cTop := pk
+                    cTop := math.max(cTop, pk)
+                    mem.push(j)
+    [sT, sB, sN, rT, rB, rN, a]
+
+[supT, supB, supN, resT, resB, resN, atr15] = request.security(syminfo.tickerid, "15", zonesNow())
+
+// ---------- 3. Bougie de déclenchement (unité affichée) ----------
+body = math.abs(close - open)
+rng = high - low
+upW = high - math.max(open, close)
+loW = math.min(open, close) - low
+atrC = ta.atr(14)
+big = rng >= 0.5 * atrC
+bullC = close > open
+bearC = close < open
+engBull = bullC and bearC[1] and close >= open[1] and open <= close[1] and body > body[1] and big
+engBear = bearC and bullC[1] and close <= open[1] and open >= close[1] and body > body[1] and big
+pinBull = big and loW >= 0.6 * rng and body <= 0.35 * rng and upW <= 0.2 * rng
+pinBear = big and upW >= 0.6 * rng and body <= 0.35 * rng and loW <= 0.2 * rng
+starM = bearC[2] and body[2] >= 0.6 * atrC and body[1] <= 0.35 * body[2] and bullC and close > (open[2] + close[2]) / 2
+starE = bullC[2] and body[2] >= 0.6 * atrC and body[1] <= 0.35 * body[2] and bearC and close < (open[2] + close[2]) / 2
+candleL = starM ? "Étoile du matin" : engBull ? "Avalement haussier" : pinBull ? "Pin bar haussier" : ""
+candleS = starE ? "Étoile du soir" : engBear ? "Avalement baissier" : pinBear ? "Pin bar baissier" : ""
+pLow = math.min(low, low[1], low[2])
+pHigh = math.max(high, high[1], high[2])
+
+// ---------- 4. Annonce NFP ----------
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+newsOK = not useNfp or not (time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 15 * 60000)
+
+// ---------- Règles ----------
+trendL = tM15 == 1 and tH1 != -1
+trendS = tM15 == -1 and tH1 != 1
+rangeM = allowRange and tM15 == 0
+okTrendL = trendL or rangeM
+okTrendS = trendS or rangeM
+zoneL = not na(supT) and math.min(low, low[1], low[2]) <= supT + touchK * atr15 and close > supB
+zoneS = not na(resB) and math.max(high, high[1], high[2]) >= resB - touchK * atr15 and close < resT
+// Plans
+stopL = math.min(nz(supB, low), pLow) - bufPts
+stopS = math.max(nz(resT, high), pHigh) + bufPts
+riskL = close - stopL
+riskS = stopS - close
+tgtL0 = not na(resB) ? resB : close + maxRR * riskL
+tgtS0 = not na(supT) ? supT : close - maxRR * riskS
+tgtL = math.min(tgtL0, close + maxRR * riskL)
+tgtS = math.max(tgtS0, close - maxRR * riskS)
+rrL = riskL > 0 ? (tgtL - close) / riskL : 0.0
+rrS = riskS > 0 ? (close - tgtS) / riskS : 0.0
+
+sigL = barstate.isconfirmed and okTrendL and zoneL and candleL != "" and newsOK and rrL >= minRR
+sigS = barstate.isconfirmed and okTrendS and zoneS and candleS != "" and newsOK and rrS >= minRR
+
+// ---------- Signaux + suivi (un trade à la fois) ----------
+var int   pDir = 0
+var float pE = na
+var float pS = na
+var float pT = na
+var int   pB = na
+var int   nT = 0
+var int   nW = 0
+var float sumR = 0.0
+var line  lE = na
+var line  lS = na
+var line  lT = na
+
+if pDir != 0 and bar_index > pB
+    float res = na
+    if pDir == 1 ? low <= pS : high >= pS
+        res := -1 - costPts / math.abs(pE - pS)
+    else if pDir == 1 ? high >= pT : low <= pT
+        res := math.abs(pT - pE) / math.abs(pE - pS) - costPts / math.abs(pE - pS)
+    if not na(res)
+        nT += 1
+        nW += res > 0 ? 1 : 0
+        sumR += res
+        label.new(bar_index, pDir == 1 ? high : low, res > 0 ? "✓ +" + str.tostring(res, "#.#") + " R" : "✗ " + str.tostring(res, "#.#") + " R",
+             style = pDir == 1 ? label.style_label_down : label.style_label_up, color = color.new(res > 0 ? cUp : cDn, 50), textcolor = color.white, size = size.small)
+        pDir := 0
+
+fmt(float v) => str.tostring(v, format.mintick)
+
+if pDir == 0 and (sigL or sigS)
+    d = sigL ? 1 : -1
+    pDir := d
+    pE := close
+    pS := d == 1 ? stopL : stopS
+    pT := d == 1 ? tgtL : tgtS
+    pB := bar_index
+    rr = d == 1 ? rrL : rrS
+    why = (d == 1 ? (trendL ? "tendance haussière" : "range, bas du range") : (trendS ? "tendance baissière" : "range, haut du range")) +
+         " | zone " + (d == 1 ? "support ×" + str.tostring(supN) + " " + fmt(supB) + "–" + fmt(supT) : "résistance ×" + str.tostring(resN) + " " + fmt(resB) + "–" + fmt(resT)) +
+         " | " + (d == 1 ? candleL : candleS)
+    label.new(bar_index, d == 1 ? low : high, (d == 1 ? "ACHAT " : "VENTE ") + fmt(close) + "\nSL " + fmt(pS) + "  TP " + fmt(pT) + "  (" + str.tostring(rr, "#.#") + " R)",
+         style = d == 1 ? label.style_label_up : label.style_label_down, color = d == 1 ? cUp : cDn, textcolor = color.white, size = size.normal, tooltip = why)
+    line.delete(lE)
+    line.delete(lS)
+    line.delete(lT)
+    lE := line.new(bar_index, pE, bar_index + 30, pE, color = color.white, width = 1)
+    lS := line.new(bar_index, pS, bar_index + 30, pS, color = cDn, width = 2)
+    lT := line.new(bar_index, pT, bar_index + 30, pT, color = cUp, width = 2)
+
+// ---------- Checklist en direct ----------
+var table ck = table.new(position.middle_right, 2, 8, bgcolor = color.new(#131722, 5), border_color = color.new(color.gray, 60), border_width = 1)
+if barstate.islast
+    // côté candidat : la zone la plus proche du prix
+    dL = na(supT) ? 1e10 : close - supT
+    dS = na(resB) ? 1e10 : resB - close
+    side = dL <= dS ? 1 : -1
+    trOk = side == 1 ? okTrendL : okTrendS
+    znOk = side == 1 ? zoneL : zoneS
+    cdTxt = side == 1 ? candleL : candleS
+    rrV = side == 1 ? rrL : rrS
+    trTxt = (tM15 == 1 ? "M15 vert" : tM15 == -1 ? "M15 rouge" : "M15 orange") + " / " + (tH1 == 1 ? "H1 vert" : tH1 == -1 ? "H1 rouge" : "H1 orange")
+    znTxt = side == 1 ? (na(supT) ? "aucun support" : "support ×" + str.tostring(supN) + " " + fmt(supB) + "–" + fmt(supT)) : (na(resB) ? "aucune résistance" : "résistance ×" + str.tostring(resN) + " " + fmt(resB) + "–" + fmt(resT))
+    rows = array.from("1. Tendance", "2. Prix sur la zone", "3. Bougie de rejet", "4. Pas d'annonce", "5. Objectif dégagé (R:R)")
+    oks = array.from(trOk, znOk, cdTxt != "", newsOK, rrV >= minRR)
+    vals = array.from(trTxt, znTxt, cdTxt == "" ? "pas encore" : cdTxt, newsOK ? "ok" : "NFP : ne pas trader", str.tostring(rrV, "#.#") + " R")
+    table.cell(ck, 0, 0, "PA BOT — " + (side == 1 ? "ACHAT ?" : "VENTE ?"), text_color = color.white, bgcolor = side == 1 ? color.new(cUp, 30) : color.new(cDn, 30), text_size = size.small)
+    table.cell(ck, 1, 0, "", bgcolor = side == 1 ? color.new(cUp, 30) : color.new(cDn, 30))
+    int nOk = 0
+    for i = 0 to 4
+        o = oks.get(i)
+        nOk += o ? 1 : 0
+        table.cell(ck, 0, i + 1, (o ? "✅ " : "❌ ") + rows.get(i), text_color = color.white, text_size = size.small, text_halign = text.align_left)
+        table.cell(ck, 1, i + 1, vals.get(i), text_color = o ? color.white : color.gray, text_size = size.small, text_halign = text.align_left)
+    verdict = nOk == 5 ? (side == 1 ? "✅ ACHAT " + fmt(close) + " | SL " + fmt(stopL) + " | TP " + fmt(tgtL) : "✅ VENTE " + fmt(close) + " | SL " + fmt(stopS) + " | TP " + fmt(tgtS)) : "⏳ ATTENDRE (" + str.tostring(nOk) + "/5)"
+    table.cell(ck, 0, 6, verdict, text_color = color.white, bgcolor = nOk == 5 ? (side == 1 ? cUp : cDn) : color.new(color.gray, 40), text_size = size.normal)
+    table.merge_cells(ck, 0, 6, 1, 6)
+    if showRes
+        table.cell(ck, 0, 7, "Historique : " + str.tostring(nT) + " trades | " + (nT > 0 ? str.tostring(math.round(100.0 * nW / nT)) + " % gagnés | R moyen " + str.tostring(sumR / nT, "#.##") : "-"),
+             text_color = nT > 0 and sumR > 0 ? cUp : color.gray, text_size = size.small)
+        table.merge_cells(ck, 0, 7, 1, 7)

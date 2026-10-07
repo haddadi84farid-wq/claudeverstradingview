@@ -1,0 +1,298 @@
+//@version=6
+// BACKTEST « BPR = POINT D'ENTRÉE » (Balanced Price Range), sur une PÉRIODE CHOISIE. Pensé pour l'or en M5 / M15.
+// À créer comme NOUVEAU script STRATÉGIE, puis ouvrir le « Testeur de stratégie ». Tableau des résultats en R en bas à droite.
+// Règles (version VENTE ; l'ACHAT est l'inverse) :
+//  1. FVG haussier (montée), puis en moins de N bougies un FVG baissier (chute) qui le CHEVAUCHE.
+//     La partie commune des deux = BPR VENTE (zone violette, bord rouge). C'est le FVG le plus récent qui donne le sens.
+//  2. ENTRÉE : ordre limite VENTE au bord bas du BPR (1er contact) ou à son milieu, quand le prix REVIENT dessus,
+//     même plusieurs heures après (jusqu'à l'âge maximum).
+//  3. STOP : au-dessus du plus haut fait entre les deux FVG (le sommet du balayage) + marge, ou juste au-dessus du BPR.
+//  4. OBJECTIF : 2 R, 3 R, ou le plus bas atteint depuis la naissance du BPR (au moins 2 R).
+//  5. Une zone ne sert qu'UNE fois : au 1er contact elle est consommée (grisée si on n'a pas pu la trader).
+// Filtres en option : tendance H4 / Jour, séances Londres + New York, NFP. Ne passe AUCUN ordre réel.
+strategy("Backtest BPR (Balanced Price Range)", shorttitle = "BT BPR",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_boxes_count = 500, max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période et gestion"
+tStart  = input.time(timestamp("2026-07-01T00:00"), "Début", group = gP)
+tEnd    = input.time(timestamp("2030-01-01T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+entMode = input.string("Bord du BPR (1er contact)", "Entrée", options = ["Bord du BPR (1er contact)", "Milieu du BPR"], group = gP)
+stopMode = input.string("Au-delà de l'extrême entre les 2 FVG", "Stop", options = ["Au-delà de l'extrême entre les 2 FVG", "Au-delà du BPR"], group = gP)
+tpMode  = input.string("2 R", "Objectif", options = ["2 R", "3 R", "Extrême opposé (au moins 2 R)"], group = gP)
+beOn    = input.bool(false, "Stop à l'entrée quand le trade fait +1 R", group = gP)
+gZ = "BPR"
+minFvgK = input.float(0.1, "Taille minimum de chaque FVG (× ATR 50)", minval = 0, step = 0.05, group = gZ)
+pairN   = input.int(10, "Les 2 FVG opposés nés à moins de (bougies)", minval = 1, maxval = 30, group = gZ)
+maxAge  = input.int(96, "Zone abandonnée après (bougies sans retour)", minval = 4, maxval = 400, group = gZ)
+bufK    = input.float(0.1, "Marge du stop (× ATR 50)", minval = 0, step = 0.05, group = gZ)
+gF = "Filtres"
+trendMode = input.string("Aucun", "Tendance de fond", options = ["Aucun", "H4 (EMA 50)", "Jour (EMA 20)"], group = gF)
+sessOn  = input.bool(false, "Ordres seulement Londres 9h–12h et New York 14h30–18h (heure de Paris)", group = gF)
+noNews  = input.bool(true, "Pas d'ordre pendant le NFP (30 min avant → 1 h après)", group = gF)
+
+cUp = #089981
+cDn = #F23645
+cBp = #9C27B0
+
+inWin = time >= tStart and time <= tEnd
+atrL = ta.atr(50)
+fmt(float v) => str.tostring(v, format.mintick)
+
+// NFP = 1er vendredi du mois, 8:30 New York (14:30 Paris)
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+inNews = time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 60 * 60000
+inSess = not na(time(timeframe.period, "0900-1200,1430-1800", "Europe/Paris"))
+
+// Tendance de fond, sans repeindre (bougie H4 / Jour précédente, déjà clôturée)
+h4Bull = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+dBull  = request.security(syminfo.tickerid, "D", close[1] > ta.ema(close, 20)[1], lookahead = barmerge.lookahead_on)
+
+trendOk(int d) =>
+    bool ok = true
+    if trendMode == "H4 (EMA 50)"
+        ok := d == 1 ? h4Bull : not h4Bull
+    else if trendMode == "Jour (EMA 20)"
+        ok := d == 1 ? dBull : not dBull
+    ok
+
+dirOk(int d) =>
+    dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+
+type Bpr
+    int   uid
+    int   dir
+    float top
+    float bot
+    float stp
+    int   born
+    float ext
+    box   bx
+    int   state = 0
+
+var array<Bpr>   zones = array.new<Bpr>()
+var array<float> fvT = array.new_float()
+var array<float> fvB = array.new_float()
+var array<int>   fvI = array.new_int()
+var array<int>   fvD = array.new_int()
+var int uidN = 0
+
+// ordres en attente (un par sens) et trade en cours
+var int   sUid = -1
+var float sE = na
+var float sS = na
+var float sTp = na
+var float sRk = na
+var float sRisk = na
+var int   bUid = -1
+var float bE = na
+var float bS = na
+var float bTp = na
+var float bRk = na
+var float bRisk = na
+var bool  inTr = false
+var string tId = ""
+var float tE = na
+var float tTp = na
+var float tRk = na
+var int   tStage = 0
+// résultats en R
+var int   ctSeen = 0
+var int   nTr = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL = 0.0
+int fillUid = -1
+
+// ---------- Résultats en R (trades clôturés sur cette bougie) ----------
+if strategy.closedtrades > ctSeen
+    for i = ctSeen to strategy.closedtrades - 1
+        id = strategy.closedtrades.entry_id(i)
+        rsk = id == "Vente BPR" ? sRisk : bRisk
+        r = rsk > 0 ? strategy.closedtrades.profit(i) / rsk : 0.0
+        nTr += 1
+        sumR += r
+        if r > 0
+            nW += 1
+            gW += r
+        else
+            gL -= r
+        if strategy.closedtrades.entry_bar_index(i) == bar_index
+            fillUid := id == "Vente BPR" ? sUid : bUid
+    ctSeen := strategy.closedtrades
+
+// ---------- Ordre exécuté ? ----------
+if strategy.position_size != 0 and not inTr
+    inTr := true
+    tId := strategy.opentrades.entry_id(0)
+    isS = tId == "Vente BPR"
+    fillUid := isS ? sUid : bUid
+    tE := isS ? sE : bE
+    tTp := isS ? sTp : bTp
+    tRk := isS ? sRk : bRk
+    tStage := 0
+    label.new(bar_index, tE, (isS ? "VENTE BPR " : "ACHAT BPR ") + fmt(tE) + "\nSL " + fmt(isS ? sS : bS) + "\nTP " + fmt(tTp),
+         style = isS ? label.style_label_down : label.style_label_up, color = isS ? cDn : cUp, textcolor = color.white, size = size.tiny)
+if strategy.position_size == 0 and inTr
+    inTr := false
+if inTr and beOn and tStage == 0
+    up = strategy.position_size > 0
+    if up ? high >= tE + tRk : low <= tE - tRk
+        tStage := 1
+        strategy.exit(up ? "Sortie A" : "Sortie V", tId, stop = tE, limit = tTp)
+
+// ---------- Nouveau FVG → BPR s'il chevauche un FVG opposé récent ----------
+newBull = bar_index > 2 and low > high[2] and low - high[2] >= minFvgK * atrL
+newBear = bar_index > 2 and high < low[2] and low[2] - high >= minFvgK * atrL
+if newBull or newBear
+    d = newBull ? 1 : -1
+    nT = newBull ? low : low[2]
+    nB = newBull ? high[2] : high
+    nI = bar_index - 1
+    float oT = na
+    float oB = na
+    int   oI = na
+    n = array.size(fvD)
+    if n > 0
+        for k = n - 1 to 0
+            if na(oI) and array.get(fvD, k) == -d and array.get(fvI, k) >= nI - pairN
+                t2 = math.min(nT, array.get(fvT, k))
+                b2 = math.max(nB, array.get(fvB, k))
+                if t2 > b2
+                    oT := t2
+                    oB := b2
+                    oI := array.get(fvI, k)
+    array.push(fvT, nT)
+    array.push(fvB, nB)
+    array.push(fvI, nI)
+    array.push(fvD, d)
+    if array.size(fvD) > 40
+        array.shift(fvT)
+        array.shift(fvB)
+        array.shift(fvI)
+        array.shift(fvD)
+    if not na(oI)
+        bool dup = false
+        for z in zones
+            if z.state == 0 and z.dir == d and math.min(z.top, oT) > math.max(z.bot, oB)
+                dup := true
+        if not dup
+            // extrême fait entre les deux FVG (le sommet du balayage pour une vente)
+            float xs = d == -1 ? high : low
+            for k = 0 to math.min(bar_index - oI + 2, 60)
+                xs := d == -1 ? math.max(xs, high[k]) : math.min(xs, low[k])
+            uidN += 1
+            bx = box.new(oI - 1, oT, bar_index, oB, border_color = d == -1 ? cDn : cUp, bgcolor = color.new(cBp, 70),
+                 text = d == -1 ? "BPR ▼" : "BPR ▲", text_color = cBp, text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top)
+            array.push(zones, Bpr.new(uidN, d, oT, oB, xs, bar_index, d == -1 ? low : high, bx))
+
+// ---------- Suivi des zones : 1er contact = zone consommée ----------
+for z in zones
+    if z.state == 0 and z.born < bar_index
+        touched = z.dir == -1 ? high >= z.bot : low <= z.top
+        box.set_right(z.bx, bar_index)
+        if touched
+            z.state := 1
+            if z.uid != fillUid
+                box.set_bgcolor(z.bx, color.new(color.gray, 85))
+                box.set_border_color(z.bx, color.new(color.gray, 50))
+        else if bar_index - z.born > maxAge
+            z.state := 2
+            box.set_bgcolor(z.bx, color.new(color.gray, 85))
+            box.set_border_color(z.bx, color.new(color.gray, 50))
+        else
+            z.ext := z.dir == -1 ? math.min(z.ext, low) : math.max(z.ext, high)
+if array.size(zones) > 0
+    for k = array.size(zones) - 1 to 0
+        if array.get(zones, k).state != 0
+            array.remove(zones, k)
+if array.size(zones) > 40
+    array.shift(zones)
+
+// ---------- Ordres limites sur le BPR actif le plus proche (un par sens) ----------
+if strategy.position_size == 0
+    filtOk = inWin and (not sessOn or inSess) and not (noNews and inNews)
+    Bpr zs = na
+    Bpr zb = na
+    for z in zones
+        if z.state == 0
+            if z.dir == -1 and z.bot > close and (na(zs) or z.bot < zs.bot)
+                zs := z
+            if z.dir == 1 and z.top < close and (na(zb) or z.top > zb.top)
+                zb := z
+    bool okS = false
+    if not na(zs) and filtOk and dirOk(-1) and trendOk(-1)
+        e = entMode == "Milieu du BPR" ? (zs.top + zs.bot) / 2 : zs.bot
+        st = (stopMode == "Au-delà du BPR" ? zs.top : math.max(zs.stp, zs.top)) + bufK * atrL
+        rk = st - e
+        tg = tpMode == "2 R" ? e - 2 * rk : tpMode == "3 R" ? e - 3 * rk : math.min(zs.ext, e - 2 * rk)
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Vente BPR", strategy.short, qty = q, limit = e, oca_name = "BPR", oca_type = strategy.oca.cancel)
+            strategy.exit("Sortie V", "Vente BPR", stop = st, limit = tg)
+            sUid := zs.uid
+            sE := e
+            sS := st
+            sTp := tg
+            sRk := rk
+            sRisk := q * rk
+            okS := true
+    if not okS
+        strategy.cancel("Vente BPR")
+    bool okB = false
+    if not na(zb) and filtOk and dirOk(1) and trendOk(1)
+        e = entMode == "Milieu du BPR" ? (zb.top + zb.bot) / 2 : zb.top
+        st = (stopMode == "Au-delà du BPR" ? zb.bot : math.min(zb.stp, zb.bot)) - bufK * atrL
+        rk = e - st
+        tg = tpMode == "2 R" ? e + 2 * rk : tpMode == "3 R" ? e + 3 * rk : math.max(zb.ext, e + 2 * rk)
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Achat BPR", strategy.long, qty = q, limit = e, oca_name = "BPR", oca_type = strategy.oca.cancel)
+            strategy.exit("Sortie A", "Achat BPR", stop = st, limit = tg)
+            bUid := zb.uid
+            bE := e
+            bS := st
+            bTp := tg
+            bRk := rk
+            bRisk := q * rk
+            okB := true
+    if not okB
+        strategy.cancel("Achat BPR")
+
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 2, 7, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(color.gray, 70))
+if barstate.islast
+    pf = gL > 0 ? gW / gL : na
+    avgR = nTr > 0 ? sumR / nTr : na
+    table.cell(tb, 0, 0, "BT BPR", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, (entMode == "Milieu du BPR" ? "milieu" : "bord") + " · " + tpMode, text_color = cBp, text_size = size.small)
+    table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nTr), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen / trade", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Zones actives", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, str.tostring(array.size(zones)), text_color = cBp, text_size = size.small)
+
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")

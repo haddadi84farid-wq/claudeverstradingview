@@ -54,6 +54,35 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 24_PA_1_TENDANCE.txt : PRICE ACTION 1 — tendance de l'unite affichee : VERT haussiere / ROUGE baissiere / ORANGE transition
                            (2 cassures de suite dans le meme sens = tendance), structure HH/HL/LH/LL, BOS/CHoCH, ligne de tendance,
                            tableau 15 min / 1 h / 4 h / jour.
+- 25_PA_2_SUPPORT_RESISTANCE.txt : PRICE ACTION 2 — zones de support (vert) / resistance (rouge) issues des sommets/creux
+                           du M15 (memes zones de M1 a H1) + 2e couche M5 en pointilles, touchees 2 fois min (x2, x3...) ; zone traversee = supprimee ; haut/bas de la veille.
+- 26_PA_3_OBLIQUES.txt : PRICE ACTION 3 — lignes de tendance automatiques (M15, memes de M1 a H1) : 2 points = tracee,
+                           3 contacts = confirmee, cassee = grise a la cloture de l'autre cote.
+- 27_PA_4_FIGURES.txt : PRICE ACTION 4 — figures chartistes dessinees (M15, memes de M1 a H1) : M, W, triple sommet/creux,
+                           ETE (et inversee), drapeaux, triangles, biseaux, rectangle, canaux ; historique + en cours, objectif.
+- 28_PA_ANNONCES.txt : zones grises « ne pas trader » autour des annonces : NFP automatique (1er vendredi 14:30 Paris),
+                           CPI / Fed a saisir a la main ; ligne + compte a rebours de la prochaine annonce.
+- 29_PA_5_BOUGIES.txt : PRICE ACTION 5 — figures de bougies notees ★ (seule) / ★★ (sur un niveau) / ★★★ (niveau + tendance),
+                           avalement, pin bar, etoile matin/soir, bougie de force ; tableau des resultats reels (1,5 R, frais).
+- 30_PA_BOT_CONFLUENCE.txt : LE BOT : combine tendance + zone S/R + bougie de rejet + annonces + objectif degage (R:R >= 1,5).
+                           Checklist 5 regles en direct, propose ACHAT/VENTE avec SL et TP, resultats sur l'historique. Ne passe aucun ordre.
+- 31_PA_RANGE_MANIPULATION.txt : PA AMD — detecte le range (accumulation), la manipulation (balayage d'un bord / fausse
+                           cassure puis retour) et propose le trade de distribution (SL au-dela du balayage, TP milieu / bord oppose).
+- 32_BACKTEST_AMD.txt : STRATEGIE (Testeur de strategie) du schema range -> manipulation -> distribution, sur une periode
+                           choisie (debut / fin), risque en % du capital, frais 0,37 pt, achats / ventes / les deux.
+- 33_BACKTEST_RANGE_OB.txt : STRATEGIE de Farid (M5) : range -> cassure -> ordre limite sur l'OB (derniere bougie opposee),
+                           stop au-dela de l'OB, TP1 = extreme de la cassure, TP2/TP3 = +1/+2 hauteurs, stop remonte.
+- 34_OB_ORDER_FLOW_5_ETOILES.txt : OB + ORDER FLOW 5 etoiles (L liquidite, D deplacement+FVG, V volume, delta, P discount/premium)
+                           sur les unites cochees (M15/H1/H4/Jour), zones vierges seulement, confirmation du flux en direct,
+                           tableau : % des zones retouchees qui ont reagi >= 2 R.
+- 35_PROMPT_SCAN_OB.txt : SCAN DES MARCHES par Claude (PC) : lit OB FLOW 5 etoiles sur 13 marches (metaux, forex, indices,
+                           petrole, crypto), classe les meilleures zones a surveiller + plan pour les 3 premieres. Commandes : scan, zoom.
+- 36_BACKTEST_FVG.txt   : BACKTEST "BT FVG" (strategie) : balayage d'un plus haut/bas -> cloture a travers un FVG (IFVG)
+                           -> ordre limite sur le BPR (ou bord / milieu de l'IFVG), stop au-dela du balayage, 2R/3R/liquidite.
+                           Filtres tendance H4/Jour, seances, NFP. Tableau des resultats en R.
+- 37_BACKTEST_BPR.txt   : BACKTEST "BT BPR" (strategie) : detecte chaque BPR (FVG haussier + FVG baissier qui se chevauchent),
+                           ordre limite au 1er retour sur la zone (meme des heures apres), stop au-dela de l'extreme,
+                           objectif 2R/3R/extreme oppose. Zones violettes actives, grises une fois consommees. Tableau en R.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

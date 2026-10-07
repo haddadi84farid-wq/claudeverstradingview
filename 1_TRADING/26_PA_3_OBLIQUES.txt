@@ -1,0 +1,149 @@
+//@version=6
+// PRICE ACTION 3 — LIGNES DE TENDANCE (obliques)
+// Règles (classiques, les mêmes que pour les supports / résistances) :
+// 1. Calcul sur une référence FIXE (M15 par défaut) → la MÊME oblique en M1, M5, M15, M30 et H1. (H4 / jour : unité affichée.)
+// 2. Oblique HAUSSIÈRE = 2 creux montants reliés ; oblique BAISSIÈRE = 2 sommets descendants reliés.
+//    Entre les deux points, aucune bougie ne doit avoir CLÔTURÉ de l'autre côté de la ligne (sinon elle n'existe pas).
+// 3. Contacts : chaque creux (sommet) qui revient toucher la ligne compte. 2 = tracée, 3 et plus = CONFIRMÉE (trait épais).
+// 4. CASSÉE = une bougie de la référence CLÔTURE de l'autre côté : la ligne s'arrête là, grise en pointillés.
+// 5. On garde l'oblique haussière et l'oblique baissière les plus solides (le plus de contacts, puis la plus récente).
+// Ne passe aucun ordre.
+indicator("Price action 3 — Lignes de tendance", shorttitle = "PA OBLIQUES", overlay = true, max_lines_count = 20, max_labels_count = 20, max_bars_back = 500)
+
+srcTf   = input.string("15", "Unité de référence (mêmes obliques jusqu'au H1)", options = ["15", "60", "240", "Unité affichée"])
+pivLen  = input.int(5, "Sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20)
+lookB   = input.int(300, "Bougies de la référence analysées", minval = 50, maxval = 450)
+nPiv    = input.int(12, "Sommets / creux récents testés", minval = 3, maxval = 25)
+touchK  = input.float(0.25, "Tolérance d'un contact (× ATR)", minval = 0.05, step = 0.05)
+minGap  = input.int(5, "Écart minimum entre les 2 points (bougies de la référence)", minval = 2)
+showBrk = input.bool(true, "Montrer la dernière oblique cassée (grise)")
+
+cUp = #089981
+cDn = #F23645
+
+refTf = srcTf == "Unité affichée" or timeframe.in_seconds() > 3600 ? timeframe.period : srcTf
+
+// Cherche la meilleure oblique d'un sens dans la référence. up = true : creux montants ; false : sommets descendants.
+// Sortie (10 valeurs) : trouvée, t1, p1, t2, p2, contacts, cassée, temps de cassure, prix de cassure, 0
+bestLine(bool up, array<float> pp, array<int> pb, array<int> pt, float atr) =>
+    res = array.new<float>(10, 0.0)
+    n = pp.size()
+    int bestN = 0
+    int bestJ = -1
+    bool bestBrk = true
+    if n >= 2
+        for j = n - 1 to 1
+            for i = j - 1 to 0
+                bi = pb.get(i)
+                bj = pb.get(j)
+                pA = pp.get(i)
+                pB = pp.get(j)
+                if bj - bi >= minGap and (up ? pB > pA : pB < pA) and bar_index - bi < lookB
+                    m = (pB - pA) / (bj - bi)
+                    bool ok = true
+                    int brkB = na
+                    // aucune clôture de l'autre côté entre les 2 points ; après : 1re clôture de l'autre côté = cassure
+                    for k = bar_index - bi to 0
+                        b = bar_index - k
+                        lv = pA + m * (b - bi)
+                        crossed = up ? close[k] < lv : close[k] > lv
+                        if crossed
+                            if b <= bj
+                                ok := false
+                            else
+                                brkB := b
+                            break
+                    if ok
+                        // contacts : pivots proches de la ligne entre i et la cassure (ou maintenant)
+                        int cnt = 0
+                        for q = i to n - 1
+                            bq = pb.get(q)
+                            if na(brkB) or bq < brkB
+                                if math.abs(pp.get(q) - (pA + m * (bq - bi))) <= touchK * atr
+                                    cnt += 1
+                        isBrk = not na(brkB)
+                        // priorité : non cassée > plus de contacts > plus récente
+                        better = bestJ < 0 or (bestBrk and not isBrk) or (bestBrk == isBrk and (cnt > bestN or (cnt == bestN and bj > pb.get(bestJ))))
+                        if better
+                            bestN := cnt
+                            bestJ := j
+                            bestBrk := isBrk
+                            res.set(0, 1)
+                            res.set(1, pt.get(i))
+                            res.set(2, pA)
+                            res.set(3, pt.get(j))
+                            res.set(4, pB)
+                            res.set(5, cnt)
+                            res.set(6, isBrk ? 1 : 0)
+                            res.set(7, isBrk ? time[bar_index - brkB] : 0)
+                            res.set(8, isBrk ? pA + m * (brkB - bi) : 0)
+    res
+
+tlData() =>
+    hp = ta.pivothigh(high, pivLen, pivLen)
+    lp = ta.pivotlow(low, pivLen, pivLen)
+    a = ta.atr(14)
+    var array<float> lP = array.new<float>()
+    var array<int>   lB = array.new<int>()
+    var array<int>   lT = array.new<int>()
+    var array<float> hP = array.new<float>()
+    var array<int>   hB = array.new<int>()
+    var array<int>   hT = array.new<int>()
+    if not na(lp)
+        lP.push(lp)
+        lB.push(bar_index - pivLen)
+        lT.push(time[pivLen])
+        if lP.size() > nPiv
+            lP.shift()
+            lB.shift()
+            lT.shift()
+    if not na(hp)
+        hP.push(hp)
+        hB.push(bar_index - pivLen)
+        hT.push(time[pivLen])
+        if hP.size() > nPiv
+            hP.shift()
+            hB.shift()
+            hT.shift()
+    out = array.new<float>()
+    if barstate.islast
+        out.concat(bestLine(true, lP, lB, lT, a))
+        out.concat(bestLine(false, hP, hB, hT, a))
+    out
+
+r = request.security(syminfo.tickerid, refTf, tlData())
+
+var array<line>  tLn = array.new<line>()
+var array<label> tLb = array.new<label>()
+
+drawTl(array<float> d, int o, bool up) =>
+    if d.get(o) == 1
+        brk = d.get(o + 6) == 1
+        t1 = int(d.get(o + 1))
+        p1 = d.get(o + 2)
+        t2 = int(d.get(o + 3))
+        p2 = d.get(o + 4)
+        cnt = int(d.get(o + 5))
+        c = up ? cUp : cDn
+        if not brk
+            tLn.push(line.new(t1, p1, t2, p2, xloc = xloc.bar_time, extend = extend.right, color = c, width = cnt >= 3 ? 3 : 2))
+            tLb.push(label.new(t2, p2, (up ? "Oblique haussière ×" : "Oblique baissière ×") + str.tostring(cnt) + (cnt >= 3 ? " confirmée" : ""), xloc = xloc.bar_time,
+                 style = up ? label.style_label_up : label.style_label_down, color = color.new(c, 30), textcolor = color.white, size = size.small))
+        else if showBrk
+            tb = int(d.get(o + 7))
+            pb = d.get(o + 8)
+            tLn.push(line.new(t1, p1, tb, pb, xloc = xloc.bar_time, color = color.gray, style = line.style_dashed, width = 2))
+            tLb.push(label.new(tb, pb, (up ? "Oblique haussière" : "Oblique baissière") + " ×" + str.tostring(cnt) + " CASSÉE", xloc = xloc.bar_time,
+                 style = up ? label.style_label_up : label.style_label_down, color = color.new(color.gray, 30), textcolor = color.white, size = size.small))
+    up
+
+if barstate.islast
+    for l in tLn
+        line.delete(l)
+    for l in tLb
+        label.delete(l)
+    tLn.clear()
+    tLb.clear()
+    if not na(r) and r.size() >= 20
+        drawTl(r, 0, true)
+        drawTl(r, 10, false)

@@ -1,0 +1,186 @@
+//@version=6
+// PRICE ACTION 5 — FIGURES DE BOUGIES (sur l'unité affichée)
+// Une figure de bougie seule ne vaut rien : ce qui compte, c'est OÙ elle se forme. Chaque signal reçoit une note :
+//   ★     = la figure seule
+//   ★★    = la figure se forme SUR UN NIVEAU : creux (sommet) des 20 dernières bougies touché ou balayé (± 0,3 ATR)
+//   ★★★   = sur un niveau ET dans le sens de la tendance (EMA 50 montante pour un achat, descendante pour une vente)
+// Par défaut, seules les ★★ et ★★★ sont affichées. Passer la souris sur une étiquette = explication complète + idée de plan.
+// Figures : avalement haussier / baissier, pin bar (marteau / étoile filante), étoile du matin / du soir,
+//           bougie de force (gros corps, petites mèches), doji et inside bar (indécision, sans direction).
+// Tableau : résultat réel de chaque figure sur l'historique du graphique — entrée à la clôture, stop au-delà de la mèche
+//           (+ 0,1 ATR), objectif 1,5 R, frais inclus. Ne passe aucun ordre.
+indicator("Price action 5 — Figures de bougies", shorttitle = "PA BOUGIES", overlay = true, max_labels_count = 300)
+
+minQ    = input.int(2, "Note minimum affichée (1 = toutes, 2 = sur un niveau, 3 = niveau + tendance)", minval = 1, maxval = 3)
+lvlN    = input.int(20, "Niveau : creux / sommet des N dernières bougies", minval = 5, maxval = 100)
+minSize = input.float(0.5, "Taille minimum de la bougie (× ATR)", minval = 0, step = 0.1)
+showDoji = input.bool(false, "Afficher doji et inside bar (indécision)")
+rrT     = input.float(1.5, "Tableau : objectif (R)", minval = 0.5, step = 0.5)
+costPts = input.float(0.37, "Tableau : frais par trade (points)", minval = 0, step = 0.01)
+showTb  = input.bool(true, "Afficher le tableau des résultats")
+
+cUp = #089981
+cDn = #F23645
+
+atr = ta.atr(14)
+ema50 = ta.ema(close, 50)
+body = math.abs(close - open)
+rng = high - low
+upW = high - math.max(open, close)
+loW = math.min(open, close) - low
+bull = close > open
+bear = close < open
+big = rng >= minSize * atr
+
+// ---------- Figures ----------
+engBull = bull and bear[1] and close >= open[1] and open <= close[1] and body > body[1] and big
+engBear = bear and bull[1] and close <= open[1] and open >= close[1] and body > body[1] and big
+pinBull = big and loW >= 0.6 * rng and body <= 0.35 * rng and upW <= 0.2 * rng
+pinBear = big and upW >= 0.6 * rng and body <= 0.35 * rng and loW <= 0.2 * rng
+starM = bear[2] and body[2] >= 0.6 * atr and body[1] <= 0.35 * body[2] and bull and close > (open[2] + close[2]) / 2
+starE = bull[2] and body[2] >= 0.6 * atr and body[1] <= 0.35 * body[2] and bear and close < (open[2] + close[2]) / 2
+forceU = bull and body >= 0.8 * rng and rng >= 1.5 * atr
+forceD = bear and body >= 0.8 * rng and rng >= 1.5 * atr
+doji = big and body <= 0.1 * rng
+inside = high < high[1] and low > low[1]
+
+// Contexte : niveau (creux / sommet récent touché ou balayé) et tendance
+lowLvl = ta.lowest(low, lvlN)[1]
+highLvl = ta.highest(high, lvlN)[1]
+pLow = math.min(low, low[1], low[2])
+pHigh = math.max(high, high[1], high[2])
+atLow = pLow <= lowLvl + 0.3 * atr
+atHigh = pHigh >= highLvl - 0.3 * atr
+trUp = ema50 > ema50[5]
+trDn = ema50 < ema50[5]
+
+// type : 0 avalement, 1 pin bar, 2 étoile, 3 bougie de force ; sens +1 / -1
+int typ = na
+int dir = 0
+string nm = ""
+if starM
+    typ := 2
+    dir := 1
+    nm := "Étoile du matin"
+else if starE
+    typ := 2
+    dir := -1
+    nm := "Étoile du soir"
+else if engBull
+    typ := 0
+    dir := 1
+    nm := "Avalement haussier"
+else if engBear
+    typ := 0
+    dir := -1
+    nm := "Avalement baissier"
+else if pinBull
+    typ := 1
+    dir := 1
+    nm := "Pin bar haussier (marteau)"
+else if pinBear
+    typ := 1
+    dir := -1
+    nm := "Pin bar baissier (étoile filante)"
+else if forceU
+    typ := 3
+    dir := 1
+    nm := "Bougie de force haussière"
+else if forceD
+    typ := 3
+    dir := -1
+    nm := "Bougie de force baissière"
+
+q = dir == 0 ? 0 : 1 + ((dir == 1 ? atLow : atHigh) ? 1 : 0) + ((dir == 1 ? atLow and trUp : atHigh and trDn) ? 1 : 0)
+stars = q == 3 ? "★★★" : q == 2 ? "★★" : "★"
+
+// Explication affichée au survol de la souris (infobulle)
+expl(int t, int d) =>
+    t == 0 ? (d == 1 ? "Le corps vert avale entièrement le corps rouge précédent : les acheteurs reprennent la main." : "Le corps rouge avale entièrement le corps vert précédent : les vendeurs reprennent la main.") :
+     t == 1 ? (d == 1 ? "Longue mèche basse : le prix a été rejeté vers le haut, les vendeurs n'ont pas tenu." : "Longue mèche haute : le prix a été rejeté vers le bas, les acheteurs n'ont pas tenu.") :
+     t == 2 ? (d == 1 ? "Grosse bougie rouge, petite bougie d'hésitation, puis bougie verte qui remonte au-dessus du milieu : retournement haussier." : "Grosse bougie verte, petite bougie d'hésitation, puis bougie rouge qui redescend sous le milieu : retournement baissier.") :
+     (d == 1 ? "Gros corps vert, petites mèches : forte pression acheteuse." : "Gros corps rouge, petites mèches : forte pression vendeuse.")
+ctxTxt(int qq) => qq == 3 ? "★★★ Sur un niveau ET dans le sens de la tendance : signal le plus fiable." : qq == 2 ? "★★ Sur un niveau (creux / sommet récent), mais contre la tendance ou tendance neutre." : "★ Figure seule, hors niveau : peu fiable."
+short(int t) => t == 0 ? "AV" : t == 1 ? "PIN" : t == 2 ? "ÉT" : "FORCE"
+
+if dir != 0 and q >= minQ and barstate.isconfirmed
+    ext0 = dir == 1 ? (typ == 2 ? pLow : low) : (typ == 2 ? pHigh : high)
+    stp0 = dir == 1 ? ext0 - 0.1 * atr : ext0 + 0.1 * atr
+    tgt0 = close + dir * rrT * math.abs(close - stp0)
+    tip = nm + "  " + stars + "\n\n" + expl(typ, dir) + "\n" + ctxTxt(q) + "\n\nIdée de plan : entrée " + str.tostring(close, format.mintick) +
+         " | stop " + str.tostring(stp0, format.mintick) + " | objectif " + str.tostring(tgt0, format.mintick) + " (" + str.tostring(rrT) + " R)"
+    label.new(bar_index, dir == 1 ? low : high, (dir == 1 ? "▲ " : "▼ ") + short(typ) + " " + stars, style = dir == 1 ? label.style_label_up : label.style_label_down,
+         color = color.new(dir == 1 ? cUp : cDn, q == 3 ? 0 : q == 2 ? 30 : 60), textcolor = color.white, size = size.normal, tooltip = tip)
+else if showDoji and barstate.isconfirmed and (doji or inside) and (atLow or atHigh)
+    label.new(bar_index, high, doji ? "DOJI" : "IB", style = label.style_label_down, color = color.new(color.gray, 40), textcolor = color.white, size = size.normal,
+         tooltip = doji ? "Doji : corps minuscule, indécision. Attendre la bougie suivante pour connaître le sens." : "Inside bar : la bougie reste dans la précédente, compression. La cassure de la bougie mère donne le sens.")
+
+// ---------- Test sur l'historique ----------
+var array<float> oE = array.new<float>()
+var array<float> oS = array.new<float>()
+var array<float> oT = array.new<float>()
+var array<int>   oD = array.new<int>()
+var array<int>   oK = array.new<int>()
+var array<int>   oQ = array.new<int>()
+var array<int>   oB = array.new<int>()
+// lignes : 0 avalement, 1 pin bar, 2 étoile, 3 force, 4 tous ★, 5 tous ★★, 6 tous ★★★
+var array<int>   sN = array.new<int>(7, 0)
+var array<int>   sW = array.new<int>(7, 0)
+var array<float> sR = array.new<float>(7, 0.0)
+
+addRes(int row, float r) =>
+    sN.set(row, sN.get(row) + 1)
+    sW.set(row, sW.get(row) + (r > 0 ? 1 : 0))
+    sR.set(row, sR.get(row) + r)
+    row
+
+if oE.size() > 0
+    for i = oE.size() - 1 to 0
+        if bar_index > oB.get(i)
+            d = oD.get(i)
+            e = oE.get(i)
+            s = oS.get(i)
+            rk = math.abs(e - s)
+            float res = na
+            if d == 1 ? low <= s : high >= s
+                res := -1 - costPts / rk
+            else if d == 1 ? high >= oT.get(i) : low <= oT.get(i)
+                res := rrT - costPts / rk
+            if not na(res)
+                addRes(oK.get(i), res)
+                addRes(3 + oQ.get(i), res)
+                oE.remove(i)
+                oS.remove(i)
+                oT.remove(i)
+                oD.remove(i)
+                oK.remove(i)
+                oQ.remove(i)
+                oB.remove(i)
+
+if dir != 0 and barstate.isconfirmed
+    ext = dir == 1 ? (typ == 2 ? pLow : low) : (typ == 2 ? pHigh : high)
+    stp = dir == 1 ? ext - 0.1 * atr : ext + 0.1 * atr
+    rk = math.abs(close - stp)
+    if rk > 0
+        oE.push(close)
+        oS.push(stp)
+        oT.push(close + dir * rrT * rk)
+        oD.push(dir)
+        oK.push(typ)
+        oQ.push(q)
+        oB.push(bar_index)
+
+var table tb = table.new(position.bottom_left, 4, 8, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
+if barstate.islast and showTb
+    hd = array.from("Bougies (" + str.tostring(rrT) + " R)", "Trades", "Gagnés", "R moyen")
+    for c = 0 to 3
+        table.cell(tb, c, 0, hd.get(c), text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+    rows = array.from("Avalement", "Pin bar", "Étoile matin / soir", "Bougie de force", "Toutes ★", "Toutes ★★ (niveau)", "Toutes ★★★ (niveau + tendance)")
+    for r = 0 to 6
+        n = sN.get(r)
+        avg = n > 0 ? sR.get(r) / n : 0.0
+        cc = n == 0 ? color.gray : avg > 0 ? cUp : cDn
+        table.cell(tb, 0, r + 1, rows.get(r), text_color = color.white, text_size = size.small, text_halign = text.align_left)
+        table.cell(tb, 1, r + 1, str.tostring(n), text_color = color.white, text_size = size.small)
+        table.cell(tb, 2, r + 1, n > 0 ? str.tostring(math.round(100.0 * sW.get(r) / n)) + " %" : "-", text_color = color.white, text_size = size.small)
+        table.cell(tb, 3, r + 1, n > 0 ? str.tostring(avg, "#.##") : "-", text_color = cc, text_size = size.small)

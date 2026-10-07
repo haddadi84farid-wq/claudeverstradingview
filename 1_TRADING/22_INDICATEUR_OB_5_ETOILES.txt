@@ -4,7 +4,8 @@
 // Zone = la dernière bougie (ou série de bougies) OPPOSÉE juste avant la jambe qui casse la structure, mèches comprises.
 // Trait pointillé = 50 % de l'OB (2 parties).
 // Les 5 étoiles :
-//   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB).
+//   1. IMBALANCE : l'OB libère un FVG (sur les 3 bougies qui partent de l'OB). OBLIGATOIRE par défaut : sans FVG juste après,
+//      ce n'est pas un OB (pas affiché, pas compté).
 //   2. DIRECTION : Supertrend dans le sens de l'OB au moment où il se forme.
 //   3. LIQUIDITÉ : pas de hauts égaux (bas égaux) NON balayés juste au-delà de l'OB (ils attireraient le prix à travers l'OB).
 //      Si le marché les balaie avant de revenir sur l'OB, l'étoile est gagnée (« le marché les a déjà récupérés »).
@@ -13,12 +14,14 @@
 // Trade (comme la méthode) : le prix revient dans l'OB → bougie de réaction dans le sens de l'OB → entrée à sa clôture,
 // stop juste au-delà de l'OB, objectif 2 R. Le tableau compare les OB 5★, 4★ et ≤ 3★ : si les étoiles servent, 5★ doit gagner plus.
 // Ne passe aucun ordre.
-indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true, scale = scale.right,
+indicator("Order Blocks 5 étoiles", shorttitle = "OB 5★", overlay = true,
      max_boxes_count = 200, max_lines_count = 200, max_labels_count = 200, max_bars_back = 500)
 
 gD = "Détection"
 pivLen   = input.int(5, "Structure : sommet / creux confirmé par N bougies de chaque côté", minval = 2, maxval = 20, group = gD)
 obLook   = input.int(20, "Recherche de la bougie OB (bougies avant la cassure)", minval = 5, maxval = 60, group = gD)
+obZone   = input.string("Dernière bougie opposée seule (comme OB FLOW)", "Zone de l'OB", options = ["Dernière bougie opposée seule (comme OB FLOW)", "Série de bougies opposées collées"], group = gD)
+needFvg  = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gD)
 gS = "Étoiles"
 stLen    = input.int(10, "Étoile 2 — Supertrend : période ATR", minval = 1, group = gS)
 stFac    = input.float(3.0, "Étoile 2 — Supertrend : facteur", minval = 0.5, step = 0.1, group = gS)
@@ -27,11 +30,20 @@ liqDist  = input.float(3.0, "Étoile 3 — liquidité dangereuse si à moins de 
 fibMode  = input.string("Dernière vague (sommet → creux)", "Étoile 5 — Fibonacci tracé sur", options = ["Dernière vague (sommet → creux)", "N dernières bougies"], group = gS)
 rngLen   = input.int(150, "Étoile 5 — N bougies (si choisi)", minval = 20, maxval = 480, group = gS)
 gT = "Trade"
+entMode  = input.string("Bougie de réaction", "Entrée", options = ["Bougie de réaction", "Au contact de l'OB (ordre limite, comme Kasper)"], group = gT)
 waitBars = input.int(3, "Bougie de réaction : au plus N bougies après le 1er contact", minval = 1, maxval = 10, group = gT)
 slBuf    = input.float(0.3, "Marge du stop au-delà de l'OB (points, ≈ spread)", minval = 0, step = 0.05, group = gT)
 rrTP     = input.float(2.0, "Objectif (R)", minval = 0.5, step = 0.5, group = gT)
 maxHold  = input.int(96, "Sortie forcée après N bougies", minval = 5, group = gT)
 costPts  = input.float(0.37, "Frais par trade (points : spread + commission)", minval = 0, step = 0.01, group = gT)
+gF = "Forex (utilisé automatiquement sur les paires de devises)"
+costPips = input.float(1.2, "Forex : frais par trade (pips)", minval = 0, step = 0.1, group = gF)
+bufPips  = input.float(2.0, "Forex : marge du stop au-delà de l'OB (pips)", minval = 0, step = 0.5, group = gF)
+// Sur le forex, les « points » de l'or n'ont aucun sens (0,37 = 3 700 pips) : on passe en pips
+isFx = syminfo.type == "forex"
+pipSz = syminfo.mintick * 10
+bufEff = isFx ? bufPips * pipSz : slBuf
+costEff = isFx ? costPips * pipSz : costPts
 gA = "Affichage"
 minStars = input.int(3, "Afficher les OB à partir de (étoiles)", minval = 0, maxval = 5, group = gA)
 maxOb    = input.int(12, "OB suivis au maximum", minval = 1, maxval = 50, group = gA)
@@ -68,6 +80,8 @@ type Trd
     float tp
     int   st
     int   b
+    label lb
+    float mx = 0.0
 
 var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
 ck(bool b) => b ? "✓" : "✗"
@@ -183,11 +197,12 @@ newOB(int d) =>
     if na(j)
         j := d == -1 ? hiOff : loOff
     int j2 = j
-    for k = j + 1 to j + 4
-        if d == -1 ? close[k] > open[k] : close[k] < open[k]
-            j2 := k
-        else
-            break
+    if obZone == "Série de bougies opposées collées"
+        for k = j + 1 to j + 4
+            if d == -1 ? close[k] > open[k] : close[k] < open[k]
+                j2 := k
+            else
+                break
     float top = high[j]
     float bot = low[j]
     for k = j to j2
@@ -214,13 +229,13 @@ if not slBroken and not na(lastSL) and close < lastSL
     slBroken := true
     o = newOB(-1)
     dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
-    if not dup
+    if not dup and (not needFvg or o.s1)
         array.push(obs, o)
 if not shBroken and not na(lastSH) and close > lastSH
     shBroken := true
     o = newOB(1)
     dup = array.size(obs) > 0 and array.get(obs, array.size(obs) - 1).bar == o.bar
-    if not dup
+    if not dup and (not needFvg or o.s1)
         array.push(obs, o)
 while array.size(obs) > maxOb
     killOB(array.shift(obs))
@@ -243,18 +258,34 @@ if array.size(obs) > 0
             o.touched := true
             o.touchBar := bar_index
             touch5 := touch5 or o.tStars == 5
+            // Mode Kasper : ordre limite posé au bord de l'OB, exécuté au 1er contact (sans attendre de confirmation)
+            if entMode != "Bougie de réaction"
+                ePx = o.dir == -1 ? o.bot : o.top
+                sl = o.dir == -1 ? o.top + bufEff : o.bot - bufEff
+                rk = math.abs(ePx - sl)
+                if rk > 0
+                    // b = bougie précédente : la bougie du contact compte déjà (stop prioritaire si touché dans la même bougie)
+                    label lbE = na
+                    if o.tStars >= minStars
+                        lbE := label.new(bar_index, o.dir == -1 ? high : low, (o.dir == -1 ? "VENTE " : "ACHAT ") + str.tostring(o.tStars) + "/5 (limite)",
+                             style = o.dir == -1 ? label.style_label_down : label.style_label_up, color = o.dir == -1 ? cRed : cGreen,
+                             textcolor = color.white, size = size.tiny)
+                    array.push(trs, Trd.new(o.dir, ePx, sl, ePx + o.dir * rrTP * rk, o.tStars, bar_index - 1, lbE))
+                    entry5 := entry5 or o.tStars == 5
+                o.done := true
         if o.touched and not o.done and not broken
             react = o.dir == -1 ? close < open and close <= o.top : close > open and close >= o.bot
             if react
-                sl = o.dir == -1 ? o.top + slBuf : o.bot - slBuf
+                sl = o.dir == -1 ? o.top + bufEff : o.bot - bufEff
                 rk = math.abs(close - sl)
                 if rk > 0
-                    array.push(trs, Trd.new(o.dir, close, sl, close + o.dir * rrTP * rk, o.tStars, bar_index))
-                    entry5 := entry5 or o.tStars == 5
+                    label lbE = na
                     if o.tStars >= minStars
-                        label.new(bar_index, o.dir == -1 ? high : low, (o.dir == -1 ? "VENTE " : "ACHAT ") + str.tostring(o.tStars) + "/5",
+                        lbE := label.new(bar_index, o.dir == -1 ? high : low, (o.dir == -1 ? "VENTE " : "ACHAT ") + str.tostring(o.tStars) + "/5",
                              style = o.dir == -1 ? label.style_label_down : label.style_label_up, color = o.dir == -1 ? cRed : cGreen,
                              textcolor = color.white, size = size.tiny)
+                    array.push(trs, Trd.new(o.dir, close, sl, close + o.dir * rrTP * rk, o.tStars, bar_index, lbE))
+                    entry5 := entry5 or o.tStars == 5
                 o.done := true
             else if bar_index - o.touchBar >= waitBars
                 o.done := true
@@ -288,8 +319,16 @@ if array.size(trs) > 0
                 res := rrTP
             else if bar_index - t.b >= maxHold
                 res := (t.d == 1 ? close - t.e : t.e - close) / rk
+            // meilleur gain atteint pendant le trade (en R)
+            t.mx := math.max(t.mx, (t.d == 1 ? high - t.e : t.e - low) / rk)
+            base = (t.d == -1 ? "VENTE " : "ACHAT ") + str.tostring(t.st) + "/5"
             if not na(res)
-                res -= costPts / rk
+                res -= costEff / rk
+                // le signal affiche son résultat (sinon on ne sait pas ce qu'est devenue une zone effacée)
+                if not na(t.lb)
+                    label.set_text(t.lb, base + (hitSL ? "  ✗ stop −1 R (max atteint +" + str.tostring(t.mx, "#.#") + " R)" : hitTP ? "  ✓ objectif +" + str.tostring(rrTP) + " R" : "  ⏱ sortie temps " + str.tostring(res, "#.#") + " R"))
+                    if hitSL
+                        label.set_color(t.lb, color.new(color.gray, 20))
                 if t.st == 5
                     n5 += 1
                     w5 += res > 0 ? 1 : 0
@@ -303,6 +342,10 @@ if array.size(trs) > 0
                     w3 += res > 0 ? 1 : 0
                     r3 += res
                 array.remove(trs, i)
+            else if not na(t.lb)
+                // trade en cours : R actuel et meilleur R atteint, mis à jour à chaque bougie
+                cur = (t.d == 1 ? close - t.e : t.e - close) / rk
+                label.set_text(t.lb, base + "  EN COURS " + (cur >= 0 ? "+" : "") + str.tostring(cur, "#.#") + " R (max +" + str.tostring(t.mx, "#.#") + " R)")
 
 var table tab = table.new(position.bottom_right, 5, 4, bgcolor = color.new(color.black, 20), frame_color = cGray, frame_width = 1,
      border_color = color.new(cGray, 60), border_width = 1)

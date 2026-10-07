@@ -209,3 +209,61 @@ R = résultat ÷ risque initial (distance entrée → stop × taille). Plan resp
 |---|---|---|
 | 30 min (01/10) | 126 trades, 40 % gagnants, −10,7 R, −0,08 R/trade | 64 trades, 39 %, −12,4 R, −0,19 R/trade |
 - Aucun des deux plans n'a d'avantage mesuré en 30 min. À vérifier en 15 et 5 min.
+
+## Test PA BOT (confluence des 5 regles) — 02/10/2026, XAUUSD OANDA, 90 jours, frais 0,37 pt
+
+| Reglages | Unite | Trades | Gagnes | R moyen |
+|---|---|---|---|---|
+| objectif max 4 R, marge stop 0,5, range coche | M15 | 43 | 9 % | -0,61 |
+| idem, range decoche | M15 | 10 | 10 % | -0,54 |
+| idem, range coche | M5 | 46 | 13 % | -0,49 |
+| idem, range decoche | M5 | 8 | 13 % | -0,42 |
+| objectif max 2 R, marge stop 2 (test decide a l'avance) | M5 | 46 | 24 % | -0,32 |
+| idem | M15 | 44 | 16 % | -0,56 |
+
+Conclusion (regle fixee avant le test) : negatif en M5 et en M15 -> on arrete d'automatiser ces regles.
+Les indicateurs 24 a 29 restent des outils de lecture ; le trader decide. Methode mesuree positive : tendance Daily 20/10.
+
+## Test BT AMD (range -> manipulation -> distribution) — 04/10/2026, XAUUSD OANDA M15
+
+| Test | Periode reelle | Trades | Gagnes | Facteur de profit | P&L | Baisse max |
+|---|---|---|---|---|---|---|
+| Strategie BT AMD, risque 1 %, frais 0,37 | debut juillet -> 2 oct. 2026 (historique M15 dispo) | 79 | 45,6 % | 1,945 | +533 $ (+53 %) | 7,8 % |
+| Indicateur PA AMD (stop prioritaire si meme bougie) | historique du graphique | 133 | 36 % | - | R moyen +0,21 | - |
+
+1er resultat positif de toutes les methodes intraday testees. A confirmer AVANT tout argent reel :
+M5 memes reglages, achats seuls / ventes seules, frais x2 (slippage 30), puis 30 trades en forward test (paper, 0,5 %).
+| BT AMD mode « milieu du range », tout garder + stop remonte, risque 1 % | juillet -> 2 oct. 2026, M15 | 42 | 35,7 % | 4,06 | +162 $ (+16 %) | 4,1 % |
+| BT AMD milieu + range garde apres 1re manipulation | juillet -> 2 oct. 2026, M15 | 54 | 38,9 % | 3,06 | +158 $ (+16 %) | 3,5 % |
+| BT AMD milieu, balayage = cloture dans le range | juillet -> 2 oct. 2026, M15 | 52 | 38,5 % | 3,07 | +157 $ (+16 %) | 3,4 % |
+
+## Test BT RANGE OB (strategie dessinee par Farid) — XAUUSD OANDA M5, 10 aout -> 2 oct. 2026, risque 1 %, frais 0,37
+| Reglages | Trades | Gagnes | Facteur de profit | P&L | Baisse max |
+|---|---|---|---|---|---|
+| defaut (toute cloture hors du range, stop 0,5 pt au-dela de l'OB) | 109 | 11,9 % | 0,85 | -106 $ (-10,6 %) | 21,5 % |
+Prochain test decide a l'avance : cassure = corps >= 1 ATR (vraie cassure institutionnelle), M5 puis M15.
+| cassure corps >= 1 ATR + pas de cassure pendant le NFP (M15, mai -> oct.) | 57 | 8,8 % | 0,53 | -165 $ (-16,5 %) | 18,7 % |
+Dernier test decide a l'avance : stop au-dela du milieu du range. Si negatif -> abandon de la continuation, on garde BT AMD (retournement).
+
+## OB 5 etoiles en 4 h (methode type Kasper) — 05/10/2026
+| Marche | Entree | 5 etoiles | 4 etoiles | 3 et moins |
+|---|---|---|---|---|
+| EURUSD 4h (frais 1,2 pip) | bougie de reaction, 2 R | 66 trades, 39 %, +10,2 R (+0,15 R/trade) | 142, 31 %, -17,3 R (-0,12) | 159, 33 %, -13,3 R (-0,08) |
+Seules les 5 etoiles sont positives. A comparer : entree au contact (ordre limite) et or 4h.
+| XAUUSD 4h (frais 0,37) | bougie de reaction, 2 R | 81 trades, 31 %, -8,1 R (-0,10) | 135, 41 %, +21,1 R (+0,16) | ?, 28 %, -28,1 R (-0,21) |
+| XAUUSD 15m | bougie de reaction, 2 R | 54, 26 %, -15,6 R (-0,29) | 125, 35 %, -0,5 R | 136, 31 %, -15,2 R (-0,11) |
+Constat : le classement par etoiles n'est pas stable (5 etoiles positif sur EURUSD, negatif sur l'or ; l'inverse pour 4 etoiles).
+Ecarts de +-0,15 R sur 70-140 trades = dans le bruit statistique (erreur type ~0,13 R). Pas d'avantage prouve des OB en 4 h.
+
+## OB FLOW 5 etoiles — mesure stricte (stop = meche, stop compte en premier), or, 05/10/2026
+| Unite | 5 etoiles | 4 etoiles | 3 et moins |
+|---|---|---|---|
+| M5 | 18 zones, 33 % | 126, 37 % | 1156, 35 % |
+| M15 | 11, 27 % | 48, 33 % | 368, 35 % |
+Seuil 2 R = 34 % avant frais -> tout est au point mort. Les etoiles (liquidite, deplacement, volume, delta, discount) n'ameliorent pas la reaction.
+Conclusion : OB = carte des zones, pas un signal. Avantage mesure seulement sur BT AMD (M15) et tendance Daily 20/10.
+
+## BT FVG (balayage -> IFVG -> limite sur BPR, 2 R), XAUUSD M15, 01/05 -> 06/10/2026, 06/10/2026
+- Reglages par defaut : 96 trades, 30,2 % gagnants, PF 0,83, -10,5 %, DD max 23,3 %.
+- Seuil 2 R avec frais ~35 % -> negatif. L'entree BPR/IFVG seule n'a pas d'avantage (meme constat que les OB).
+- A tester (une fois, sans sur-optimiser) : CE 50 %, filtre H4, seances Londres/NY. Si aucun > PF 1,3 sur >= 50 trades -> abandon.

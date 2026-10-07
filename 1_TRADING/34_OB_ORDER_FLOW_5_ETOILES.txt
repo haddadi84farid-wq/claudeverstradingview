@@ -1,0 +1,312 @@
+//@version=6
+// OB + ORDER FLOW 5 ÉTOILES — les order blocks qui portent la SIGNATURE des institutionnels, sur les unités cochées
+// (M1, M3, M5, M15, H1, H4, Jour). Pour ne voir QUE les 5 étoiles : « Afficher les OB à partir de » = 5.
+// Un OB est créé à chaque cassure de structure (dernière bougie opposée avant l'impulsion), SEULEMENT s'il laisse une
+// IMBALANCE (FVG) juste après lui (option, activée par défaut). Il reçoit ensuite 1 étoile par critère :
+//  L  LIQUIDITÉ  : la zone de l'OB a d'abord balayé les plus bas (plus hauts) des 30 bougies précédentes (chasse aux stops).
+//  D  DÉPLACEMENT: l'impulsion qui part de l'OB fait ≥ 1,5 ATR ET laisse un FVG (ordres urgents, prix « jeté »).
+//  V  VOLUME     : le volume de l'impulsion est anormal (une bougie ≥ 1,5 × la moyenne 20).
+//  Δ  DELTA      : l'impulsion est dominée par les agresseurs du bon côté (delta approché ≥ 30 % du volume).
+//  P  PRIX       : l'OB est en zone discount (achat) / premium (vente) de la vague qu'il a créée.
+// OB VIERGES = trait plein ; OB déjà touchés mais pas cassés = pointillés (option). Un OB cassé (mèche au-delà) disparaît. Quand le prix revient dedans, l'unité affichée vérifie
+// le flux en direct : « FLUX ✓ » si la bougie montre des acheteurs (vendeurs) agressifs qui reprennent la main.
+// Tableau : pour chaque unité et chaque note, combien de zones ont été retouchées et combien ont donné une réaction ≥ 2 R
+// (entrée au bord, stop = MÈCHE au-delà de l'OB, stop compté en premier si les deux arrivent dans la même bougie).
+// Rien n'est « garanti » : le tableau mesure la probabilité. Seuil de rentabilité à 2 R ≈ 34 % (avant frais).
+// Volume : sur un CFD (XAUUSD) c'est un volume de ticks, approché ; sur un future (GC1!) c'est le vrai volume. Ne passe aucun ordre.
+indicator("OB + order flow 5 étoiles", shorttitle = "OB FLOW 5★", overlay = true, max_boxes_count = 80, max_labels_count = 120, max_bars_back = 500)
+
+gU = "Unités de temps (cocher celles à afficher)"
+use1 = input.bool(false, "M1", group = gU, inline = "u")
+use3 = input.bool(false, "M3", group = gU, inline = "u")
+use5 = input.bool(false, "M5", group = gU, inline = "u")
+use15 = input.bool(false, "M15", group = gU, inline = "u")
+use60 = input.bool(true, "H1", group = gU, inline = "u")
+use240 = input.bool(true, "H4", group = gU, inline = "u")
+useD = input.bool(false, "Jour", group = gU, inline = "u")
+gS = "Sélection"
+minStars = input.int(4, "Afficher les OB à partir de (étoiles)", minval = 1, maxval = 5, group = gS)
+keepN = input.int(3, "OB vierges gardés par unité et par sens", minval = 1, maxval = 5, group = gS)
+pivLen = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gS)
+needFvg = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gS)
+dispK = input.float(1.5, "D : déplacement minimum (× ATR)", minval = 0.5, step = 0.25, group = gS)
+volK = input.float(1.5, "V : volume minimum (× moyenne 20)", minval = 1, step = 0.1, group = gS)
+dltK = input.float(0.3, "Δ : delta minimum (part du volume)", minval = 0.05, step = 0.05, group = gS)
+gA = "Affichage"
+extH = input.float(12, "Prolonger à droite (heures)", minval = 1, step = 1, group = gA)
+showTouch = input.bool(true, "Afficher aussi les zones déjà touchées mais pas cassées (pointillés)", group = gA)
+showFlow = input.bool(true, "Confirmation du flux quand le prix est dans une zone", group = gA)
+showTb = input.bool(true, "Tableau des réactions (historique)", group = gA)
+
+cBuy = #089981
+cSell = #F23645
+
+type OB
+    int   dir
+    float top
+    float bot
+    int   t
+    int   st
+    bool  fL
+    bool  fD
+    bool  fV
+    bool  fF
+    bool  fP
+    bool  touched
+    float ext
+
+// ---------- Détection sur UNE unité (exécutée dans chaque unité via request.security) ----------
+// Sortie : [nb d'OB, puis 11 valeurs par OB (sens, haut, bas, temps, étoiles, L, D, V, Δ, P, touché),
+//           puis 6 « zones retouchées » (0 à 5 étoiles), puis 6 « réactions ≥ 2 R »]
+obFlow() =>
+    a = ta.atr(14)
+    vma = ta.sma(volume, 20)
+    rg = high - low
+    dBar = rg > 0 ? volume * (2 * close - high - low) / rg : 0.0
+    ph = ta.pivothigh(high, pivLen, pivLen)
+    pl = ta.pivotlow(low, pivLen, pivLen)
+    lo30 = ta.lowest(low, 30)
+    hi30 = ta.highest(high, 30)
+    var float sh = na
+    var float sl = na
+    var bool  shX = true
+    var bool  slX = true
+    var array<OB> obs = array.new<OB>()
+    var array<int> nT = array.new<int>(6, 0)
+    var array<int> nW = array.new<int>(6, 0)
+    if not na(ph)
+        sh := ph
+        shX := false
+    if not na(pl)
+        sl := pl
+        slX := false
+    // Suivi : retour dans la zone, réaction ≥ 2 R ou cassure
+    if obs.size() > 0
+        for i = obs.size() - 1 to 0
+            o = obs.get(i)
+            risk = o.top - o.bot + 0.1 * a
+            if o.dir == 1
+                if not o.touched and low <= o.top
+                    o.touched := true
+                    nT.set(o.st, nT.get(o.st) + 1)
+                // stop = mèche sous l'OB (− 0,1 ATR), vérifié AVANT l'objectif (calcul prudent)
+                if low < o.bot - 0.1 * a
+                    obs.remove(i)
+                else if o.touched and high >= o.top + 2 * risk
+                    nW.set(o.st, nW.get(o.st) + 1)
+                    obs.remove(i)
+                else if not o.touched
+                    o.ext := math.max(o.ext, high)
+            else
+                if not o.touched and high >= o.bot
+                    o.touched := true
+                    nT.set(o.st, nT.get(o.st) + 1)
+                if high > o.top + 0.1 * a
+                    obs.remove(i)
+                else if o.touched and low <= o.bot - 2 * risk
+                    nW.set(o.st, nW.get(o.st) + 1)
+                    obs.remove(i)
+                else if not o.touched
+                    o.ext := math.min(o.ext, low)
+    // Cassure de structure → nouvel OB
+    for d in array.from(1, -1)
+        bool brk = d == 1 ? (not shX and not na(sh) and close > sh) : (not slX and not na(sl) and close < sl)
+        if brk
+            if d == 1
+                shX := true
+            else
+                slX := true
+            int j = na
+            for k = 1 to 15
+                if na(j) and (d == 1 ? close[k] < open[k] : close[k] > open[k])
+                    j := k
+            // Imbalance juste après l'OB : FVG sur les 3 bougies qui partent de l'OB (ou les 3 suivantes)
+            bool fvg0 = false
+            if not na(j) and j >= 2
+                fvg0 := d == 1 ? low[j - 2] > high[j] : high[j - 2] < low[j]
+            if not na(j) and not fvg0 and j >= 3
+                fvg0 := d == 1 ? low[j - 3] > high[j - 1] : high[j - 3] < low[j - 1]
+            if not na(j) and (not needFvg or fvg0)
+                top = high[j]
+                bot = low[j]
+                // impulsion = bougies j-1 … 0
+                float ix = d == 1 ? high : low
+                float vMax = 0.0
+                float vSum = 0.0
+                float dSum = 0.0
+                bool fvg = false
+                for k = 0 to j - 1
+                    ix := d == 1 ? math.max(ix, high[k]) : math.min(ix, low[k])
+                    vMax := math.max(vMax, volume[k])
+                    vSum += volume[k]
+                    dSum += dBar[k]
+                    if k + 2 <= j and (d == 1 ? low[k] > high[k + 2] : high[k] < low[k + 2])
+                        fvg := true
+                fL = d == 1 ? bot < lo30[j + 1] : top > hi30[j + 1]
+                fD = (d == 1 ? ix - top : bot - ix) >= dispK * a and fvg
+                fV = vMax >= volK * vma
+                fF = vSum > 0 and d * dSum / vSum >= dltK
+                mid = (top + bot) / 2
+                w0 = d == 1 ? math.min(bot, lo30[j + 1]) : math.max(top, hi30[j + 1])
+                fP = d == 1 ? mid <= (w0 + ix) / 2 : mid >= (w0 + ix) / 2
+                st = (fL ? 1 : 0) + (fD ? 1 : 0) + (fV ? 1 : 0) + (fF ? 1 : 0) + (fP ? 1 : 0)
+                obs.push(OB.new(d, top, bot, time[j], st, fL, fD, fV, fF, fP, false, ix))
+                // garder les keepN derniers par sens
+                int cnt = 0
+                for o in obs
+                    cnt += o.dir == d ? 1 : 0
+                if cnt > keepN
+                    for i = 0 to obs.size() - 1
+                        if obs.get(i).dir == d
+                            obs.remove(i)
+                            break
+    out = array.new<float>()
+    if barstate.islast
+        out.push(obs.size())
+        for o in obs
+            if true
+                out.push(o.dir)
+                out.push(o.top)
+                out.push(o.bot)
+                out.push(o.t)
+                out.push(o.st)
+                out.push(o.fL ? 1 : 0)
+                out.push(o.fD ? 1 : 0)
+                out.push(o.fV ? 1 : 0)
+                out.push(o.fF ? 1 : 0)
+                out.push(o.fP ? 1 : 0)
+                out.push(o.touched ? 1 : 0)
+        for q = 0 to 5
+            out.push(nT.get(q))
+        for q = 0 to 5
+            out.push(nW.get(q))
+    out
+
+r1 = request.security(syminfo.tickerid, "1", obFlow())
+r3 = request.security(syminfo.tickerid, "3", obFlow())
+r5 = request.security(syminfo.tickerid, "5", obFlow())
+r15 = request.security(syminfo.tickerid, "15", obFlow())
+r60 = request.security(syminfo.tickerid, "60", obFlow())
+r240 = request.security(syminfo.tickerid, "240", obFlow())
+rD = request.security(syminfo.tickerid, "D", obFlow())
+
+// ---------- Dessin ----------
+var array<box>   zBx = array.new<box>()
+var array<label> zLb = array.new<label>()
+var array<float> zTop = array.new<float>()
+var array<float> zBot = array.new<float>()
+var array<int>   zDir = array.new<int>()
+var table tb = table.new(position.bottom_right, 4, 23, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
+var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
+ck(float f) => f == 1 ? "✓" : "✗"
+
+drawTf(array<float> r, string tfName) =>
+    int n = na(r) or r.size() == 0 ? 0 : int(r.get(0))
+    if n > 0
+        tEnd = time + math.round(extH * 3600000)
+        for i = 0 to n - 1
+            b = 1 + i * 11
+            d = int(r.get(b))
+            st = int(r.get(b + 4))
+            tch = r.get(b + 10) == 1
+            if st >= minStars and (showTouch or not tch)
+                top = r.get(b + 1)
+                bot = r.get(b + 2)
+                c = d == 1 ? cBuy : cSell
+                zBx.push(box.new(int(r.get(b + 3)), top, tEnd, bot, xloc = xloc.bar_time, border_color = c, border_width = st == 5 ? 2 : 1,
+                     border_style = tch ? line.style_dashed : line.style_solid, bgcolor = color.new(c, tch ? 92 : st == 5 ? 70 : 85)))
+                txt = (d == 1 ? "OB ACHAT " : "OB VENTE ") + tfName + "  " + starTxt.get(st) + "  L" + ck(r.get(b + 5)) + " D" + ck(r.get(b + 6)) +
+                     " V" + ck(r.get(b + 7)) + " Δ" + ck(r.get(b + 8)) + " P" + ck(r.get(b + 9)) + (tch ? "  (déjà touchée)" : "  (vierge)")
+                zLb.push(label.new(tEnd, d == 1 ? bot : top, txt, xloc = xloc.bar_time, style = d == 1 ? label.style_label_upper_left : label.style_label_lower_left,
+                     color = color.new(c, st == 5 ? 0 : 35), textcolor = color.white, size = size.small,
+                     tooltip = "L = liquidité balayée avant l'OB\nD = déplacement ≥ " + str.tostring(dispK) + " ATR avec FVG\nV = volume anormal\nΔ = agresseurs dominants dans l'impulsion\nP = zone discount (achat) / premium (vente)\nEntrée au bord, stop au-delà de l'OB."))
+                zTop.push(top)
+                zBot.push(bot)
+                zDir.push(d)
+    n
+
+statRows(array<float> r, string tfName, int row) =>
+    int n = na(r) or r.size() == 0 ? 0 : int(r.get(0))
+    int rr = row
+    if not na(r) and r.size() >= 1 + n * 11 + 12
+        b = 1 + n * 11
+        t5 = r.get(b + 5)
+        w5 = r.get(b + 11)
+        t4 = r.get(b + 4)
+        w4 = r.get(b + 10)
+        t3 = r.get(b) + r.get(b + 1) + r.get(b + 2) + r.get(b + 3)
+        w3 = r.get(b + 6) + r.get(b + 7) + r.get(b + 8) + r.get(b + 9)
+        names = array.from("★★★★★", "★★★★", "3★ et moins")
+        ts = array.from(t5, t4, t3)
+        ws = array.from(w5, w4, w3)
+        for q = 0 to 2
+            t = ts.get(q)
+            w = ws.get(q)
+            pct = t > 0 ? 100.0 * w / t : 0.0
+            table.cell(tb, 0, rr, tfName, text_color = color.white, text_size = size.small)
+            table.cell(tb, 1, rr, names.get(q), text_color = color.yellow, text_size = size.small)
+            table.cell(tb, 2, rr, str.tostring(t, "#"), text_color = color.white, text_size = size.small)
+            table.cell(tb, 3, rr, t > 0 ? str.tostring(pct, "#") + " %" : "-", text_color = pct >= 34 ? cBuy : cSell, text_size = size.small)
+            rr += 1
+    rr
+
+if barstate.islast
+    for b in zBx
+        box.delete(b)
+    for l in zLb
+        label.delete(l)
+    zBx.clear()
+    zLb.clear()
+    zTop.clear()
+    zBot.clear()
+    zDir.clear()
+    if use1
+        drawTf(r1, "M1")
+    if use3
+        drawTf(r3, "M3")
+    if use5
+        drawTf(r5, "M5")
+    if use15
+        drawTf(r15, "M15")
+    if use60
+        drawTf(r60, "H1")
+    if use240
+        drawTf(r240, "H4")
+    if useD
+        drawTf(rD, "Jour")
+    if showTb
+        table.clear(tb, 0, 0, 3, 22)
+        table.cell(tb, 0, 0, "Unité", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        table.cell(tb, 1, 0, "Note", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        table.cell(tb, 2, 0, "Retouchées", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        table.cell(tb, 3, 0, "Réaction ≥ 2 R", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        int row = 1
+        if use1
+            row := statRows(r1, "M1", row)
+        if use3
+            row := statRows(r3, "M3", row)
+        if use5
+            row := statRows(r5, "M5", row)
+        if use15
+            row := statRows(r15, "M15", row)
+        if use60
+            row := statRows(r60, "H1", row)
+        if use240
+            row := statRows(r240, "H4", row)
+        if useD
+            row := statRows(rD, "Jour", row)
+
+// ---------- Flux en direct quand le prix est dans une zone (unité affichée) ----------
+rgC = high - low
+dC = rgC > 0 ? volume * (2 * close - high - low) / rgC : 0.0
+vmaC = ta.sma(volume, 20)
+if showFlow and barstate.isconfirmed and zTop.size() > 0
+    for i = 0 to zTop.size() - 1
+        d = zDir.get(i)
+        inZone = low <= zTop.get(i) and high >= zBot.get(i)
+        // acheteurs (vendeurs) agressifs qui reprennent la main : delta du bon côté, clôture dans la moitié favorable, volume ≥ moyenne
+        flowOk = inZone and d * dC > 0 and (d == 1 ? close >= (high + low) / 2 : close <= (high + low) / 2) and volume >= vmaC
+        if flowOk
+            label.new(bar_index, d == 1 ? low : high, "FLUX ✓ " + (d == 1 ? "acheteurs" : "vendeurs"), style = d == 1 ? label.style_label_up : label.style_label_down,
+                 color = d == 1 ? cBuy : cSell, textcolor = color.white, size = size.tiny,
+                 tooltip = "Le prix est dans un OB sélectionné et la bougie montre des " + (d == 1 ? "acheteurs" : "vendeurs") + " agressifs (delta du bon côté, clôture favorable, volume ≥ moyenne). Signal à confirmer par ta lecture.")
