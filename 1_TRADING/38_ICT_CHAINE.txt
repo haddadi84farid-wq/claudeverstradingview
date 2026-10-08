@@ -6,7 +6,7 @@
 //  1. BALAYAGE : le prix dépasse un sommet de liquidité (sommet confirmé, ou plus haut de la veille PDH),
 //     en killzone (Londres 9h–11h, New York 14h30–17h, heure de Paris) si le filtre est actif.
 //     Un sommet dépassé est CONSOMMÉ : il ne peut plus servir (pas de faux balayage d'un niveau déjà cassé).
-//  2. MSS : dans les N bougies suivantes, une bougie ROUGE à gros corps (≥ 1 ATR) CLÔTURE sous le creux de la jambe
+//  2. MSS : dans les N bougies suivantes, une bougie ROUGE à gros corps (≥ 0,75 ATR) CLÔTURE sous le creux de la jambe
 //     (le plus bas des 10 bougies avant le balayage). Cassure sans gros corps = chaîne abandonnée.
 //  3. ZONE : le FVG laissé par ce déplacement (ou l'OB = dernière bougie verte avant la chute).
 //  4. ORDRE LIMITE au bord (ou au milieu) de la zone. Stop au-dessus du sommet du balayage. Objectif 2 R.
@@ -21,8 +21,8 @@ swLen  = input.int(10, "Sommets / creux de liquidité : confirmés par N bougies
 useDay = input.bool(true, "Ajouter le plus haut / plus bas de la veille (PDH / PDL)", group = gL)
 gM = "2. MSS (changement de structure)"
 mssLook = input.int(10, "Creux / sommet à casser = extrême des N bougies avant le balayage", minval = 3, maxval = 50, group = gM)
-maxWait = input.int(20, "MSS au plus tard (bougies après le balayage)", minval = 3, maxval = 100, group = gM)
-dispK   = input.float(1.0, "Déplacement : corps de la bougie de cassure ≥ (× ATR 14)", minval = 0, step = 0.25, group = gM)
+maxWait = input.int(30, "MSS au plus tard (bougies après le balayage)", minval = 3, maxval = 100, group = gM)
+dispK   = input.float(0.75, "Déplacement : corps de la bougie de cassure ≥ (× ATR 14)", minval = 0, step = 0.25, group = gM)
 gE = "3. Entrée"
 zoneMode = input.string("FVG du déplacement", "Zone d'entrée", options = ["FVG du déplacement", "OB (dernière bougie opposée)"], group = gE)
 entMode  = input.string("Bord de la zone", "Prix d'entrée", options = ["Bord de la zone", "Milieu de la zone (CE)"], group = gE)
@@ -204,7 +204,14 @@ var int   nW = 0
 var float sumR = 0.0
 var float gW = 0.0
 var float gL2 = 0.0
+// diagnostic : où la chaîne s'arrête
+var int nSw = 0
+var int nSet = 0
+var int nCx = 0
+var int nFirst = na
 bool newSetup = false
+if na(nFirst)
+    nFirst := time
 
 endLines(color c) =>
     line.set_x2(lE, bar_index)
@@ -267,6 +274,7 @@ if st == 2 and bar_index > setBar
         inv = dir == -1 ? close > zT : close < zB
         missed = dir == -1 ? low <= tP : high >= tP
         if inv or missed or bar_index - setBar > waitN
+            nCx += 1
             label.set_text(lbT, label.get_text(lbT) + (inv ? "\nannulé : zone cassée" : missed ? "\nannulé : objectif atteint sans nous" : "\nannulé : pas de retour"))
             label.set_color(lbT, color.new(cGr, 30))
             endLines(cGr)
@@ -315,6 +323,7 @@ if st == 1 and bar_index > sBar
                 tP := e + dir * rr * rk
                 setBar := bar_index
                 st := 2
+                nSet += 1
                 newSetup := true
                 c = dir == -1 ? cDn : cUp
                 line.new(sBar - mssLook, mssLvl, bar_index, mssLvl, color = c, style = line.style_dashed)
@@ -337,6 +346,7 @@ if st == 0 and (sweepUp != sweepDn) and (not kzOn or kz)
     if trendOk(d)
         dir := d
         st := 1
+        nSw += 1
         sBar := bar_index
         ext := sweepUp ? high : low
         extBar := bar_index
@@ -374,7 +384,7 @@ if hitPdl
     pdlT := true
 
 // ---------- Tableau ----------
-var table tb = table.new(position.bottom_right, 2, 7, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
+var table tb = table.new(position.bottom_right, 2, 9, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
 if barstate.islast and showTab
     pf = gL2 > 0 ? gW / gL2 : na
     avgR = nTr > 0 ? sumR / nTr : na
@@ -393,5 +403,9 @@ if barstate.islast and showTab
     table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
     table.cell(tb, 0, 6, "Seuil à " + str.tostring(rr) + " R", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 6, str.tostring(100.0 / (1 + rr), "#") + " % + frais", text_color = cGr, text_size = size.small)
+    table.cell(tb, 0, 7, "Balayages → ordres", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 7, str.tostring(nSw) + " → " + str.tostring(nSet) + " (annulés " + str.tostring(nCx) + ")", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 8, "Historique chargé", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 8, str.tostring(bar_index + 1) + " bougies ≈ " + str.tostring((time - nFirst) / 86400000.0, "#") + " jours", text_color = color.white, text_size = size.small)
 
 alertcondition(newSetup, "ICT chaîne : nouvel ordre limite", "Chaîne balayage → MSS → zone complète : ordre limite à poser")
