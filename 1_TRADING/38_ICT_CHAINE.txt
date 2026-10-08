@@ -1,6 +1,7 @@
 //@version=6
 // ICT CHAÎNE — BALAYAGE → MSS AVEC DÉPLACEMENT → FVG (ou OB) → ORDRE LIMITE. Code original (pas une copie d'un autre script).
-// Une seule chose est signalée : la chaîne complète, dans l'ordre. Rien d'autre (pas de MSS ou de FVG isolés = pas de bruit).
+// Le SIGNAL = la chaîne complète, dans l'ordre. La CARTE (option, activée) montre aussi les FVG, les OB et toutes les
+// prises de liquidité (balayage = mèche puis retour ; cassure = clôture au-delà), nettoyées dès qu'elles sont traversées.
 // Règles (version VENTE ; l'ACHAT est l'inverse) :
 //  1. BALAYAGE : le prix dépasse un sommet de liquidité (sommet confirmé, ou plus haut de la veille PDH),
 //     en killzone (Londres 9h–11h, New York 14h30–17h, heure de Paris) si le filtre est actif.
@@ -36,6 +37,14 @@ trendMode = input.string("Aucun", "Tendance de fond", options = ["Aucun", "H1 (E
 gA = "Affichage"
 showPd  = input.bool(true, "Afficher PDH / PDL", group = gA)
 showTab = input.bool(true, "Afficher le tableau des résultats", group = gA)
+gC = "Carte (zones affichées en plus de la chaîne)"
+showF  = input.bool(true, "Afficher les FVG", group = gC)
+fvgMin = input.float(0.3, "FVG : taille minimum (× ATR 14)", minval = 0, step = 0.05, group = gC)
+maxF   = input.int(6, "FVG gardés par sens", minval = 1, maxval = 20, group = gC)
+showO  = input.bool(true, "Afficher les OB (dernière bougie opposée avant la cassure + imbalance juste après)", group = gC)
+obPiv  = input.int(5, "OB : structure confirmée par N bougies", minval = 2, maxval = 20, group = gC)
+maxO   = input.int(3, "OB gardés par sens", minval = 1, maxval = 10, group = gC)
+showS  = input.bool(true, "Afficher toutes les prises de liquidité (balayage = mèche ; cassure = clôture au-delà)", group = gC)
 
 cUp = #089981
 cDn = #F23645
@@ -50,10 +59,14 @@ ph = ta.pivothigh(high, swLen, swLen)
 pl = ta.pivotlow(low, swLen, swLen)
 var float lvlH = na
 var float lvlL = na
+var int   lvlHBar = na
+var int   lvlLBar = na
 if not na(ph)
     lvlH := ph
+    lvlHBar := bar_index - swLen
 if not na(pl)
     lvlL := pl
+    lvlLBar := bar_index - swLen
 pdh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
 pdl = request.security(syminfo.tickerid, "D", low[1], lookahead = barmerge.lookahead_on)
 var bool pdhT = false
@@ -85,6 +98,85 @@ trendOk(int d) =>
     else if trendMode == "H4 (EMA 50)"
         ok := d == 1 ? h4Bull : not h4Bull
     ok
+
+// ---------- Carte : FVG et OB (supprimés dès qu'une bougie clôture au travers) ----------
+type Zn
+    box   b
+    float top
+    float bot
+    int   dir
+var array<Zn> fz = array.new<Zn>()
+var array<Zn> oz = array.new<Zn>()
+
+pruneDir(array<Zn> a, int d, int keep) =>
+    int cnt = 0
+    for z in a
+        cnt += z.dir == d ? 1 : 0
+    if cnt > keep
+        for i = 0 to a.size() - 1
+            if a.get(i).dir == d
+                box.delete(a.get(i).b)
+                a.remove(i)
+                break
+
+updZones(array<Zn> a) =>
+    if a.size() > 0
+        for i = a.size() - 1 to 0
+            z = a.get(i)
+            if z.dir == 1 ? close < z.bot : close > z.top
+                box.delete(z.b)
+                a.remove(i)
+            else
+                box.set_right(z.b, bar_index + 5)
+
+updZones(fz)
+updZones(oz)
+
+if showF and bar_index > 2
+    if low > high[2] and low - high[2] >= fvgMin * atr
+        fz.push(Zn.new(box.new(bar_index - 2, low, bar_index + 5, high[2], border_color = color.new(cUp, 40), bgcolor = color.new(cUp, 85),
+             text = "FVG", text_color = cUp, text_size = size.tiny, text_halign = text.align_right), low, high[2], 1))
+        pruneDir(fz, 1, maxF)
+    if high < low[2] and low[2] - high >= fvgMin * atr
+        fz.push(Zn.new(box.new(bar_index - 2, low[2], bar_index + 5, high, border_color = color.new(cDn, 40), bgcolor = color.new(cDn, 85),
+             text = "FVG", text_color = cDn, text_size = size.tiny, text_halign = text.align_right), low[2], high, -1))
+        pruneDir(fz, -1, maxF)
+
+// OB : à chaque cassure de structure, dernière bougie opposée (15 bougies max) ; valide seulement si un FVG part d'elle
+oph = ta.pivothigh(high, obPiv, obPiv)
+opl = ta.pivotlow(low, obPiv, obPiv)
+var float oSH = na
+var float oSL = na
+if not na(oph)
+    oSH := oph
+if not na(opl)
+    oSL := opl
+obFind(int d) =>
+    int j = na
+    for k = 1 to 15
+        if na(j) and (d == 1 ? close[k] < open[k] : close[k] > open[k])
+            j := k
+    bool ok = false
+    if not na(j) and j >= 2
+        ok := d == 1 ? low[j - 2] > high[j] : high[j - 2] < low[j]
+    if not na(j) and not ok and j >= 3
+        ok := d == 1 ? low[j - 3] > high[j - 1] : high[j - 3] < low[j - 1]
+    int r = ok ? j : na
+    r
+if not na(oSH) and close > oSH
+    oSH := na
+    jb = obFind(1)
+    if showO and not na(jb)
+        oz.push(Zn.new(box.new(bar_index - jb, high[jb], bar_index + 5, low[jb], border_color = color.new(#2962FF, 20), bgcolor = color.new(#2962FF, 80),
+             text = "OB", text_color = #2962FF, text_size = size.tiny, text_halign = text.align_right), high[jb], low[jb], 1))
+        pruneDir(oz, 1, maxO)
+if not na(oSL) and close < oSL
+    oSL := na
+    js = obFind(-1)
+    if showO and not na(js)
+        oz.push(Zn.new(box.new(bar_index - js, high[js], bar_index + 5, low[js], border_color = color.new(#FF9800, 20), bgcolor = color.new(#FF9800, 80),
+             text = "OB", text_color = #FF9800, text_size = size.tiny, text_halign = text.align_right), high[js], low[js], -1))
+        pruneDir(oz, -1, maxO)
 
 // ---------- État de la chaîne ----------
 // st : 0 rien, 1 balayage fait (attente du MSS), 2 ordre limite posé, 3 en position
@@ -250,8 +342,26 @@ if st == 0 and (sweepUp != sweepDn) and (not kzOn or kz)
         extBar := bar_index
         mssLvl := sweepUp ? legLo : legHi
         tag = sweepUp ? (hitPdh ? "balayage PDH" : "balayage") : (hitPdl ? "balayage PDL" : "balayage")
-        label.new(bar_index, lvl, tag, style = sweepUp ? label.style_label_down : label.style_label_up,
-             color = color.new(sweepUp ? cDn : cUp, 30), textcolor = color.white, size = size.tiny)
+        if not showS
+            label.new(bar_index, lvl, tag, style = sweepUp ? label.style_label_down : label.style_label_up,
+                 color = color.new(sweepUp ? cDn : cUp, 30), textcolor = color.white, size = size.tiny)
+
+// Carte : chaque prise de liquidité (balayage = mèche puis clôture revenue ; cassure = clôture au-delà)
+liqMark(float lvl, int x0, bool up, string nm) =>
+    swept = up ? close < lvl : close > lvl
+    c = swept ? (up ? cDn : cUp) : cGr
+    line.new(x0, lvl, bar_index, lvl, color = color.new(c, 20), width = 1)
+    label.new(bar_index, lvl, (swept ? "balayage" : "cassure") + (nm == "" ? "" : " " + nm), style = up ? label.style_label_down : label.style_label_up,
+         color = color.new(c, swept ? 20 : 60), textcolor = color.white, size = size.tiny)
+if showS
+    if hitPivH
+        liqMark(lvlH, lvlHBar, true, "")
+    else if hitPdh
+        liqMark(pdh, bar_index - 1, true, "PDH")
+    if hitPivL
+        liqMark(lvlL, lvlLBar, false, "")
+    else if hitPdl
+        liqMark(pdl, bar_index - 1, false, "PDL")
 
 // Niveaux consommés : un sommet / creux dépassé ne sert plus
 if hitPivH
