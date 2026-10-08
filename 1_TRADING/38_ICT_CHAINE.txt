@@ -115,8 +115,8 @@ pruneDir(array<Zn> a, int d, int keep) =>
     if cnt > keep
         for i = 0 to a.size() - 1
             if a.get(i).dir == d
-                box.delete(a.get(i).b)
-                a.remove(i)
+                zr = a.remove(i)
+                box.delete(zr.b)
                 break
 
 updZones(array<Zn> a) =>
@@ -124,8 +124,8 @@ updZones(array<Zn> a) =>
         for i = a.size() - 1 to 0
             z = a.get(i)
             if z.dir == 1 ? close < z.bot : close > z.top
-                box.delete(z.b)
                 a.remove(i)
+                box.delete(z.b)
             else
                 box.set_right(z.b, bar_index + 5)
 
