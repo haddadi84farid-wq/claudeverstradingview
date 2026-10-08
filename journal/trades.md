@@ -270,3 +270,13 @@ Conclusion : OB = carte des zones, pas un signal. Avantage mesure seulement sur 
 - Reglages par defaut : 96 trades, 30,2 % gagnants, PF 0,83, -10,5 %, DD max 23,3 %.
 - Seuil 2 R avec frais ~35 % -> negatif. L'entree BPR/IFVG seule n'a pas d'avantage (meme constat que les OB).
 - A tester (une fois, sans sur-optimiser) : CE 50 %, filtre H4, seances Londres/NY. Si aucun > PF 1,3 sur >= 50 trades -> abandon.
+
+## ICT CHAINE (balayage en killzone -> MSS corps >= 0,75 ATR -> FVG -> limite, 2 R, frais 0,37), XAUUSD, 08/10/2026
+| UT | Historique | Balayages -> ordres (annules) | Trades | Gagnants | R moyen | Total |
+|---|---|---|---|---|---|---|
+| M2 | 25 j | 59 -> 8 (4) | 3 | 100 % | +1,29 | +3,9 R |
+| M5 | 53 j | 67 -> 9 (4) | 5 | 20 % | -0,66 | -3,3 R |
+| M15 | 161 j | 78 -> 12 (5) | 7 | 29 % | -0,15 | -1,1 R |
+Constat : ~15 trades en tout, total ~ -0,5 R -> au point mort, et 1 trade toutes les 2-3 semaines = inexploitable comme strategie.
+Le filtre MSS + deplacement elimine ~85 % des balayages. Le relacher revient a BT FVG (deja negatif, PF 0,83).
+Decision : ICT CHAINE garde comme CARTE (FVG, OB, balayages propres). Seul avantage mesure : BT AMD (range -> manipulation -> milieu).
