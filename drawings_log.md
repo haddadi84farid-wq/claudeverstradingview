@@ -362,6 +362,16 @@ Tout tracé présent sur le graphique mais absent de ce fichier appartient à l'
 | 2026-10-02 07:30 | NbDA07 | text | 4160,5 (« TP2 4156.4 (3.1 R) ») | Claude |
 | 2026-10-02 07:30 | OMMaCK | text | 4151,5 (« TP3 4148 (3.9 R) ») | Claude |
 | 2026-10-02 07:30 | CilpYi | note | 4196,5 (consigne VENTE au survol, 15:00 UTC ; commande locale) | Claude |
+| 2026-10-07 07:40 | dFAU0J | rectangle | 4122,5 – 4128,5 (plan 07/10 07:35, ACHAT CT, risque rouge, 08/10 00:00 → 06:00 UTC, OANDA) | Claude |
+| 2026-10-07 07:40 | 1ojBBQ | rectangle | 4128,5 – 4143,5 (ACHAT CT, objectif vert) | Claude |
+| 2026-10-07 07:40 | INagzK | trend_line | 4134,2 (ACHAT CT, trait TP1) | Claude |
+| 2026-10-07 07:40 | ze5TyQ | trend_line | 4139,0 (ACHAT CT, trait TP2) | Claude |
+| 2026-10-07 07:40 | xS1vRP | text | 4125,5 (« SL 4122.5 ») | Claude |
+| 2026-10-07 07:40 | MQyYUZ | text | 4130,8 (« ACHAT CT 4128.5 ») | Claude |
+| 2026-10-07 07:40 | WYtAJY | text | 4136,0 (« TP1 4134.2 (0.95 R) ») | Claude |
+| 2026-10-07 07:40 | OUCFqf | text | 4140,3 (« TP2 4139 (1.75 R) ») | Claude |
+| 2026-10-07 07:40 | g6obrZ | text | 4142,6 (« TP3 4143.5 (2.5 R) ») | Claude |
+| 2026-10-07 07:40 | 85En6K | note | 4145,0 (consigne ACHAT CT au survol, 08/10 00:00 UTC ; commande locale) | Claude |
 
 ## Tracés retirés
 
