@@ -1,0 +1,287 @@
+//@version=6
+// ICT CHAÎNE — BALAYAGE → MSS AVEC DÉPLACEMENT → FVG (ou OB) → ORDRE LIMITE. Code original (pas une copie d'un autre script).
+// Une seule chose est signalée : la chaîne complète, dans l'ordre. Rien d'autre (pas de MSS ou de FVG isolés = pas de bruit).
+// Règles (version VENTE ; l'ACHAT est l'inverse) :
+//  1. BALAYAGE : le prix dépasse un sommet de liquidité (sommet confirmé, ou plus haut de la veille PDH),
+//     en killzone (Londres 9h–11h, New York 14h30–17h, heure de Paris) si le filtre est actif.
+//     Un sommet dépassé est CONSOMMÉ : il ne peut plus servir (pas de faux balayage d'un niveau déjà cassé).
+//  2. MSS : dans les N bougies suivantes, une bougie ROUGE à gros corps (≥ 1 ATR) CLÔTURE sous le creux de la jambe
+//     (le plus bas des 10 bougies avant le balayage). Cassure sans gros corps = chaîne abandonnée.
+//  3. ZONE : le FVG laissé par ce déplacement (ou l'OB = dernière bougie verte avant la chute).
+//  4. ORDRE LIMITE au bord (ou au milieu) de la zone. Stop au-dessus du sommet du balayage. Objectif 2 R.
+//     Annulé si : clôture au-dessus de la zone, objectif atteint sans nous, ou pas de retour après N bougies.
+//  5. Tableau : résultats en R, frais compris (stop compté en premier si stop et objectif dans la même bougie).
+// Ne passe aucun ordre.
+indicator("ICT chaîne : balayage → MSS → FVG", shorttitle = "ICT CHAÎNE", overlay = true,
+     max_boxes_count = 200, max_lines_count = 400, max_labels_count = 300, max_bars_back = 500)
+
+gL = "1. Liquidité"
+swLen  = input.int(10, "Sommets / creux de liquidité : confirmés par N bougies de chaque côté", minval = 2, maxval = 50, group = gL)
+useDay = input.bool(true, "Ajouter le plus haut / plus bas de la veille (PDH / PDL)", group = gL)
+gM = "2. MSS (changement de structure)"
+mssLook = input.int(10, "Creux / sommet à casser = extrême des N bougies avant le balayage", minval = 3, maxval = 50, group = gM)
+maxWait = input.int(20, "MSS au plus tard (bougies après le balayage)", minval = 3, maxval = 100, group = gM)
+dispK   = input.float(1.0, "Déplacement : corps de la bougie de cassure ≥ (× ATR 14)", minval = 0, step = 0.25, group = gM)
+gE = "3. Entrée"
+zoneMode = input.string("FVG du déplacement", "Zone d'entrée", options = ["FVG du déplacement", "OB (dernière bougie opposée)"], group = gE)
+entMode  = input.string("Bord de la zone", "Prix d'entrée", options = ["Bord de la zone", "Milieu de la zone (CE)"], group = gE)
+rr       = input.float(2.0, "Objectif (en R)", minval = 1, step = 0.5, group = gE)
+bufK     = input.float(0.1, "Marge du stop au-delà du balayage (× ATR 14)", minval = 0, step = 0.05, group = gE)
+waitN    = input.int(30, "Ordre annulé s'il n'est pas touché après (bougies)", minval = 2, maxval = 200, group = gE)
+maxHold  = input.int(96, "Sortie au temps après (bougies)", minval = 5, maxval = 400, group = gE)
+costPts  = input.float(0.37, "Frais aller-retour en prix (or 0,37 ; EURUSD 0,00012)", minval = 0, step = 0.01, group = gE)
+gF = "4. Filtres"
+kzOn      = input.bool(true, "Balayage seulement en killzone (Londres 9h–11h, New York 14h30–17h, Paris)", group = gF)
+trendMode = input.string("Aucun", "Tendance de fond", options = ["Aucun", "H1 (EMA 50)", "H4 (EMA 50)"], group = gF)
+gA = "Affichage"
+showPd  = input.bool(true, "Afficher PDH / PDL", group = gA)
+showTab = input.bool(true, "Afficher le tableau des résultats", group = gA)
+
+cUp = #089981
+cDn = #F23645
+cZn = #9C27B0
+cGr = color.gray
+
+atr = ta.atr(14)
+fmt(float v) => str.tostring(v, format.mintick)
+
+// ---------- Niveaux de liquidité ----------
+ph = ta.pivothigh(high, swLen, swLen)
+pl = ta.pivotlow(low, swLen, swLen)
+var float lvlH = na
+var float lvlL = na
+if not na(ph)
+    lvlH := ph
+if not na(pl)
+    lvlL := pl
+pdh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
+pdl = request.security(syminfo.tickerid, "D", low[1], lookahead = barmerge.lookahead_on)
+var bool pdhT = false
+var bool pdlT = false
+if timeframe.change("D")
+    pdhT := false
+    pdlT := false
+plot(showPd ? pdh : na, "PDH", color = color.new(cDn, 40), style = plot.style_stepline)
+plot(showPd ? pdl : na, "PDL", color = color.new(cUp, 40), style = plot.style_stepline)
+
+hitPivH = not na(lvlH) and high > lvlH
+hitPdh  = useDay and not pdhT and not na(pdh) and high > pdh
+hitPivL = not na(lvlL) and low < lvlL
+hitPdl  = useDay and not pdlT and not na(pdl) and low < pdl
+sweepUp = hitPivH or hitPdh
+sweepDn = hitPivL or hitPdl
+
+kz = not na(time(timeframe.period, "0900-1100,1430-1700", "Europe/Paris"))
+legLo = ta.lowest(low, mssLook)[1]
+legHi = ta.highest(high, mssLook)[1]
+
+// Tendance de fond sans repeindre (bougie H1 / H4 précédente, clôturée)
+h1Bull = request.security(syminfo.tickerid, "60", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+h4Bull = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+trendOk(int d) =>
+    bool ok = true
+    if trendMode == "H1 (EMA 50)"
+        ok := d == 1 ? h1Bull : not h1Bull
+    else if trendMode == "H4 (EMA 50)"
+        ok := d == 1 ? h4Bull : not h4Bull
+    ok
+
+// ---------- État de la chaîne ----------
+// st : 0 rien, 1 balayage fait (attente du MSS), 2 ordre limite posé, 3 en position
+var int   st = 0
+var int   dir = 0
+var int   sBar = na
+var float ext = na
+var int   extBar = na
+var float mssLvl = na
+var float zT = na
+var float zB = na
+var float eP = na
+var float sP = na
+var float tP = na
+var int   setBar = na
+var int   fillBar = na
+var box   zBx = na
+var line  lE = na
+var line  lS = na
+var line  lT = na
+var label lbT = na
+// résultats en R
+var int   nTr = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL2 = 0.0
+bool newSetup = false
+
+endLines(color c) =>
+    line.set_x2(lE, bar_index)
+    line.set_x2(lS, bar_index)
+    line.set_x2(lT, bar_index)
+    box.set_right(zBx, bar_index)
+    if c == cGr
+        line.set_color(lE, color.new(cGr, 40))
+        line.set_color(lS, color.new(cGr, 60))
+        line.set_color(lT, color.new(cGr, 60))
+        box.set_bgcolor(zBx, color.new(cGr, 88))
+        box.set_border_color(zBx, color.new(cGr, 60))
+
+// ---------- A. Position ouverte : stop / objectif / temps ----------
+if st == 3
+    rk = math.abs(eP - sP)
+    hitS = dir == -1 ? high >= sP : low <= sP
+    hitT = bar_index > fillBar and (dir == -1 ? low <= tP : high >= tP)
+    float res = na
+    if hitS
+        res := -1.0
+    else if hitT
+        res := rr
+    else if bar_index - fillBar >= maxHold
+        res := dir * (close - eP) / rk
+    if not na(res)
+        res -= costPts / rk
+        nTr += 1
+        sumR += res
+        if res > 0
+            nW += 1
+            gW += res
+        else
+            gL2 -= res
+        label.set_text(lbT, label.get_text(lbT) + (hitS ? "\n✗ stop " : hitT ? "\n✓ objectif " : "\n⏱ temps ") + str.tostring(res, "+#.##;-#.##") + " R")
+        if hitS
+            label.set_color(lbT, color.new(cGr, 20))
+        endLines(hitS ? cGr : dir == -1 ? cDn : cUp)
+        st := 0
+
+// ---------- B. Ordre posé : exécuté ou annulé ----------
+if st == 2 and bar_index > setBar
+    filled = dir == -1 ? high >= eP : low <= eP
+    if filled
+        st := 3
+        fillBar := bar_index
+        label.set_text(lbT, (dir == -1 ? "VENTE " : "ACHAT ") + fmt(eP) + " exécutée")
+        // stop touché dans la même bougie : perte (prudent)
+        if dir == -1 ? high >= sP : low <= sP
+            rk = math.abs(eP - sP)
+            res = -1.0 - costPts / rk
+            nTr += 1
+            sumR += res
+            gL2 -= res
+            label.set_text(lbT, label.get_text(lbT) + "\n✗ stop " + str.tostring(res, "#.##") + " R")
+            label.set_color(lbT, color.new(cGr, 20))
+            endLines(cGr)
+            st := 0
+    else
+        inv = dir == -1 ? close > zT : close < zB
+        missed = dir == -1 ? low <= tP : high >= tP
+        if inv or missed or bar_index - setBar > waitN
+            label.set_text(lbT, label.get_text(lbT) + (inv ? "\nannulé : zone cassée" : missed ? "\nannulé : objectif atteint sans nous" : "\nannulé : pas de retour"))
+            label.set_color(lbT, color.new(cGr, 30))
+            endLines(cGr)
+            st := 0
+
+// ---------- C. Balayage fait : attente du MSS avec déplacement ----------
+if st == 1 and bar_index > sBar
+    if dir == -1 ? high > ext : low < ext
+        ext := dir == -1 ? high : low
+        extBar := bar_index
+    brk = dir == -1 ? close < mssLvl : close > mssLvl
+    disp = math.abs(close - open) >= dispK * atr and (dir == -1 ? close < open : close > open)
+    if brk and not disp
+        st := 0
+    else if brk and disp
+        st := 0
+        float t0 = na
+        float b0 = na
+        int   x0 = na
+        legN = bar_index - extBar
+        if zoneMode == "FVG du déplacement"
+            if legN >= 2
+                for k = 0 to legN - 2
+                    gap = dir == -1 ? high[k] < low[k + 2] : low[k] > high[k + 2]
+                    if na(x0) and gap
+                        t0 := dir == -1 ? low[k + 2] : low[k]
+                        b0 := dir == -1 ? high[k] : high[k + 2]
+                        x0 := bar_index - k - 2
+        else
+            for k = legN to legN + 10
+                opp = dir == -1 ? close[k] > open[k] : close[k] < open[k]
+                if na(x0) and opp
+                    t0 := high[k]
+                    b0 := low[k]
+                    x0 := bar_index - k
+        if not na(x0)
+            e = entMode == "Bord de la zone" ? (dir == -1 ? b0 : t0) : (t0 + b0) / 2
+            s = dir == -1 ? ext + bufK * atr : ext - bufK * atr
+            rk = math.abs(e - s)
+            sideOk = dir == -1 ? e > close and s > e : e < close and s < e
+            if rk > 0 and sideOk
+                zT := t0
+                zB := b0
+                eP := e
+                sP := s
+                tP := e + dir * rr * rk
+                setBar := bar_index
+                st := 2
+                newSetup := true
+                c = dir == -1 ? cDn : cUp
+                line.new(sBar - mssLook, mssLvl, bar_index, mssLvl, color = c, style = line.style_dashed)
+                label.new(bar_index, mssLvl, "MSS", style = dir == -1 ? label.style_label_up : label.style_label_down,
+                     color = color.new(c, 100), textcolor = c, size = size.tiny)
+                zBx := box.new(x0, zT, bar_index + waitN, zB, border_color = cZn, bgcolor = color.new(cZn, 75),
+                     text = zoneMode == "FVG du déplacement" ? "FVG" : "OB", text_color = cZn, text_size = size.tiny, text_halign = text.align_left)
+                lE := line.new(bar_index, eP, bar_index + waitN, eP, color = c, width = 2)
+                lS := line.new(bar_index, sP, bar_index + waitN, sP, color = color.new(cDn, 0), style = line.style_dotted)
+                lT := line.new(bar_index, tP, bar_index + waitN, tP, color = color.new(cUp, 0), style = line.style_dotted)
+                lbT := label.new(bar_index, sP, (dir == -1 ? "VENTE limite " : "ACHAT limite ") + fmt(eP) + "\nSL " + fmt(sP) + " | TP " + fmt(tP) + " (" + str.tostring(rr) + " R)",
+                     style = dir == -1 ? label.style_label_down : label.style_label_up, color = c, textcolor = color.white, size = size.tiny)
+    else if bar_index - sBar > maxWait
+        st := 0
+
+// ---------- D. Nouveau balayage ----------
+if st == 0 and (sweepUp != sweepDn) and (not kzOn or kz)
+    d = sweepUp ? -1 : 1
+    lvl = sweepUp ? (hitPdh ? pdh : lvlH) : (hitPdl ? pdl : lvlL)
+    if trendOk(d)
+        dir := d
+        st := 1
+        sBar := bar_index
+        ext := sweepUp ? high : low
+        extBar := bar_index
+        mssLvl := sweepUp ? legLo : legHi
+        tag = sweepUp ? (hitPdh ? "balayage PDH" : "balayage") : (hitPdl ? "balayage PDL" : "balayage")
+        label.new(bar_index, lvl, tag, style = sweepUp ? label.style_label_down : label.style_label_up,
+             color = color.new(sweepUp ? cDn : cUp, 30), textcolor = color.white, size = size.tiny)
+
+// Niveaux consommés : un sommet / creux dépassé ne sert plus
+if hitPivH
+    lvlH := na
+if hitPivL
+    lvlL := na
+if hitPdh
+    pdhT := true
+if hitPdl
+    pdlT := true
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 2, 7, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
+if barstate.islast and showTab
+    pf = gL2 > 0 ? gW / gL2 : na
+    avgR = nTr > 0 ? sumR / nTr : na
+    stTxt = st == 0 ? "attente d'un balayage" : st == 1 ? (dir == -1 ? "balayage haut → attente MSS" : "balayage bas → attente MSS") : st == 2 ? (dir == -1 ? "VENTE limite " : "ACHAT limite ") + fmt(eP) : "en position"
+    table.cell(tb, 0, 0, "ICT CHAÎNE", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, stTxt, text_color = st >= 2 ? (dir == -1 ? cDn : cUp) : color.silver, text_size = size.small)
+    table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nTr), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen / trade", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Seuil à " + str.tostring(rr) + " R", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, str.tostring(100.0 / (1 + rr), "#") + " % + frais", text_color = cGr, text_size = size.small)
+
+alertcondition(newSetup, "ICT chaîne : nouvel ordre limite", "Chaîne balayage → MSS → zone complète : ordre limite à poser")

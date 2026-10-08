@@ -83,6 +83,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 37_BACKTEST_BPR.txt   : BACKTEST "BT BPR" (strategie) : detecte chaque BPR (FVG haussier + FVG baissier qui se chevauchent),
                            ordre limite au 1er retour sur la zone (meme des heures apres), stop au-dela de l'extreme,
                            objectif 2R/3R/extreme oppose. Zones violettes actives, grises une fois consommees. Tableau en R.
+- 38_ICT_CHAINE.txt     : INDICATEUR "ICT CHAINE" : signale seulement la chaine complete balayage (sommet/creux ou PDH/PDL,
+                           en killzone) -> MSS avec gros corps -> FVG (ou OB) -> ordre limite, stop au-dela du balayage, 2 R.
+                           Niveaux consommes une fois depasses, filtre tendance H1/H4, tableau des resultats en R (frais compris).
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
