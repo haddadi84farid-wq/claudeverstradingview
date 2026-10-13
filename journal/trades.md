@@ -297,3 +297,8 @@ A verifier avec une vraie strategie frais compris (cout 0,37 / risque M5 souvent
   compte comme objectif atteint alors qu'il a eu lieu AVANT l'entree (le prix arrive d'en face). Corrige dans OB FLOW
   (objectif compte seulement apres la bougie du contact). La strategie (moteur TradingView) est la mesure qui fait foi.
 - Conclusion OB : entree au bord, au 50 %, etoiles, H1 : aucun avantage apres frais. OB = carte, pas signal.
+
+## AMD MILIEU (indicateur = regles BT AMD milieu), XAUUSD H1, 650 jours d'historique, 14/10/2026
+- 52 trades, 33 % gagnants, -0,10 R / trade, -5,1 R, PF 0,77. NEGATIF en H1 sur longue periode.
+- Alerte : l'avantage de BT AMD (M15, juil.-oct. 2026, PF ~3) n'est peut-etre qu'un ajustement a cette periode.
+- A faire : AMD MILIEU en M15 (meme tableau) + BT AMD M15 du 01/01 au 30/06/2026 (hors echantillon). Si < PF 1,3 -> abandon.
