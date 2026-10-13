@@ -95,6 +95,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 41_INDICATEUR_AMD_MILIEU.txt : LA METHODE QUI A UN AVANTAGE (BT AMD) en INDICATEUR : range -> manipulation ->
                            entree a la cloture au-dela du milieu, SL au-dela de l'extreme, TP1/TP2/TP3 avec stop remonte.
                            Etat en direct, resultats en R (frais compris), alertes "manipulation" et "entree".
+- 42_BACKTEST_ICHIMOKU.txt : BACKTEST "BT ICHIMOKU" (strategie, H4 ou Jour) : prix hors du nuage + Tenkan/Kijun + Chikou
+                           + nuage a venir, sortie a la cloture de l'autre cote de la Kijun, stop de depart Kijun - 0,5 ATR. Tableau en R.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

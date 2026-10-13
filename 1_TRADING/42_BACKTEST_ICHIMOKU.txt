@@ -1,0 +1,140 @@
+//@version=6
+// BACKTEST ICHIMOKU (règles classiques), sur une PÉRIODE CHOISIE. À utiliser en H4 ou en JOUR (suiveur de tendance).
+// À créer comme NOUVEAU script STRATÉGIE, puis ouvrir le « Testeur de stratégie ». Tableau des résultats en R en bas à droite.
+// ACHAT quand les 4 conditions sont réunies (la VENTE est l'inverse) :
+//  1. le prix clôture AU-DESSUS du nuage actuel ;
+//  2. Tenkan (9) au-dessus de Kijun (26) ;
+//  3. Chikou (clôture) au-dessus du prix d'il y a 26 bougies ;
+//  4. le nuage à venir est vert (Senkou A > Senkou B).
+//  Entrée à la clôture de la bougie où les 4 conditions deviennent vraies.
+// STOP de départ : sous la Kijun (− 0,5 ATR). SORTIE : clôture sous la Kijun (option : croisement Tenkan / Kijun inverse).
+// Taille = risque fixe en % du capital (sur le stop de départ). Frais : 0,37 point l'aller-retour (or). Ne passe AUCUN ordre.
+strategy("Backtest Ichimoku", shorttitle = "BT ICHIMOKU",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période et gestion"
+tStart  = input.time(timestamp("2020-01-01T00:00"), "Début", group = gP)
+tEnd    = input.time(timestamp("2030-01-01T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+exitMode = input.string("Clôture de l'autre côté de la Kijun", "Sortie", options = ["Clôture de l'autre côté de la Kijun", "Croisement Tenkan / Kijun inverse"], group = gP)
+bufK    = input.float(0.5, "Marge du stop de départ au-delà de la Kijun (× ATR 14)", minval = 0, step = 0.25, group = gP)
+gI = "Ichimoku"
+lT = input.int(9, "Tenkan", minval = 1, group = gI)
+lK = input.int(26, "Kijun", minval = 1, group = gI)
+lB = input.int(52, "Senkou B", minval = 1, group = gI)
+dsp = input.int(26, "Décalage", minval = 1, group = gI)
+showIchi = input.bool(true, "Afficher l'Ichimoku", group = gI)
+
+cUp = #089981
+cDn = #F23645
+
+inWin = time >= tStart and time <= tEnd
+atr = ta.atr(14)
+mid(int n) => (ta.highest(high, n) + ta.lowest(low, n)) / 2
+tenkan = mid(lT)
+kijun = mid(lK)
+spanA = (tenkan + kijun) / 2
+spanB = mid(lB)
+// nuage AFFICHÉ sous la bougie actuelle = valeurs calculées il y a (décalage − 1) bougies
+cloudTop = math.max(spanA[dsp - 1], spanB[dsp - 1])
+cloudBot = math.min(spanA[dsp - 1], spanB[dsp - 1])
+// Chikou = clôture actuelle comparée au prix d'il y a (décalage − 1) bougies
+longOk = close > cloudTop and tenkan > kijun and close > high[dsp - 1] and spanA > spanB
+shortOk = close < cloudBot and tenkan < kijun and close < low[dsp - 1] and spanA < spanB
+crossDn = ta.crossunder(tenkan, kijun)
+crossUp = ta.crossover(tenkan, kijun)
+longSig = longOk and not longOk[1]
+shortSig = shortOk and not shortOk[1]
+
+pA = plot(showIchi ? spanA : na, "Senkou A", color = color.new(cUp, 60), offset = dsp - 1)
+pB = plot(showIchi ? spanB : na, "Senkou B", color = color.new(cDn, 60), offset = dsp - 1)
+fill(pA, pB, color = spanA > spanB ? color.new(cUp, 85) : color.new(cDn, 85), title = "Nuage")
+plot(showIchi ? tenkan : na, "Tenkan", color = #2962FF)
+plot(showIchi ? kijun : na, "Kijun", color = #B71C1C, linewidth = 2)
+plot(showIchi ? close : na, "Chikou", color = color.new(#43A047, 40), offset = -(dsp - 1))
+
+// ---------- Trades ----------
+var float tRisk = na
+var int   ctSeen = 0
+var int   nTr = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL = 0.0
+
+if strategy.closedtrades > ctSeen
+    for i = ctSeen to strategy.closedtrades - 1
+        r = tRisk > 0 ? strategy.closedtrades.profit(i) / tRisk : 0.0
+        nTr += 1
+        sumR += r
+        if r > 0
+            nW += 1
+            gW += r
+        else
+            gL -= r
+    ctSeen := strategy.closedtrades
+
+// sorties
+if strategy.position_size > 0
+    exitL = exitMode == "Clôture de l'autre côté de la Kijun" ? close < kijun : crossDn
+    if exitL
+        strategy.close("Achat", comment = "Sortie")
+if strategy.position_size < 0
+    exitS = exitMode == "Clôture de l'autre côté de la Kijun" ? close > kijun : crossUp
+    if exitS
+        strategy.close("Vente", comment = "Sortie")
+
+// entrées (seulement à plat)
+canL = dirMode != "Ventes seulement"
+canS = dirMode != "Achats seulement"
+if inWin and strategy.position_size == 0
+    if longSig and canL
+        st = kijun - bufK * atr
+        rk = close - st
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Achat", strategy.long, qty = q)
+            strategy.exit("Stop A", "Achat", stop = st)
+            tRisk := q * rk
+            label.new(bar_index, low, "ACHAT " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(st, format.mintick),
+                 style = label.style_label_up, color = cUp, textcolor = color.white, size = size.tiny)
+    else if shortSig and canS
+        st = kijun + bufK * atr
+        rk = st - close
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Vente", strategy.short, qty = q)
+            strategy.exit("Stop V", "Vente", stop = st)
+            tRisk := q * rk
+            label.new(bar_index, high, "VENTE " + str.tostring(close, format.mintick) + "\nSL " + str.tostring(st, format.mintick),
+                 style = label.style_label_down, color = cDn, textcolor = color.white, size = size.tiny)
+
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 2, 7, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(color.gray, 70))
+if barstate.islast
+    pf = gL > 0 ? gW / gL : na
+    avgR = nTr > 0 ? sumR / nTr : na
+    table.cell(tb, 0, 0, "BT ICHIMOKU", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, timeframe.period, text_color = color.silver, text_size = size.small)
+    table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nTr), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen (frais)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Position", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, strategy.position_size > 0 ? "ACHAT en cours" : strategy.position_size < 0 ? "VENTE en cours" : "à plat", text_color = strategy.position_size > 0 ? cUp : strategy.position_size < 0 ? cDn : color.silver, text_size = size.small)
+
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")
