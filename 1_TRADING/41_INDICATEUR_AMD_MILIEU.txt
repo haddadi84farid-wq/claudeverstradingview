@@ -33,6 +33,7 @@ farK   = input.float(4.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0
 bufK   = input.float(0.2, "Marge du stop (× ATR 50)", minval = 0, step = 0.05, group = gM)
 gA = "Affichage"
 showTab = input.bool(true, "Afficher le tableau", group = gA)
+tabPos  = input.string("En bas à gauche", "Position du tableau", options = ["En bas à gauche", "En bas à droite", "En haut à gauche", "En haut à droite"], group = gA)
 
 cRg = #2962FF
 cMn = #FF9800
@@ -200,7 +201,7 @@ if sig
         wTp3 := d == 1 ? rTop + h : rBot - h
         wUntil := bar_index + midWait
         sigMan := true
-        label.new(bar_index, side == 1 ? high : low, "manipulation\n→ " + (d == 1 ? "ACHAT" : "VENTE") + " si clôture au-delà de " + fmt(wMid),
+        label.new(bar_index, side == 1 ? high : low, "manip. → " + (d == 1 ? "ACHAT > " : "VENTE < ") + fmt(wMid),
              style = side == 1 ? label.style_label_down : label.style_label_up, color = color.new(cMn, 20), textcolor = color.white, size = size.tiny)
     if not na(rBox)
         box.set_bgcolor(rBox, color.new(cMn, 85))
@@ -241,20 +242,21 @@ if wDir != 0 and not sig
         wDir := 0
 
 // ---------- Tableau ----------
-var table tb = table.new(position.bottom_right, 2, 8, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
+tPos = tabPos == "En bas à gauche" ? position.bottom_left : tabPos == "En bas à droite" ? position.bottom_right : tabPos == "En haut à gauche" ? position.top_left : position.top_right
+var table tb = table.new(tPos, 2, 8, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
 if barstate.islast and showTab
     pf = gL > 0 ? gW / gL : na
     avgR = nTr > 0 ? sumR / nTr : na
-    stTxt = inTr ? (tDir == 1 ? "ACHAT en cours " : "VENTE en cours ") + fmt(tE) + " · stop " + fmt(tS) :
-         wDir != 0 ? "manipulation → " + (wDir == 1 ? "ACHAT" : "VENTE") + " si clôture au-delà de " + fmt(wMid) :
-         phase >= 1 ? "range actif " + fmt(rBot) + " – " + fmt(rTop) : "recherche d'un range"
+    stTxt = inTr ? (tDir == 1 ? "ACHAT " : "VENTE ") + fmt(tE) + "\nstop " + fmt(tS) :
+         wDir != 0 ? (wDir == 1 ? "ACHAT si > " : "VENTE si < ") + fmt(wMid) :
+         phase >= 1 ? "range " + fmt(rBot) + "\n– " + fmt(rTop) : "cherche un range"
     table.cell(tb, 0, 0, "AMD MILIEU", text_color = color.white, text_size = size.small)
     table.cell(tb, 1, 0, stTxt, text_color = inTr ? (tDir == 1 ? cUp : cDn) : wDir != 0 ? cMn : color.silver, text_size = size.small)
     table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 1, str.tostring(nTr), text_color = color.white, text_size = size.small)
     table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
-    table.cell(tb, 0, 3, "R moyen / trade (frais compris)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen (frais)", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
     table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
@@ -262,8 +264,8 @@ if barstate.islast and showTab
     table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
     table.cell(tb, 0, 6, "Historique chargé", text_color = color.silver, text_size = size.small)
     table.cell(tb, 1, 6, str.tostring((time - tFirst) / 86400000.0, "#") + " jours", text_color = color.white, text_size = size.small)
-    table.cell(tb, 0, 7, "Rappel", text_color = color.silver, text_size = size.small)
-    table.cell(tb, 1, 7, "risque 0,5 à 1 % · c'est toi qui passes l'ordre", text_color = cGr, text_size = size.small)
+    table.cell(tb, 0, 7, "Risque", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 7, "0,5 à 1 %", text_color = cGr, text_size = size.small)
 
 alertcondition(sigMan, "AMD : manipulation (préparer)", "Manipulation d'un range : entrée possible si clôture au-delà du milieu")
 alertcondition(sigEntry, "AMD : entrée au milieu", "Clôture au-delà du milieu du range après manipulation : entrée")
