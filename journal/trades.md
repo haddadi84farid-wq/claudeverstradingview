@@ -280,3 +280,13 @@ Conclusion : OB = carte des zones, pas un signal. Avantage mesure seulement sur 
 Constat : ~15 trades en tout, total ~ -0,5 R -> au point mort, et 1 trade toutes les 2-3 semaines = inexploitable comme strategie.
 Le filtre MSS + deplacement elimine ~85 % des balayages. Le relacher revient a BT FVG (deja negatif, PF 0,83).
 Decision : ICT CHAINE garde comme CARTE (FVG, OB, balayages propres). Seul avantage mesure : BT AMD (range -> manipulation -> milieu).
+
+## OB FLOW — critere H (OB dans un FVG H1 ouvert), entree au 50 % de l'OB, 2 R, stop meche, or, 13/10/2026 (avant frais)
+| UT | 5 etoiles | 4 etoiles | 3 et moins | dans FVG H1 | hors FVG H1 |
+|---|---|---|---|---|---|
+| M5 | 8 zones, 38 % | 37, 46 % | 144, 44 % | 17, 47 % | 172, 44 % |
+| M15 | 13, 15 % | 36, 42 % | 109, 40 % | 16, 38 % | 142, 39 % |
+| H1 | 4, 50 % | 20, 40 % | 93, 35 % | 16, 44 % | 101, 36 % |
+Constat : H n'apporte rien de net (47 vs 44 % en M5, 38 vs 39 % en M15, echantillons ~16). Les etoiles non plus (5 etoiles M15 : 15 %).
+Piste : l'ENTREE AU 50 % de l'OB donne 40-44 % a 2 R sur TOUS les OB (vs ~35 % avec l'entree au bord) -> +0,2 a +0,3 R avant frais.
+A verifier avec une vraie strategie frais compris (cout 0,37 / risque M5 souvent 2-4 points = 0,1 a 0,2 R).
