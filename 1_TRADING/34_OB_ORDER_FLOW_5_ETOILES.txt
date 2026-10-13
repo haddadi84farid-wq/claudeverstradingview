@@ -21,13 +21,13 @@ indicator("OB + order flow 5 étoiles", shorttitle = "OB FLOW 5★", overlay = t
 gU = "Unités de temps (cocher celles à afficher)"
 use1 = input.bool(false, "M1", group = gU, inline = "u")
 use3 = input.bool(false, "M3", group = gU, inline = "u")
-use5 = input.bool(false, "M5", group = gU, inline = "u")
-use15 = input.bool(false, "M15", group = gU, inline = "u")
-use60 = input.bool(true, "H1", group = gU, inline = "u")
-use240 = input.bool(true, "H4", group = gU, inline = "u")
+use5 = input.bool(true, "M5", group = gU, inline = "u")
+use15 = input.bool(true, "M15", group = gU, inline = "u")
+use60 = input.bool(false, "H1", group = gU, inline = "u")
+use240 = input.bool(false, "H4", group = gU, inline = "u")
 useD = input.bool(false, "Jour", group = gU, inline = "u")
 gS = "Sélection"
-minStars = input.int(4, "Afficher les OB à partir de (étoiles)", minval = 1, maxval = 5, group = gS)
+minStars = input.int(1, "Afficher les OB à partir de (étoiles)", minval = 1, maxval = 5, group = gS)
 keepN = input.int(3, "OB vierges gardés par unité et par sens", minval = 1, maxval = 5, group = gS)
 pivLen = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gS)
 needFvg = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gS)
