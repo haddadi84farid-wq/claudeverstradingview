@@ -86,6 +86,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 38_ICT_CHAINE.txt     : INDICATEUR "ICT CHAINE" : signale seulement la chaine complete balayage (sommet/creux ou PDH/PDL,
                            en killzone) -> MSS avec gros corps -> FVG (ou OB) -> ordre limite, stop au-dela du balayage, 2 R.
                            Niveaux consommes une fois depasses, filtre tendance H1/H4, tableau des resultats en R (frais compris).
+- 39_FVG_REACTION.txt   : INDICATEUR "FVG REACTION" : 1er retour sur un FVG (bougie 1), bougie 2 qui cloture au-dela
+                           du haut (achat) / bas (vente) de la bougie 1 -> entree a la cloture, stop derriere les bougies 1-2,
+                           objectif 2 R. Tableau des resultats en R (frais compris), filtres tendance H1/H4 et killzones.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
