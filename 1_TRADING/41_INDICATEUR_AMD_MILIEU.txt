@@ -1,0 +1,269 @@
+//@version=6
+// AMD MILIEU — la version INDICATEUR de « BT AMD » (la seule méthode qui a montré un avantage : PF ≈ 3 en M15).
+// Mêmes règles que la stratégie 32 en mode « Milieu du range (50 %) » + « Tout garder, stop remonté à chaque TP » :
+//  1. RANGE : prix enfermé sur N bougies (hauteur 1,5 à 4 ATR 50), haut ET bas touchés ≥ 2 fois (cadre bleu).
+//  2. MANIPULATION : un bord est balayé (mèche au-delà puis clôture DEDANS, sans balayer les deux bords),
+//     ou clôture dehors puis retour en ≤ 8 bougies sans aller au-delà de 4 hauteurs (cadre orange).
+//  3. ATTENTE DU MILIEU : après la manipulation, on attend une CLÔTURE au-delà du milieu du range (max 24 bougies).
+//     Annulé si le prix repasse au-delà de l'extrême balayé.
+//  4. ENTRÉE à cette clôture, dans le sens opposé à la manipulation. STOP au-delà de l'extrême balayé (+ 0,2 ATR).
+//     TP1 = bord opposé, TP2 = bord + ½ hauteur, TP3 = bord + 1 hauteur (sortie).
+//     Stop remonté : TP1 touché → stop à l'entrée ; TP2 touché → stop sur TP1.
+//  5. Tableau : état en direct + résultats en R sur l'historique chargé, frais compris (0,37 point par défaut).
+// Alertes disponibles : « manipulation (préparer) » et « entrée ». Ne passe AUCUN ordre.
+indicator("AMD milieu : range → manipulation → entrée au milieu", shorttitle = "AMD MILIEU", overlay = true,
+     max_boxes_count = 200, max_lines_count = 400, max_labels_count = 300, max_bars_back = 500)
+
+gT = "Trade"
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gT)
+midWait = input.int(24, "Milieu : attendre au maximum (bougies)", minval = 2, maxval = 100, group = gT)
+costPts = input.float(0.37, "Frais aller-retour en prix (or 0,37 ; EURUSD 0,00012)", minval = 0, step = 0.01, group = gT)
+gD = "Range"
+rLen   = input.int(24, "Range : nombre de bougies", minval = 10, maxval = 200, group = gD)
+rMaxK  = input.float(4.0, "Range : hauteur max (× ATR 50)", minval = 1, step = 0.5, group = gD)
+rMinK  = input.float(1.5, "Range : hauteur min (× ATR 50)", minval = 0.5, step = 0.5, group = gD)
+nTouch = input.int(2, "Contacts minimum sur le haut ET sur le bas", minval = 1, maxval = 5, group = gD)
+maxAge = input.int(150, "Range abandonné après (bougies)", minval = 20, group = gD)
+gM = "Manipulation"
+keepR  = input.bool(true, "Garder le range après une 1re manipulation (2e balayage possible)", group = gM)
+maxMan = input.int(2, "Manipulations max par range", minval = 1, maxval = 5, group = gM)
+swK    = input.float(0.05, "Balayage minimum (× hauteur du range)", minval = 0, step = 0.05, group = gM)
+backN  = input.int(8, "Retour dans le range en moins de (bougies)", minval = 1, maxval = 30, group = gM)
+farK   = input.float(4.0, "Au-delà de (× hauteur) = vraie cassure", minval = 0.5, step = 0.5, group = gM)
+bufK   = input.float(0.2, "Marge du stop (× ATR 50)", minval = 0, step = 0.05, group = gM)
+gA = "Affichage"
+showTab = input.bool(true, "Afficher le tableau", group = gA)
+
+cRg = #2962FF
+cMn = #FF9800
+cUp = #089981
+cDn = #F23645
+cGr = color.gray
+
+atrL = ta.atr(50)
+hh = ta.highest(high, rLen)
+ll = ta.lowest(low, rLen)
+fmt(float v) => str.tostring(v, format.mintick)
+
+touches(int n, bool top, float lvl, float tol) =>
+    int c = 0
+    int last = -10
+    for k = n - 1 to 0
+        hit = top ? high[k] >= lvl - tol : low[k] <= lvl + tol
+        if hit and (n - 1 - k) - last >= 3
+            c += 1
+            last := n - 1 - k
+    c
+
+var int   phase = 0
+var float rTop = na
+var float rBot = na
+var int   rStart = na
+var int   side = 0
+var float ext = na
+var int   outN = 0
+var int   coolUntil = 0
+var int   nMan = 0
+var box   rBox = na
+// attente du milieu
+var int   wDir = 0
+var float wMid = na
+var float wStop = na
+var float wTp1 = na
+var float wTp2 = na
+var float wTp3 = na
+var float wExt = na
+var int   wUntil = 0
+// trade en cours (simulé)
+var bool  inTr = false
+var int   tDir = 0
+var int   tBar = na
+var float tE = na
+var float tS = na
+var float tS0 = na
+var float t1 = na
+var float t2 = na
+var float t3 = na
+var int   tStage = 0
+var label tLb = na
+var line  lSl = na
+var line  lT1 = na
+var line  lT2 = na
+var line  lT3 = na
+// résultats
+var int   nTr = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL = 0.0
+var int   tFirst = na
+if na(tFirst)
+    tFirst := time
+bool sigMan = false
+bool sigEntry = false
+
+// ---------- Trade en cours : stop d'abord (prudent), puis TP1 / TP2 (stop remonté), puis TP3 ----------
+if inTr and bar_index > tBar
+    up = tDir == 1
+    rk0 = math.abs(tE - tS0)
+    float exitPx = na
+    string why = ""
+    if up ? low <= tS : high >= tS
+        exitPx := tS
+        why := tStage == 0 ? "✗ stop" : tStage == 1 ? "= stop à l'entrée (TP1 atteint)" : "✓ stop sur TP1 (TP2 atteint)"
+    else
+        if tStage == 0 and (up ? high >= t1 : low <= t1)
+            tStage := 1
+            tS := tE
+        if tStage == 1 and (up ? high >= t2 : low <= t2)
+            tStage := 2
+            tS := t1
+        if up ? high >= t3 : low <= t3
+            exitPx := t3
+            why := "✓ TP3"
+    for l in array.from(lSl, lT1, lT2, lT3)
+        line.set_x2(l, bar_index)
+    if not na(exitPx)
+        res = tDir * (exitPx - tE) / rk0 - costPts / rk0
+        nTr += 1
+        sumR += res
+        if res > 0
+            nW += 1
+            gW += res
+        else
+            gL -= res
+        label.set_text(tLb, label.get_text(tLb) + "\n" + why + " " + str.tostring(res, "+#.##;-#.##") + " R")
+        if res <= 0
+            label.set_color(tLb, color.new(cGr, 20))
+        inTr := false
+
+// ---------- 1. Range ----------
+if phase == 0 and bar_index > rLen and bar_index > coolUntil
+    h = hh - ll
+    if h <= rMaxK * atrL and h >= rMinK * atrL
+        if touches(rLen, true, hh, 0.15 * h) >= nTouch and touches(rLen, false, ll, 0.15 * h) >= nTouch
+            phase := 1
+            nMan := 0
+            rTop := hh
+            rBot := ll
+            rStart := bar_index - rLen + 1
+            rBox := box.new(rStart, rTop, bar_index, rBot, border_color = color.new(cRg, 30), bgcolor = color.new(cRg, 90))
+
+// ---------- 2. Manipulation ----------
+bool sig = false
+if phase >= 1
+    h = rTop - rBot
+    if not na(rBox)
+        box.set_right(rBox, bar_index)
+    if phase == 1
+        if high > rTop + swK * h and close <= rTop and close >= rBot and not (low < rBot - swK * h)
+            side := 1
+            ext := high
+            sig := true
+        else if low < rBot - swK * h and close >= rBot and close <= rTop and not (high > rTop + swK * h)
+            side := -1
+            ext := low
+            sig := true
+        else if close > rTop or close < rBot
+            phase := 2
+            side := close > rTop ? 1 : -1
+            ext := side == 1 ? high : low
+            outN := 1
+        else if bar_index - rStart > maxAge
+            phase := 0
+            rBox := na
+            coolUntil := bar_index + int(rLen / 2)
+    else
+        ext := side == 1 ? math.max(ext, high) : math.min(ext, low)
+        outN += 1
+        back = side == 1 ? close <= rTop : close >= rBot
+        tooFar = side == 1 ? ext > rTop + farK * h : ext < rBot - farK * h
+        if back and not tooFar
+            sig := true
+        else if tooFar or outN > backN
+            phase := 0
+            rBox := na
+            coolUntil := bar_index + int(rLen / 2)
+
+// ---------- 3. Manipulation confirmée → attente du milieu ----------
+if sig
+    h = rTop - rBot
+    d = -side
+    dirOk = dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+    if dirOk
+        wDir := d
+        wMid := (rTop + rBot) / 2
+        wStop := side == 1 ? ext + bufK * atrL : ext - bufK * atrL
+        wExt := ext
+        wTp1 := d == 1 ? rTop : rBot
+        wTp2 := d == 1 ? rTop + 0.5 * h : rBot - 0.5 * h
+        wTp3 := d == 1 ? rTop + h : rBot - h
+        wUntil := bar_index + midWait
+        sigMan := true
+        label.new(bar_index, side == 1 ? high : low, "manipulation\n→ " + (d == 1 ? "ACHAT" : "VENTE") + " si clôture au-delà de " + fmt(wMid),
+             style = side == 1 ? label.style_label_down : label.style_label_up, color = color.new(cMn, 20), textcolor = color.white, size = size.tiny)
+    if not na(rBox)
+        box.set_bgcolor(rBox, color.new(cMn, 85))
+        box.set_border_color(rBox, color.new(cMn, 30))
+    nMan += 1
+    if keepR and nMan < maxMan
+        phase := 1
+    else
+        phase := 0
+        rBox := na
+        coolUntil := bar_index + int(rLen / 2)
+
+// ---------- 4. Entrée quand le prix revient au milieu ----------
+if wDir != 0 and not sig
+    broke = wDir == 1 ? low < wExt : high > wExt
+    if broke or bar_index > wUntil
+        wDir := 0
+    else if (wDir == 1 ? close >= wMid : close <= wMid) and not inTr and barstate.isconfirmed
+        if math.abs(close - wStop) > 0
+            inTr := true
+            tDir := wDir
+            tBar := bar_index
+            tE := close
+            tS := wStop
+            tS0 := wStop
+            t1 := wTp1
+            t2 := wTp2
+            t3 := wTp3
+            tStage := 0
+            sigEntry := true
+            c = wDir == 1 ? cUp : cDn
+            tLb := label.new(bar_index, wDir == 1 ? low : high, (wDir == 1 ? "ACHAT" : "VENTE") + " milieu " + fmt(tE) + "\nSL " + fmt(tS) + "\nTP1 " + fmt(t1) + " | TP2 " + fmt(t2) + " | TP3 " + fmt(t3),
+                 style = wDir == 1 ? label.style_label_up : label.style_label_down, color = c, textcolor = color.white, size = size.tiny)
+            lSl := line.new(bar_index, tS, bar_index + 1, tS, color = cDn, style = line.style_dotted)
+            lT1 := line.new(bar_index, t1, bar_index + 1, t1, color = color.new(cUp, 40), style = line.style_dotted)
+            lT2 := line.new(bar_index, t2, bar_index + 1, t2, color = color.new(cUp, 20), style = line.style_dotted)
+            lT3 := line.new(bar_index, t3, bar_index + 1, t3, color = cUp, width = 2)
+        wDir := 0
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 2, 8, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
+if barstate.islast and showTab
+    pf = gL > 0 ? gW / gL : na
+    avgR = nTr > 0 ? sumR / nTr : na
+    stTxt = inTr ? (tDir == 1 ? "ACHAT en cours " : "VENTE en cours ") + fmt(tE) + " · stop " + fmt(tS) :
+         wDir != 0 ? "manipulation → " + (wDir == 1 ? "ACHAT" : "VENTE") + " si clôture au-delà de " + fmt(wMid) :
+         phase >= 1 ? "range actif " + fmt(rBot) + " – " + fmt(rTop) : "recherche d'un range"
+    table.cell(tb, 0, 0, "AMD MILIEU", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, stTxt, text_color = inTr ? (tDir == 1 ? cUp : cDn) : wDir != 0 ? cMn : color.silver, text_size = size.small)
+    table.cell(tb, 0, 1, "Trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nTr), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen / trade (frais compris)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Historique chargé", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, str.tostring((time - tFirst) / 86400000.0, "#") + " jours", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 7, "Rappel", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 7, "risque 0,5 à 1 % · c'est toi qui passes l'ordre", text_color = cGr, text_size = size.small)
+
+alertcondition(sigMan, "AMD : manipulation (préparer)", "Manipulation d'un range : entrée possible si clôture au-delà du milieu")
+alertcondition(sigEntry, "AMD : entrée au milieu", "Clôture au-delà du milieu du range après manipulation : entrée")

@@ -92,6 +92,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 40_BACKTEST_OB50.txt  : BACKTEST "BT OB 50" (strategie) : memes OB qu'OB FLOW (derniere bougie opposee + imbalance),
                            taille 0,3-2 ATR, ordre limite au contact / 50 % / 75 % de l'OB au 1er retour, stop meche, 2 R,
                            frais compris. Tableau en R. Pour verifier la piste "entree au 50 %" (40-44 % a 2 R avant frais).
+- 41_INDICATEUR_AMD_MILIEU.txt : LA METHODE QUI A UN AVANTAGE (BT AMD) en INDICATEUR : range -> manipulation ->
+                           entree a la cloture au-dela du milieu, SL au-dela de l'extreme, TP1/TP2/TP3 avec stop remonte.
+                           Etat en direct, resultats en R (frais compris), alertes "manipulation" et "entree".
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
