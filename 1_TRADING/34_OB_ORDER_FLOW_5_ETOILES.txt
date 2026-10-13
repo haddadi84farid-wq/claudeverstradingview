@@ -8,6 +8,8 @@
 //  V  VOLUME     : le volume de l'impulsion est anormal (une bougie ≥ 1,5 × la moyenne 20).
 //  Δ  DELTA      : l'impulsion est dominée par les agresseurs du bon côté (delta approché ≥ 30 % du volume).
 //  P  PRIX       : l'OB est en zone discount (achat) / premium (vente) de la vague qu'il a créée.
+//  H  (hors note) : l'OB est À L'INTÉRIEUR d'un FVG H1 encore ouvert, dans le même sens (de M1 à H1). Le tableau compare
+//                   « dans FVG H1 » et « hors FVG H1 », avec l'entrée au 50 % de l'OB (ou au bord, au choix).
 // OB VIERGES = trait plein ; OB déjà touchés mais pas cassés = pointillés (option). Un OB cassé (mèche au-delà) disparaît. Quand le prix revient dedans, l'unité affichée vérifie
 // le flux en direct : « FLUX ✓ » si la bougie montre des acheteurs (vendeurs) agressifs qui reprennent la main.
 // Tableau : pour chaque unité et chaque note, combien de zones ont été retouchées et combien ont donné une réaction ≥ 2 R
@@ -32,6 +34,8 @@ needFvg = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) j
 dispK = input.float(1.5, "D : déplacement minimum (× ATR)", minval = 0.5, step = 0.25, group = gS)
 volK = input.float(1.5, "V : volume minimum (× moyenne 20)", minval = 1, step = 0.1, group = gS)
 dltK = input.float(0.3, "Δ : delta minimum (part du volume)", minval = 0.05, step = 0.05, group = gS)
+onlyH = input.bool(false, "Afficher seulement les OB à l'intérieur d'un FVG H1 encore ouvert (H✓)", group = gS)
+entMode = input.string("Au 50 % de l'OB", "Entrée mesurée dans le tableau", options = ["Au 50 % de l'OB", "Au bord de l'OB"], group = gS)
 gA = "Affichage"
 extH = input.float(12, "Prolonger à droite (heures)", minval = 1, step = 1, group = gA)
 showTouch = input.bool(true, "Afficher aussi les zones déjà touchées mais pas cassées (pointillés)", group = gA)
@@ -54,6 +58,7 @@ type OB
     bool  fP
     bool  touched
     float ext
+    bool  fH = false
 
 // ---------- Détection sur UNE unité (exécutée dans chaque unité via request.security) ----------
 // Sortie : [nb d'OB, puis 11 valeurs par OB (sens, haut, bas, temps, étoiles, L, D, V, Δ, P, touché),
@@ -74,40 +79,76 @@ obFlow() =>
     var array<OB> obs = array.new<OB>()
     var array<int> nT = array.new<int>(6, 0)
     var array<int> nW = array.new<int>(6, 0)
+    var array<int> nTH = array.new<int>(2, 0)
+    var array<int> nWH = array.new<int>(2, 0)
+    // FVG H1 encore ouverts : bougies H1 reconstruites dans l'unité (valable de M1 à H1)
+    var float hH = na
+    var float hL = na
+    var array<float> hbH = array.new<float>()
+    var array<float> hbL = array.new<float>()
+    var array<float> hfT = array.new<float>()
+    var array<float> hfB = array.new<float>()
+    var array<int>   hfD = array.new<int>()
+    hr = math.floor(time / 3600000)
+    if hr != hr[1]
+        if not na(hH)
+            hbH.push(hH)
+            hbL.push(hL)
+            if hbH.size() > 3
+                hbH.shift()
+                hbL.shift()
+            if hbH.size() == 3
+                if hbL.get(2) > hbH.get(0)
+                    hfT.push(hbL.get(2))
+                    hfB.push(hbH.get(0))
+                    hfD.push(1)
+                else if hbH.get(2) < hbL.get(0)
+                    hfT.push(hbL.get(0))
+                    hfB.push(hbH.get(2))
+                    hfD.push(-1)
+                if hfT.size() > 12
+                    hfT.shift()
+                    hfB.shift()
+                    hfD.shift()
+        hH := high
+        hL := low
+    else
+        hH := na(hH) ? high : math.max(hH, high)
+        hL := na(hL) ? low : math.min(hL, low)
+    // FVG H1 refermé (clôture au-delà de son bord opposé) = retiré
+    if hfT.size() > 0
+        for i = hfT.size() - 1 to 0
+            if hfD.get(i) == 1 ? close < hfB.get(i) : close > hfT.get(i)
+                hfT.remove(i)
+                hfB.remove(i)
+                hfD.remove(i)
     if not na(ph)
         sh := ph
         shX := false
     if not na(pl)
         sl := pl
         slX := false
-    // Suivi : retour dans la zone, réaction ≥ 2 R ou cassure
+    // Suivi : retour au prix d'entrée (bord ou 50 % de l'OB), réaction ≥ 2 R ou cassure
+    // stop = mèche au-delà de l'OB (0,1 ATR), vérifié AVANT l'objectif (calcul prudent)
     if obs.size() > 0
         for i = obs.size() - 1 to 0
             o = obs.get(i)
-            risk = o.top - o.bot + 0.1 * a
-            if o.dir == 1
-                if not o.touched and low <= o.top
-                    o.touched := true
-                    nT.set(o.st, nT.get(o.st) + 1)
-                // stop = mèche sous l'OB (− 0,1 ATR), vérifié AVANT l'objectif (calcul prudent)
-                if low < o.bot - 0.1 * a
-                    obs.remove(i)
-                else if o.touched and high >= o.top + 2 * risk
-                    nW.set(o.st, nW.get(o.st) + 1)
-                    obs.remove(i)
-                else if not o.touched
-                    o.ext := math.max(o.ext, high)
-            else
-                if not o.touched and high >= o.bot
-                    o.touched := true
-                    nT.set(o.st, nT.get(o.st) + 1)
-                if high > o.top + 0.1 * a
-                    obs.remove(i)
-                else if o.touched and low <= o.bot - 2 * risk
-                    nW.set(o.st, nW.get(o.st) + 1)
-                    obs.remove(i)
-                else if not o.touched
-                    o.ext := math.min(o.ext, low)
+            ent = entMode == "Au 50 % de l'OB" ? (o.top + o.bot) / 2 : (o.dir == 1 ? o.top : o.bot)
+            stopL = o.dir == 1 ? o.bot - 0.1 * a : o.top + 0.1 * a
+            risk = math.abs(ent - stopL)
+            hIdx = o.fH ? 1 : 0
+            if not o.touched and (o.dir == 1 ? low <= ent : high >= ent)
+                o.touched := true
+                nT.set(o.st, nT.get(o.st) + 1)
+                nTH.set(hIdx, nTH.get(hIdx) + 1)
+            if o.dir == 1 ? low < stopL : high > stopL
+                obs.remove(i)
+            else if o.touched and (o.dir == 1 ? high >= ent + 2 * risk : low <= ent - 2 * risk)
+                nW.set(o.st, nW.get(o.st) + 1)
+                nWH.set(hIdx, nWH.get(hIdx) + 1)
+                obs.remove(i)
+            else if not o.touched
+                o.ext := o.dir == 1 ? math.max(o.ext, high) : math.min(o.ext, low)
     // Cassure de structure → nouvel OB
     for d in array.from(1, -1)
         bool brk = d == 1 ? (not shX and not na(sh) and close > sh) : (not slX and not na(sl) and close < sl)
@@ -150,7 +191,13 @@ obFlow() =>
                 w0 = d == 1 ? math.min(bot, lo30[j + 1]) : math.max(top, hi30[j + 1])
                 fP = d == 1 ? mid <= (w0 + ix) / 2 : mid >= (w0 + ix) / 2
                 st = (fL ? 1 : 0) + (fD ? 1 : 0) + (fV ? 1 : 0) + (fF ? 1 : 0) + (fP ? 1 : 0)
-                obs.push(OB.new(d, top, bot, time[j], st, fL, fD, fV, fF, fP, false, ix))
+                // H : le milieu de l'OB est à l'intérieur d'un FVG H1 encore ouvert, dans le même sens
+                bool fH = false
+                if timeframe.in_seconds() <= 3600 and hfT.size() > 0
+                    for q = 0 to hfT.size() - 1
+                        if hfD.get(q) == d and mid >= hfB.get(q) and mid <= hfT.get(q)
+                            fH := true
+                obs.push(OB.new(d, top, bot, time[j], st, fL, fD, fV, fF, fP, false, ix, fH))
                 // garder les keepN derniers par sens
                 int cnt = 0
                 for o in obs
@@ -176,10 +223,15 @@ obFlow() =>
                 out.push(o.fF ? 1 : 0)
                 out.push(o.fP ? 1 : 0)
                 out.push(o.touched ? 1 : 0)
+                out.push(o.fH ? 1 : 0)
         for q = 0 to 5
             out.push(nT.get(q))
         for q = 0 to 5
             out.push(nW.get(q))
+        for q = 0 to 1
+            out.push(nTH.get(q))
+        for q = 0 to 1
+            out.push(nWH.get(q))
     out
 
 r1 = request.security(syminfo.tickerid, "1", obFlow())
@@ -196,7 +248,7 @@ var array<label> zLb = array.new<label>()
 var array<float> zTop = array.new<float>()
 var array<float> zBot = array.new<float>()
 var array<int>   zDir = array.new<int>()
-var table tb = table.new(position.bottom_right, 4, 23, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
+var table tb = table.new(position.bottom_right, 4, 37, bgcolor = color.new(#131722, 10), border_color = color.new(color.gray, 60), border_width = 1)
 var starTxt = array.from("☆☆☆☆☆", "★☆☆☆☆", "★★☆☆☆", "★★★☆☆", "★★★★☆", "★★★★★")
 ck(float f) => f == 1 ? "✓" : "✗"
 
@@ -205,21 +257,22 @@ drawTf(array<float> r, string tfName) =>
     if n > 0
         tEnd = time + math.round(extH * 3600000)
         for i = 0 to n - 1
-            b = 1 + i * 11
+            b = 1 + i * 12
             d = int(r.get(b))
             st = int(r.get(b + 4))
             tch = r.get(b + 10) == 1
-            if st >= minStars and (showTouch or not tch)
+            inH = r.get(b + 11) == 1
+            if st >= minStars and (showTouch or not tch) and (not onlyH or inH)
                 top = r.get(b + 1)
                 bot = r.get(b + 2)
                 c = d == 1 ? cBuy : cSell
                 zBx.push(box.new(int(r.get(b + 3)), top, tEnd, bot, xloc = xloc.bar_time, border_color = c, border_width = st == 5 ? 2 : 1,
                      border_style = tch ? line.style_dashed : line.style_solid, bgcolor = color.new(c, tch ? 92 : st == 5 ? 70 : 85)))
                 txt = (d == 1 ? "OB ACHAT " : "OB VENTE ") + tfName + "  " + starTxt.get(st) + "  L" + ck(r.get(b + 5)) + " D" + ck(r.get(b + 6)) +
-                     " V" + ck(r.get(b + 7)) + " Δ" + ck(r.get(b + 8)) + " P" + ck(r.get(b + 9)) + (tch ? "  (déjà touchée)" : "  (vierge)")
+                     " V" + ck(r.get(b + 7)) + " Δ" + ck(r.get(b + 8)) + " P" + ck(r.get(b + 9)) + " H" + ck(r.get(b + 11)) + (tch ? "  (déjà touchée)" : "  (vierge)")
                 zLb.push(label.new(tEnd, d == 1 ? bot : top, txt, xloc = xloc.bar_time, style = d == 1 ? label.style_label_upper_left : label.style_label_lower_left,
                      color = color.new(c, st == 5 ? 0 : 35), textcolor = color.white, size = size.small,
-                     tooltip = "L = liquidité balayée avant l'OB\nD = déplacement ≥ " + str.tostring(dispK) + " ATR avec FVG\nV = volume anormal\nΔ = agresseurs dominants dans l'impulsion\nP = zone discount (achat) / premium (vente)\nEntrée au bord, stop au-delà de l'OB."))
+                     tooltip = "L = liquidité balayée avant l'OB\nD = déplacement ≥ " + str.tostring(dispK) + " ATR avec FVG\nV = volume anormal\nΔ = agresseurs dominants dans l'impulsion\nP = zone discount (achat) / premium (vente)\nH = OB à l'intérieur d'un FVG H1 encore ouvert\nEntrée " + (entMode == "Au 50 % de l'OB" ? "au 50 %" : "au bord") + ", stop au-delà de l'OB."))
                 zTop.push(top)
                 zBot.push(bot)
                 zDir.push(d)
@@ -228,18 +281,18 @@ drawTf(array<float> r, string tfName) =>
 statRows(array<float> r, string tfName, int row) =>
     int n = na(r) or r.size() == 0 ? 0 : int(r.get(0))
     int rr = row
-    if not na(r) and r.size() >= 1 + n * 11 + 12
-        b = 1 + n * 11
+    if not na(r) and r.size() >= 1 + n * 12 + 16
+        b = 1 + n * 12
         t5 = r.get(b + 5)
         w5 = r.get(b + 11)
         t4 = r.get(b + 4)
         w4 = r.get(b + 10)
         t3 = r.get(b) + r.get(b + 1) + r.get(b + 2) + r.get(b + 3)
         w3 = r.get(b + 6) + r.get(b + 7) + r.get(b + 8) + r.get(b + 9)
-        names = array.from("★★★★★", "★★★★", "3★ et moins")
-        ts = array.from(t5, t4, t3)
-        ws = array.from(w5, w4, w3)
-        for q = 0 to 2
+        names = array.from("★★★★★", "★★★★", "3★ et moins", "dans FVG H1 (H✓)", "hors FVG H1")
+        ts = array.from(t5, t4, t3, r.get(b + 13), r.get(b + 12))
+        ws = array.from(w5, w4, w3, r.get(b + 15), r.get(b + 14))
+        for q = 0 to 4
             t = ts.get(q)
             w = ws.get(q)
             pct = t > 0 ? 100.0 * w / t : 0.0
@@ -275,11 +328,11 @@ if barstate.islast
     if useD
         drawTf(rD, "Jour")
     if showTb
-        table.clear(tb, 0, 0, 3, 22)
+        table.clear(tb, 0, 0, 3, 36)
         table.cell(tb, 0, 0, "Unité", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         table.cell(tb, 1, 0, "Note", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         table.cell(tb, 2, 0, "Retouchées", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
-        table.cell(tb, 3, 0, "Réaction ≥ 2 R", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
+        table.cell(tb, 3, 0, "Réaction ≥ 2 R (" + (entMode == "Au 50 % de l'OB" ? "entrée 50 %" : "entrée bord") + ")", text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 50))
         int row = 1
         if use1
             row := statRows(r1, "M1", row)
