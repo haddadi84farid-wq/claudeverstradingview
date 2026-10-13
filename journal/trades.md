@@ -290,3 +290,10 @@ Decision : ICT CHAINE garde comme CARTE (FVG, OB, balayages propres). Seul avant
 Constat : H n'apporte rien de net (47 vs 44 % en M5, 38 vs 39 % en M15, echantillons ~16). Les etoiles non plus (5 etoiles M15 : 15 %).
 Piste : l'ENTREE AU 50 % de l'OB donne 40-44 % a 2 R sur TOUS les OB (vs ~35 % avec l'entree au bord) -> +0,2 a +0,3 R avant frais.
 A verifier avec une vraie strategie frais compris (cout 0,37 / risque M5 souvent 2-4 points = 0,1 a 0,2 R).
+
+## BT OB 50 (strategie, limite au 50 % de l'OB, 1er retour, stop meche, 2 R, frais), XAUUSD M5, 24/08 -> 13/10/2026
+- 164 trades, 31,1 % gagnants, PF 0,825, -21,8 %, DD 32 %. NEGATIF.
+- Les 40-44 % d'OB FLOW etaient GONFLES par un biais de mesure : sur la bougie du contact, le plus haut (achat) etait
+  compte comme objectif atteint alors qu'il a eu lieu AVANT l'entree (le prix arrive d'en face). Corrige dans OB FLOW
+  (objectif compte seulement apres la bougie du contact). La strategie (moteur TradingView) est la mesure qui fait foi.
+- Conclusion OB : entree au bord, au 50 %, etoiles, H1 : aucun avantage apres frais. OB = carte, pas signal.

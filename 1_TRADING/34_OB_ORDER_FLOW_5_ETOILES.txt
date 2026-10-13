@@ -59,6 +59,7 @@ type OB
     bool  touched
     float ext
     bool  fH = false
+    int   tb = na
 
 // ---------- Détection sur UNE unité (exécutée dans chaque unité via request.security) ----------
 // Sortie : [nb d'OB, puis 11 valeurs par OB (sens, haut, bas, temps, étoiles, L, D, V, Δ, P, touché),
@@ -139,11 +140,13 @@ obFlow() =>
             hIdx = o.fH ? 1 : 0
             if not o.touched and (o.dir == 1 ? low <= ent : high >= ent)
                 o.touched := true
+                o.tb := bar_index
                 nT.set(o.st, nT.get(o.st) + 1)
                 nTH.set(hIdx, nTH.get(hIdx) + 1)
             if o.dir == 1 ? low < stopL : high > stopL
                 obs.remove(i)
-            else if o.touched and (o.dir == 1 ? high >= ent + 2 * risk : low <= ent - 2 * risk)
+            // objectif compté seulement APRÈS la bougie du contact (le prix arrive d'en face : son extrême est souvent avant l'entrée)
+            else if o.touched and bar_index > o.tb and (o.dir == 1 ? high >= ent + 2 * risk : low <= ent - 2 * risk)
                 nW.set(o.st, nW.get(o.st) + 1)
                 nWH.set(hIdx, nWH.get(hIdx) + 1)
                 obs.remove(i)
