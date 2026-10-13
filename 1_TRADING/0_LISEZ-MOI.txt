@@ -89,6 +89,9 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
 - 39_FVG_REACTION.txt   : INDICATEUR "FVG REACTION" : 1er retour sur un FVG (bougie 1), bougie 2 qui cloture au-dela
                            du haut (achat) / bas (vente) de la bougie 1 -> entree a la cloture, stop derriere les bougies 1-2,
                            objectif 2 R. Tableau des resultats en R (frais compris), filtres tendance H1/H4 et killzones.
+- 40_BACKTEST_OB50.txt  : BACKTEST "BT OB 50" (strategie) : memes OB qu'OB FLOW (derniere bougie opposee + imbalance),
+                           taille 0,3-2 ATR, ordre limite au contact / 50 % / 75 % de l'OB au 1er retour, stop meche, 2 R,
+                           frais compris. Tableau en R. Pour verifier la piste "entree au 50 %" (40-44 % a 2 R avant frais).
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET

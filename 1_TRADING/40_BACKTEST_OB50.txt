@@ -1,0 +1,299 @@
+//@version=6
+// BACKTEST « OB 50 % » — ordre limite DANS l'order block au 1er retour, sur une PÉRIODE CHOISIE. Pensé pour l'or en M5 / M15.
+// À créer comme NOUVEAU script STRATÉGIE, puis ouvrir le « Testeur de stratégie ». Tableau des résultats en R en bas à droite.
+// Règles (mêmes OB qu'OB FLOW) :
+//  1. OB = à chaque cassure de structure (sommet / creux confirmé par N bougies), la DERNIÈRE bougie opposée avant
+//     l'impulsion (15 bougies max), valide seulement si une IMBALANCE (FVG) part d'elle. Zone = mèches comprises.
+//  2. Taille de l'OB entre 0,3 et 2 ATR (trop petit = les frais mangent tout ; trop grand = stop énorme).
+//  3. ENTRÉE : ordre limite au contact (bord), au 50 % ou au 75 % de l'OB, au 1er retour seulement.
+//     Une zone ne sert qu'UNE fois : dès que le prix atteint le prix d'entrée, elle est consommée.
+//  4. STOP : au-delà de la mèche de l'OB (+ 0,1 ATR). OBJECTIF : 2 R. Option : stop à l'entrée à +1 R.
+// Frais : 0,085 par contrat et par côté + 10 ticks de glissement (≈ 0,37 point l'aller-retour sur l'or).
+// Filtres en option : tendance H1 / H4, séances Londres + New York, NFP. Ne passe AUCUN ordre réel.
+strategy("Backtest OB 50 %", shorttitle = "BT OB 50",
+     overlay = true, pyramiding = 0, process_orders_on_close = true,
+     initial_capital = 1000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     slippage = 10, margin_long = 1, margin_short = 1,
+     commission_type = strategy.commission.cash_per_contract, commission_value = 0.085,
+     max_boxes_count = 500, max_labels_count = 300, max_bars_back = 500)
+
+gP = "Période et gestion"
+tStart  = input.time(timestamp("2026-07-01T00:00"), "Début", group = gP)
+tEnd    = input.time(timestamp("2030-01-01T00:00"), "Fin", group = gP)
+riskPct = input.float(1.0, "Risque par trade (% du capital)", minval = 0.1, maxval = 5, step = 0.1, group = gP)
+dirMode = input.string("Achats et ventes", "Sens", options = ["Achats et ventes", "Achats seulement", "Ventes seulement"], group = gP)
+entMode = input.string("Au 50 % de l'OB", "Entrée", options = ["Au contact (bord de l'OB)", "Au 50 % de l'OB", "Au 75 % de l'OB"], group = gP)
+rr      = input.float(2.0, "Objectif (en R)", minval = 0.5, step = 0.5, group = gP)
+beOn    = input.bool(false, "Stop à l'entrée quand le trade fait +1 R", group = gP)
+gO = "Order blocks"
+pivLen  = input.int(5, "Structure : sommet / creux confirmé par N bougies", minval = 2, maxval = 20, group = gO)
+needFvg = input.bool(true, "OB valide seulement s'il crée une IMBALANCE (FVG) juste après", group = gO)
+minK    = input.float(0.3, "Taille minimum de l'OB (× ATR 14)", minval = 0, step = 0.1, group = gO)
+maxK    = input.float(2.0, "Taille maximum de l'OB (× ATR 14)", minval = 0.5, step = 0.25, group = gO)
+keepN   = input.int(3, "OB en attente gardés par sens", minval = 1, maxval = 10, group = gO)
+maxAge  = input.int(200, "OB abandonné s'il n'est pas retouché après (bougies)", minval = 10, maxval = 1000, group = gO)
+bufK    = input.float(0.1, "Marge du stop au-delà de la mèche (× ATR 14)", minval = 0, step = 0.05, group = gO)
+gF = "Filtres"
+trendMode = input.string("Aucun", "Tendance de fond", options = ["Aucun", "H1 (EMA 50)", "H4 (EMA 50)"], group = gF)
+sessOn  = input.bool(false, "Ordres seulement Londres 9h–12h et New York 14h30–18h (heure de Paris)", group = gF)
+noNews  = input.bool(true, "Pas d'ordre pendant le NFP (30 min avant → 1 h après)", group = gF)
+
+cUp = #089981
+cDn = #F23645
+cGr = color.gray
+
+inWin = time >= tStart and time <= tEnd
+atr = ta.atr(14)
+fmt(float v) => str.tostring(v, format.mintick)
+
+// NFP = 1er vendredi du mois, 8:30 New York (14:30 Paris)
+nfpOfMonth(int y, int m) =>
+    int res = na
+    for d = 1 to 7
+        t = timestamp("America/New_York", y, m, d, 8, 30)
+        if na(res) and dayofweek(t, "America/New_York") == dayofweek.friday
+            res := t
+    res
+tNfp = nfpOfMonth(year(time, "America/New_York"), month(time, "America/New_York"))
+inNews = time + timeframe.in_seconds() * 1000 > tNfp - 30 * 60000 and time <= tNfp + 60 * 60000
+inSess = not na(time(timeframe.period, "0900-1200,1430-1800", "Europe/Paris"))
+h1Bull = request.security(syminfo.tickerid, "60", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+h4Bull = request.security(syminfo.tickerid, "240", close[1] > ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+dirTrendOk(int d) =>
+    bool ok = dirMode == "Achats et ventes" or (dirMode == "Achats seulement" and d == 1) or (dirMode == "Ventes seulement" and d == -1)
+    if trendMode == "H1 (EMA 50)"
+        ok := ok and (d == 1 ? h1Bull : not h1Bull)
+    else if trendMode == "H4 (EMA 50)"
+        ok := ok and (d == 1 ? h4Bull : not h4Bull)
+    ok
+
+type Zone
+    int   uid
+    int   dir
+    float top
+    float bot
+    int   born
+    box   bx
+    int   state = 0
+
+entOf(Zone z) =>
+    h = z.top - z.bot
+    entMode == "Au contact (bord de l'OB)" ? (z.dir == 1 ? z.top : z.bot) : entMode == "Au 50 % de l'OB" ? (z.top + z.bot) / 2 : (z.dir == 1 ? z.bot + 0.25 * h : z.top - 0.25 * h)
+
+var array<Zone> zones = array.new<Zone>()
+var int uidN = 0
+var int nOb = 0
+// ordres en attente (un par sens) et trade en cours
+var int   sUid = -1
+var float sE = na
+var float sS = na
+var float sTp = na
+var float sRk = na
+var float sRisk = na
+var int   bUid = -1
+var float bE = na
+var float bS = na
+var float bTp = na
+var float bRk = na
+var float bRisk = na
+var bool  inTr = false
+var string tId = ""
+var float tE = na
+var float tTp = na
+var float tRk = na
+var int   tStage = 0
+// résultats en R
+var int   ctSeen = 0
+var int   nTr = 0
+var int   nW = 0
+var float sumR = 0.0
+var float gW = 0.0
+var float gL = 0.0
+int fillUid = -1
+
+// ---------- Résultats en R (trades clôturés sur cette bougie) ----------
+if strategy.closedtrades > ctSeen
+    for i = ctSeen to strategy.closedtrades - 1
+        id = strategy.closedtrades.entry_id(i)
+        rsk = id == "Vente OB" ? sRisk : bRisk
+        r = rsk > 0 ? strategy.closedtrades.profit(i) / rsk : 0.0
+        nTr += 1
+        sumR += r
+        if r > 0
+            nW += 1
+            gW += r
+        else
+            gL -= r
+        if strategy.closedtrades.entry_bar_index(i) == bar_index
+            fillUid := id == "Vente OB" ? sUid : bUid
+    ctSeen := strategy.closedtrades
+
+// ---------- Ordre exécuté ? ----------
+if strategy.position_size != 0 and not inTr
+    inTr := true
+    tId := strategy.opentrades.entry_id(0)
+    isS = tId == "Vente OB"
+    fillUid := isS ? sUid : bUid
+    tE := isS ? sE : bE
+    tTp := isS ? sTp : bTp
+    tRk := isS ? sRk : bRk
+    tStage := 0
+    label.new(bar_index, tE, (isS ? "VENTE OB " : "ACHAT OB ") + fmt(tE) + "\nSL " + fmt(isS ? sS : bS) + "\nTP " + fmt(tTp),
+         style = isS ? label.style_label_down : label.style_label_up, color = isS ? cDn : cUp, textcolor = color.white, size = size.tiny)
+if strategy.position_size == 0 and inTr
+    inTr := false
+if inTr and beOn and tStage == 0
+    up = strategy.position_size > 0
+    if up ? high >= tE + tRk : low <= tE - tRk
+        tStage := 1
+        strategy.exit(up ? "Sortie A" : "Sortie V", tId, stop = tE, limit = tTp)
+
+// ---------- Suivi des OB : le 1er passage au prix d'entrée consomme la zone ----------
+for z in zones
+    if z.state == 0 and z.born < bar_index
+        e = entOf(z)
+        touched = z.dir == 1 ? low <= e : high >= e
+        box.set_right(z.bx, bar_index)
+        if touched
+            z.state := 1
+            if z.uid != fillUid
+                box.set_bgcolor(z.bx, color.new(cGr, 88))
+                box.set_border_color(z.bx, color.new(cGr, 60))
+        else if bar_index - z.born > maxAge
+            z.state := 2
+            box.set_bgcolor(z.bx, color.new(cGr, 88))
+            box.set_border_color(z.bx, color.new(cGr, 60))
+if zones.size() > 0
+    for k = zones.size() - 1 to 0
+        if zones.get(k).state != 0
+            zones.remove(k)
+
+// ---------- Nouvel OB à chaque cassure de structure ----------
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+var float sh = na
+var float sl = na
+var bool  shX = true
+var bool  slX = true
+if not na(ph)
+    sh := ph
+    shX := false
+if not na(pl)
+    sl := pl
+    slX := false
+for d in array.from(1, -1)
+    brk = d == 1 ? (not shX and not na(sh) and close > sh) : (not slX and not na(sl) and close < sl)
+    if brk
+        if d == 1
+            shX := true
+        else
+            slX := true
+        int j = na
+        for k = 1 to 15
+            if na(j) and (d == 1 ? close[k] < open[k] : close[k] > open[k])
+                j := k
+        bool fvg0 = false
+        if not na(j) and j >= 2
+            fvg0 := d == 1 ? low[j - 2] > high[j] : high[j - 2] < low[j]
+        if not na(j) and not fvg0 and j >= 3
+            fvg0 := d == 1 ? low[j - 3] > high[j - 1] : high[j - 3] < low[j - 1]
+        if not na(j) and (not needFvg or fvg0)
+            top = high[j]
+            bot = low[j]
+            hgt = top - bot
+            if hgt >= minK * atr and hgt <= maxK * atr
+                uidN += 1
+                nOb += 1
+                c = d == 1 ? cUp : cDn
+                bx = box.new(bar_index - j, top, bar_index, bot, border_color = c, bgcolor = color.new(c, 82),
+                     text = d == 1 ? "OB ▲" : "OB ▼", text_color = c, text_size = size.tiny, text_halign = text.align_left, text_valign = text.align_top)
+                zones.push(Zone.new(uidN, d, top, bot, bar_index, bx))
+                // garder les keepN plus récents par sens
+                int cnt = 0
+                for z in zones
+                    cnt += z.dir == d ? 1 : 0
+                if cnt > keepN
+                    for i = 0 to zones.size() - 1
+                        if zones.get(i).dir == d
+                            zr = zones.remove(i)
+                            box.set_bgcolor(zr.bx, color.new(cGr, 88))
+                            box.set_border_color(zr.bx, color.new(cGr, 60))
+                            break
+
+// ---------- Ordres limites sur l'OB actif le plus proche (un par sens) ----------
+if strategy.position_size == 0
+    filtOk = inWin and (not sessOn or inSess) and not (noNews and inNews)
+    Zone zs = na
+    Zone zb = na
+    for z in zones
+        if z.state == 0
+            e = entOf(z)
+            if z.dir == -1 and e > close and (na(zs) or e < entOf(zs))
+                zs := z
+            if z.dir == 1 and e < close and (na(zb) or e > entOf(zb))
+                zb := z
+    bool okS = false
+    if not na(zs) and filtOk and dirTrendOk(-1)
+        e = entOf(zs)
+        st = zs.top + bufK * atr
+        rk = st - e
+        tg = e - rr * rk
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Vente OB", strategy.short, qty = q, limit = e, oca_name = "OB", oca_type = strategy.oca.cancel)
+            strategy.exit("Sortie V", "Vente OB", stop = st, limit = tg)
+            sUid := zs.uid
+            sE := e
+            sS := st
+            sTp := tg
+            sRk := rk
+            sRisk := q * rk
+            okS := true
+    if not okS
+        strategy.cancel("Vente OB")
+    bool okB = false
+    if not na(zb) and filtOk and dirTrendOk(1)
+        e = entOf(zb)
+        st = zb.bot - bufK * atr
+        rk = e - st
+        tg = e + rr * rk
+        q = rk > 0 ? math.floor(strategy.equity * riskPct / 100 / rk * 100) / 100 : 0.0
+        if q > 0
+            strategy.entry("Achat OB", strategy.long, qty = q, limit = e, oca_name = "OB", oca_type = strategy.oca.cancel)
+            strategy.exit("Sortie A", "Achat OB", stop = st, limit = tg)
+            bUid := zb.uid
+            bE := e
+            bS := st
+            bTp := tg
+            bRk := rk
+            bRisk := q * rk
+            okB := true
+    if not okB
+        strategy.cancel("Achat OB")
+
+if time > tEnd and strategy.position_size != 0
+    strategy.close_all(comment = "Fin de période")
+
+// ---------- Tableau ----------
+var table tb = table.new(position.bottom_right, 2, 8, bgcolor = color.new(#131722, 10), border_width = 1, border_color = color.new(cGr, 70))
+if barstate.islast
+    pf = gL > 0 ? gW / gL : na
+    avgR = nTr > 0 ? sumR / nTr : na
+    table.cell(tb, 0, 0, "BT OB 50", text_color = color.white, text_size = size.small)
+    table.cell(tb, 1, 0, entMode + " · " + str.tostring(rr) + " R", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 0, 1, "OB détectés → trades", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 1, str.tostring(nOb) + " → " + str.tostring(nTr), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 2, "Gagnants", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 2, nTr > 0 ? str.tostring(100.0 * nW / nTr, "#") + " %" : "—", text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 3, "R moyen / trade (frais compris)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 3, na(avgR) ? "—" : str.tostring(avgR, "+#.##;-#.##") + " R", text_color = na(avgR) ? color.white : avgR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 4, "Total", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 4, str.tostring(sumR, "+#.#;-#.#") + " R", text_color = sumR > 0 ? cUp : cDn, text_size = size.small)
+    table.cell(tb, 0, 5, "PF (en R)", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 5, na(pf) ? "—" : str.tostring(pf, "#.##"), text_color = color.white, text_size = size.small)
+    table.cell(tb, 0, 6, "Seuil à " + str.tostring(rr) + " R", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 6, str.tostring(100.0 / (1 + rr), "#") + " % + frais", text_color = cGr, text_size = size.small)
+    table.cell(tb, 0, 7, "Fiable à partir de", text_color = color.silver, text_size = size.small)
+    table.cell(tb, 1, 7, "≈ 100 trades", text_color = cGr, text_size = size.small)
+
+bgcolor(inWin ? na : color.new(color.gray, 92), title = "Hors période")
