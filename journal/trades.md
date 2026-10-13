@@ -302,3 +302,9 @@ A verifier avec une vraie strategie frais compris (cout 0,37 / risque M5 souvent
 - 52 trades, 33 % gagnants, -0,10 R / trade, -5,1 R, PF 0,77. NEGATIF en H1 sur longue periode.
 - Alerte : l'avantage de BT AMD (M15, juil.-oct. 2026, PF ~3) n'est peut-etre qu'un ajustement a cette periode.
 - A faire : AMD MILIEU en M15 (meme tableau) + BT AMD M15 du 01/01 au 30/06/2026 (hors echantillon). Si < PF 1,3 -> abandon.
+
+## BT ICHIMOKU (classique, sortie Kijun, risque 1 %, frais), XAUUSD H4, 01/01/2020 -> 13/10/2026
+- 348 trades, 34,2 % gagnants, PF 1,25, +46,5 % (~7 %/an), DD max 27,1 %.
+- Courbe : plate / negative 2020 -> fin 2023, puis forte hausse 2024 -> 2026 (tendance haussiere de l'or).
+- Lecture : avantage reel mais modeste et dependant des grandes tendances ; rendement / DD faible (1,7 en ~7 ans).
+- A tester : Jour ; H4 achats seulement ; sortie croisement Tenkan/Kijun.
