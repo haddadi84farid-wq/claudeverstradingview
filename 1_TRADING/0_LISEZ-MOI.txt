@@ -97,6 +97,8 @@ LES FICHIERS (ouvrir avec le Bloc-notes, Ctrl+A, Ctrl+C, puis coller)
                            Etat en direct, resultats en R (frais compris), alertes "manipulation" et "entree".
 - 42_BACKTEST_ICHIMOKU.txt : BACKTEST "BT ICHIMOKU" (strategie, H4 ou Jour) : prix hors du nuage + Tenkan/Kijun + Chikou
                            + nuage a venir, sortie a la cloture de l'autre cote de la Kijun, stop de depart Kijun - 0,5 ATR. Tableau en R.
+- 43_KABY_SMC_CORRIGE.txt : indicateur "KABY SMC" (OB H1 sur graphique M5/M15) corrige : zones en temps (suivent le
+                           graphique), supprimees si cassees en cloture, 1 alerte au 1er retest, FVG juste apres l'OB, 3 zones par sens.
 - anciens\              : anciennes versions, ne plus utiliser.
 
 LES AUTRES DOSSIERS DU PROJET
