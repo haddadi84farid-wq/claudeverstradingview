@@ -32,31 +32,32 @@ showHtf   = input.bool(false, "Afficher BOS / CHoCH HTF", group=gr0)
 showH4Ln  = input.bool(false, "Afficher dernier sommet / creux H4", group=gr0)
 
 gr1 = "1) Structure HTF (non-repaint)"
-tfTrend  = input.timeframe("240", "TF tendance + BOS", group=gr1)
-tfBias   = input.timeframe("60", "TF biais directionnel", group=gr1)
-lenTrend = input.int(3, "Pivot TF tendance (swing)", minval=1, group=gr1)
-lenBias  = input.int(3, "Pivot TF biais (interne)", minval=1, group=gr1)
+autoTf = input.bool(true, "Réglages AUTO selon le TF du graphique (ignore les valeurs manuelles ci-dessous)", group=gr1)
+tfTrendIn  = input.timeframe("240", "TF tendance + BOS", group=gr1)
+tfBiasIn   = input.timeframe("60", "TF biais directionnel", group=gr1)
+lenTrendIn = input.int(3, "Pivot TF tendance (swing)", minval=1, group=gr1)
+lenBiasIn  = input.int(3, "Pivot TF biais (interne)", minval=1, group=gr1)
 
 gr2 = "2) Structure locale (TF du graphique : M15 ou M5)"
-lenLTF     = input.int(2, "Pivot structure / OB", minval=1, group=gr2)
-lenLiq     = input.int(3, "Pivot liquidité / dealing range", minval=2, group=gr2)
-lenMinor   = input.int(5, "Pivot inducement", minval=1, group=gr2)
+lenLTFIn     = input.int(2, "Pivot structure / OB", minval=1, group=gr2)
+lenLiqIn     = input.int(3, "Pivot liquidité / dealing range", minval=2, group=gr2)
+lenMinorIn   = input.int(5, "Pivot inducement", minval=1, group=gr2)
 eqTol      = input.float(0.06, "Tolérance equal H/L (x ATR)", minval=0.01, step=0.01, group=gr2)
 rngTol     = input.float(1.4, "Tolérance range (x ATR)", minval=0.1, step=0.1, group=gr2)
-minGap     = input.float(0.3, "Displacement : FVG mini (x ATR)", minval=0.0, step=0.05, group=gr2)
+minGapIn     = input.float(0.3, "Displacement : FVG mini (x ATR)", minval=0.0, step=0.05, group=gr2)
 fvgWin     = input.int(2, "FVG créé par l'OB : fenêtre après l'OB (bougies)", minval=1, maxval=15, group=gr2)
 obMax      = input.int(6, "OB gardés en mémoire", minval=1, maxval=30, group=gr2)
 fvgMax     = input.int(6, "FVG / IFVG / BPR gardés en mémoire", minval=1, maxval=50, group=gr2)
 mitigFirst = input.bool(true, "OB consommé après la 1re touche (mitigation)", group=gr2)
 tapWin     = input.int(3, "Fenêtre de la 1re touche (bougies)", minval=1, maxval=20, group=gr2)
-drLook     = input.int(24, "Dealing range H1 : extension récente (bougies)", minval=5, group=gr2)
+drLookIn     = input.int(24, "Dealing range H1 : extension récente (bougies)", minval=5, group=gr2)
 
 gr3 = "3) Fibonacci / OTE"
 oteA = input.float(0.618, "OTE borne haute (ratio)", minval=0.3, maxval=0.9, step=0.001, group=gr3)
 oteB = input.float(0.79, "OTE borne basse (ratio)", minval=0.4, maxval=0.95, step=0.001, group=gr3)
 
 gr4 = "4) Volume profile"
-vpBars  = input.int(200, "Barres analysées", minval=50, maxval=500, group=gr4)
+vpBarsIn  = input.int(200, "Barres analysées", minval=50, maxval=500, group=gr4)
 vpRows  = input.int(40, "Lignes (résolution)", minval=10, maxval=80, group=gr4)
 vpWidth = input.int(30, "Largeur (barres)", minval=10, maxval=80, group=gr4)
 vaPct   = input.float(70.0, "Value area %", minval=50.0, maxval=95.0, group=gr4)
@@ -83,12 +84,12 @@ gr7 = "8) Suivi des performances (backtest intégré)"
 trkOn       = input.bool(true, "Suivre les trades (stats dans le tableau)", group=gr7)
 trkAligned  = input.bool(true, "Seulement dans le sens du biais H4+H1", group=gr7)
 trkMgmt     = input.string("50% TP1 + BE", "Gestion", options=["50% TP1 + BE", "50% TP1 sans BE", "100% TP2"], group=gr7)
-trkExpire   = input.int(100, "OB valide N bougies max", minval=10, group=gr7)
+trkExpireIn   = input.int(100, "OB valide N bougies max", minval=10, group=gr7)
 trkMaxRR    = input.float(5.0, "TP2 : RR maximum (plafond)", minval=2.0, step=0.5, group=gr7)
 trkCostMode = input.string("Prix", "Unité du coût", options=["Prix", "Ticks"], group=gr7)
 trkCost     = input.float(0.35, "Coût spread + frais (aller-retour)", minval=0.0, step=0.05, group=gr7)
 trkFar      = input.float(6.0, "Ignorer un OB à plus de N x ATR du prix", minval=1.0, step=0.5, group=gr7)
-trkMaxHold  = input.int(150, "Durée max d'un trade (bougies)", minval=10, group=gr7)
+trkMaxHoldIn  = input.int(150, "Durée max d'un trade (bougies)", minval=10, group=gr7)
 obOrigin    = input.bool(false, "OB à l'origine du mouvement (sans exiger de FVG)", group=gr7)
 
 gr6 = "9) Couleurs"
@@ -106,6 +107,28 @@ cLiq    = input.color(#FF9800, "Liquidité", group=gr6)
 cVA     = input.color(color.new(#5C6BC0, 70), "VP : value area", group=gr6)
 cVP     = input.color(color.new(#90A4AE, 80), "VP : hors value area", group=gr6)
 cPoc    = input.color(color.new(#FF6D00, 20), "VP : POC", group=gr6)
+
+
+// ===================== PROFIL AUTO SELON LE TF =====================
+//  M1 : H1 / M15 | M3-M5 : H4 / H1 | M15 : H4 / H1 | M30-H1 : D / H4 | > H1 : W / D
+//  Les durées (validité OB, durée max, VP, dealing range) sont en TEMPS, converties en bougies.
+int tfSec = timeframe.in_seconds()
+int prof = tfSec <= 60 ? 0 : tfSec <= 300 ? 1 : tfSec <= 900 ? 2 : tfSec <= 3600 ? 3 : 4
+f_bars(float hours, int mn, int mx) =>
+    math.max(mn, math.min(mx, int(math.round(hours * 3600 / tfSec))))
+string tfTrend  = autoTf ? (prof == 0 ? "60" : prof <= 2 ? "240" : prof == 3 ? "D" : "W") : tfTrendIn
+string tfBias   = autoTf ? (prof == 0 ? "15" : prof <= 2 ? "60" : prof == 3 ? "240" : "D") : tfBiasIn
+int   lenTrend   = autoTf ? 3 : lenTrendIn
+int   lenBias    = autoTf ? 3 : lenBiasIn
+int   lenLTF     = autoTf ? (prof == 0 ? 3 : 2) : lenLTFIn
+int   lenLiq     = autoTf ? (prof == 0 ? 4 : 3) : lenLiqIn
+int   lenMinor   = autoTf ? (prof == 0 ? 8 : prof == 1 ? 5 : 4) : lenMinorIn
+float minGap     = autoTf ? (prof == 0 ? 0.4 : prof == 1 ? 0.3 : prof == 2 ? 0.25 : 0.2) : minGapIn
+int   trkExpire  = autoTf ? f_bars(8, 10, 500) : trkExpireIn
+int   trkMaxHold = autoTf ? f_bars(12, 10, 500) : trkMaxHoldIn
+int   drLook     = autoTf ? f_bars(2, 10, 200) : drLookIn
+int   vpBars     = autoTf ? f_bars(16, 50, 500) : vpBarsIn
+string autoTxt   = autoTf ? "AUTO " + tfTrend + "/" + tfBias + " | OB " + str.tostring(trkExpire) + "b | FVG " + str.tostring(minGap) + " ATR" : "manuel"
 
 bool mgmtBE   = trkMgmt == "50% TP1 + BE"
 bool mgmtFull = trkMgmt == "100% TP2"
@@ -1144,7 +1167,7 @@ if barstate.islast
         table.cell(tb, 0, 14, "Score ≥70 | <70 (n, R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 1, 14, str.tostring(kNh) + " (" + str.tostring(kRh, "#.##") + ")  |  " + str.tostring(kNl) + " (" + str.tostring(kRl, "#.##") + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 0, 15, "Gestion | coût", text_color=tc, text_size=size.small, text_halign=text.align_left)
-        table.cell(tb, 1, 15, trkMgmt + " | " + str.tostring(costPx, format.mintick), text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 15, trkMgmt + " | " + str.tostring(costPx, format.mintick) + " | " + autoTxt, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 0, 16, "Entonnoir OB | plans | remplis", text_color=tc, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 1, 16, str.tostring(dOb) + " | " + str.tostring(dSet) + " | " + str.tostring(dFill) + "  (score max vu " + str.tostring(dMaxSc, "#") + ")", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
 
