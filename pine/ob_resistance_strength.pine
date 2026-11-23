@@ -1,0 +1,389 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// OB Résistance — Order Blocks d'offre classés par force de résistance
+// Un OB d'offre = dernière bougie haussière avant un displacement baissier (FVG)
+// qui casse la structure. Score 0-100 de sa capacité à faire réagir le prix :
+//   Displacement (FVG) 20 | CHoCH/BOS 15 | Sweep de liquidité 20
+//   Premium HTF / OTE 15 | Volume relatif 10 | Fraîcheur (touches) 20
+//   × décroissance avec l'âge
+// Non-repaint : OB créé à la clôture du BOS, HTF via [1] + lookahead_on.
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("OB Résistance — Force des Order Blocks", "OB Résistance", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=1000)
+
+// ============================ INPUTS ================================
+gA = "Profil"
+autoTf = input.bool(true, "Réglages AUTO selon le TF (ignore les valeurs manuelles)", group=gA)
+
+gD = "Détection"
+lenSwIn  = input.int(3, "Pivot structure (BOS / CHoCH)", minval=1, group=gD)
+minGapIn = input.float(0.3, "Displacement : FVG mini (x ATR)", minval=0.0, step=0.05, group=gD)
+fvgWin   = input.int(2, "FVG dans les N bougies après l'OB", minval=1, maxval=10, group=gD)
+useBody  = input.bool(false, "Zone = haut de mèche → corps (sinon bougie entière)", group=gD)
+maxMem   = input.int(40, "OB en mémoire", minval=5, maxval=150, group=gD)
+
+gL = "Liquidité"
+lenLiq   = input.int(5, "Pivot des sommets / creux à balayer", minval=2, group=gL)
+sweepAtr = input.float(1.0, "Sweep max au-delà du niveau (x ATR)", minval=0.1, step=0.1, group=gL)
+
+gH = "HTF (premium / discount)"
+htfIn = input.timeframe("60", "TF du dealing range", group=gH)
+drLen = input.int(3, "Pivot HTF", minval=1, group=gH)
+
+gV = "Validation"
+brkBuf  = input.float(0.05, "Buffer de cassure (x ATR)", minval=0.0, step=0.05, group=gV)
+showBrk = input.bool(true, "Afficher les OB cassés en breaker", group=gV)
+
+gS = "Affichage"
+showN    = input.int(3, "OB de résistance affichés (les plus forts)", minval=1, maxval=15, group=gS)
+showDem  = input.bool(false, "Afficher aussi les OB de demande (support)", group=gS)
+showDemN = input.int(2, "OB de demande affichés", minval=1, maxval=10, group=gS)
+minScore = input.int(40, "Score minimum", minval=0, maxval=100, group=gS)
+extR     = input.int(20, "Extension à droite (barres)", minval=0, group=gS)
+showMT   = input.bool(true, "Ligne 50 % (mean threshold)", group=gS)
+showTbl  = input.bool(true, "Tableau", group=gS)
+cSup     = input.color(#E53935, "OB d'offre (résistance)", group=gS)
+cDem     = input.color(#26A69A, "OB de demande (support)", group=gS)
+cBrk     = input.color(#9E9E9E, "Breaker", group=gS)
+
+// ========================= PROFIL AUTO =============================
+int tfSec = timeframe.in_seconds()
+int prof = tfSec <= 60 ? 0 : tfSec <= 300 ? 1 : tfSec <= 900 ? 2 : tfSec <= 3600 ? 3 : 4
+f_bars(float hours, int mn, int mx) =>
+    math.max(mn, math.min(mx, int(math.round(hours * 3600 / tfSec))))
+int    lenSw   = autoTf ? (prof == 0 ? 4 : 3) : lenSwIn
+float  minGap  = autoTf ? (prof == 0 ? 0.4 : prof == 1 ? 0.3 : prof == 2 ? 0.25 : 0.2) : minGapIn
+string htf     = autoTf ? (prof == 0 ? "15" : prof == 1 ? "60" : prof <= 3 ? "240" : "D") : htfIn
+int    ageBars = f_bars(72, 50, 5000)
+
+// ============================ DONNEES ===============================
+float atr    = ta.atr(14)
+float buf    = nz(atr) * brkBuf
+float volSma = ta.sma(nz(volume), 50)
+
+f_dr(int len) =>
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low, len, len)
+    var float lh = na
+    var float ll = na
+    if not na(ph)
+        lh := ph
+    if not na(pl)
+        ll := pl
+    [lh[1], ll[1]]
+[hH, hL] = request.security(syminfo.tickerid, htf, f_dr(drLen), lookahead=barmerge.lookahead_on)
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+float drHi = math.max(nz(hH, high), ta.highest(high, 20))
+float drLo = math.min(nz(hL, low), ta.lowest(low, 20))
+
+// ============================== TYPE ================================
+type OB
+    float top
+    float bot
+    int   dir        // -1 offre (résistance), 1 demande (support)
+    int   x0         // bar_index de la bougie OB
+    int   born       // bar_index du BOS
+    float disp       // FVG de displacement (x ATR)
+    bool  choch
+    bool  sweep
+    float rvol
+    int   touches
+    int   lastTouch
+    bool  broken
+    int   brokenBar
+
+var array<OB> obs = array.new<OB>()
+var array<float> hiP = array.new_float()
+var array<int>   hiI = array.new_int()
+var array<float> loP = array.new_float()
+var array<int>   loI = array.new_int()
+
+// ============================ SCORE =================================
+f_score(OB o) =>
+    float s = 20.0 * math.min(o.disp, 1.0)
+    s += o.choch ? 15.0 : 8.0
+    s += o.sweep ? 20.0 : 0.0
+    float rg = drHi - drLo
+    if rg > 0
+        float pos = ((o.top + o.bot) / 2 - drLo) / rg
+        if o.dir == -1
+            s += (pos >= 0.5 ? 8.0 : 0.0) + (pos >= 0.618 ? 7.0 : 0.0)
+        else
+            s += (pos <= 0.5 ? 8.0 : 0.0) + (pos <= 0.382 ? 7.0 : 0.0)
+    s += 10.0 * math.min(o.rvol / 2.0, 1.0)
+    s += o.touches == 0 ? 20.0 : o.touches == 1 ? 12.0 : o.touches == 2 ? 6.0 : 0.0
+    float decay = math.max(0.6, 1.0 - (bar_index - o.born) / ageBars)
+    s * decay
+
+f_hasOb(int x0, int d) =>
+    bool r = false
+    for o in obs
+        if o.x0 == x0 and o.dir == d
+            r := true
+    r
+
+// Sweep : l'extrême de la jambe a dépassé un ancien sommet / creux (ou PDH / PDL) d'au plus sweepAtr x ATR
+f_sweep(float ext, int extIdx, bool supply, float atrv) =>
+    bool r = false
+    array<float> pr = supply ? hiP : loP
+    array<int>   ix = supply ? hiI : loI
+    int n = pr.size()
+    if n > 0
+        for k = 0 to n - 1
+            float p = pr.get(k)
+            int xi = ix.get(k)
+            if xi < extIdx - 2 and extIdx - xi <= 300
+                if (supply and p < ext and ext - p <= sweepAtr * atrv) or (not supply and p > ext and p - ext <= sweepAtr * atrv)
+                    r := true
+    float pd = supply ? pdh : pdl
+    if not na(pd)
+        if (supply and pd < ext and ext - pd <= sweepAtr * atrv) or (not supply and pd > ext and pd - ext <= sweepAtr * atrv)
+            r := true
+    r
+
+// ======================= STRUCTURE + DETECTION ======================
+float ph  = ta.pivothigh(high, lenSw, lenSw)
+float pl  = ta.pivotlow(low, lenSw, lenSw)
+float phq = ta.pivothigh(high, lenLiq, lenLiq)
+float plq = ta.pivotlow(low, lenLiq, lenLiq)
+
+var float sH = na
+var float sL = na
+var int lastPHi = na
+var int lastPLi = na
+var int trend = 0
+
+bool evBreak  = false
+bool evReject = false
+
+if barstate.isconfirmed
+    if not na(phq)
+        hiP.push(phq)
+        hiI.push(bar_index - lenLiq)
+        if hiP.size() > 20
+            hiP.shift()
+            hiI.shift()
+    if not na(plq)
+        loP.push(plq)
+        loI.push(bar_index - lenLiq)
+        if loP.size() > 20
+            loP.shift()
+            loI.shift()
+    if not na(ph)
+        sH := ph
+        lastPHi := bar_index - lenSw
+    if not na(pl)
+        sL := pl
+        lastPLi := bar_index - lenSw
+
+    // --- BOS / CHoCH baissier -> OB d'OFFRE (dernière bougie haussière la plus haute + FVG baissier)
+    if not na(sL) and close < sL
+        bool isChoch = trend == 1
+        trend := -1
+        sL := na
+        if not na(lastPHi)
+            int n = math.min(bar_index - lastPHi, 150)
+            if n >= 3
+                array<float> gaps = array.new_float(n + 1, 0.0)
+                for f = 2 to n
+                    float g = low[f] - high[f - 2]
+                    if g > 0 and g >= minGap * atr
+                        gaps.set(f, g)
+                float best = na
+                int bi = -1
+                float bg = 0.0
+                for i = 2 to n
+                    if close[i] > open[i] and (na(best) or high[i] > best)
+                        float gm = 0.0
+                        for f = math.max(2, i - fvgWin) to i
+                            gm := math.max(gm, gaps.get(f))
+                        if gm > 0
+                            best := high[i]
+                            bi := i
+                            bg := gm
+                if bi >= 0 and not f_hasOb(bar_index - bi, -1)
+                    float legHi = high
+                    int legHiIdx = bar_index
+                    for i = 0 to n
+                        if high[i] > legHi
+                            legHi := high[i]
+                            legHiIdx := bar_index - i
+                    bool sw = f_sweep(legHi, legHiIdx, true, atr)
+                    float vs = volSma[bi]
+                    float rv = vs > 0 ? (nz(volume[bi]) + nz(volume[bi - 1]) + nz(volume[bi - 2])) / (3 * vs) : 1.0
+                    float zBot = useBody ? math.min(open[bi], close[bi]) : low[bi]
+                    obs.push(OB.new(high[bi], zBot, -1, bar_index - bi, bar_index, atr > 0 ? bg / atr : 0.0, isChoch, sw, rv, 0, bar_index, false, na))
+
+    // --- BOS / CHoCH haussier -> OB de DEMANDE (miroir)
+    if not na(sH) and close > sH
+        bool isChoch = trend == -1
+        trend := 1
+        sH := na
+        if not na(lastPLi)
+            int n = math.min(bar_index - lastPLi, 150)
+            if n >= 3
+                array<float> gaps = array.new_float(n + 1, 0.0)
+                for f = 2 to n
+                    float g = low[f - 2] - high[f]
+                    if g > 0 and g >= minGap * atr
+                        gaps.set(f, g)
+                float best = na
+                int bi = -1
+                float bg = 0.0
+                for i = 2 to n
+                    if close[i] < open[i] and (na(best) or low[i] < best)
+                        float gm = 0.0
+                        for f = math.max(2, i - fvgWin) to i
+                            gm := math.max(gm, gaps.get(f))
+                        if gm > 0
+                            best := low[i]
+                            bi := i
+                            bg := gm
+                if bi >= 0 and not f_hasOb(bar_index - bi, 1)
+                    float legLo = low
+                    int legLoIdx = bar_index
+                    for i = 0 to n
+                        if low[i] < legLo
+                            legLo := low[i]
+                            legLoIdx := bar_index - i
+                    bool sw = f_sweep(legLo, legLoIdx, false, atr)
+                    float vs = volSma[bi]
+                    float rv = vs > 0 ? (nz(volume[bi]) + nz(volume[bi - 1]) + nz(volume[bi - 2])) / (3 * vs) : 1.0
+                    float zTop = useBody ? math.max(open[bi], close[bi]) : high[bi]
+                    obs.push(OB.new(zTop, low[bi], 1, bar_index - bi, bar_index, atr > 0 ? bg / atr : 0.0, isChoch, sw, rv, 0, bar_index, false, na))
+
+    while obs.size() > maxMem
+        obs.shift()
+
+    // --- touches, rejets, cassures, breakers
+    if obs.size() > 0
+        for i = obs.size() - 1 to 0
+            OB o = obs.get(i)
+            if not o.broken
+                bool brk = o.dir == -1 ? close > o.top + buf : close < o.bot - buf
+                if brk
+                    o.broken := true
+                    o.brokenBar := bar_index
+                    evBreak := evBreak or (o.dir == -1 and f_score(o) >= minScore)
+                    if not showBrk
+                        obs.remove(i)
+                        continue
+                else if bar_index > o.born
+                    bool tap = o.dir == -1 ? high >= o.bot : low <= o.top
+                    if tap and bar_index - o.lastTouch >= 3
+                        o.touches += 1
+                        o.lastTouch := bar_index
+                        if o.dir == -1 and close < o.bot and close < open
+                            evReject := true
+            else
+                bool dead = o.dir == -1 ? close < o.bot - buf : close > o.top + buf
+                if dead or bar_index - o.brokenBar > ageBars
+                    obs.remove(i)
+
+// ============ MEILLEUR OB D'OFFRE (alertes + Data Window) ============
+float bestTop = na
+float bestBot = na
+float bestSc  = na
+for o in obs
+    if o.dir == -1 and not o.broken
+        float s = f_score(o)
+        if s >= minScore and (na(bestSc) or s > bestSc)
+            bestSc := s
+            bestTop := o.top
+            bestBot := o.bot
+plot(bestTop, "OB offre le plus fort — haut", display=display.data_window)
+plot(bestBot, "OB offre le plus fort — bas", display=display.data_window)
+plot(bestSc,  "OB offre le plus fort — score", display=display.data_window)
+
+// ============================ RENDU =================================
+var array<box>   bxs = array.new<box>()
+var array<line>  lns = array.new<line>()
+var array<label> lbs = array.new<label>()
+var table tbl = table.new(position.top_right, 5, 5, bgcolor=color.new(#0B1F3A, 10), border_width=1, border_color=color.new(color.gray, 60))
+
+f_draw(OB o, float s, int rank, color c) =>
+    int tr = int(math.round(88 - s * 0.6))
+    bool first = rank == 0
+    int xr = bar_index + extR
+    bxs.push(box.new(o.x0, o.top, xr, o.bot, xloc=xloc.bar_index, bgcolor=color.new(c, tr), border_color=color.new(c, first ? 0 : 50), border_width=first ? 2 : 1, border_style=o.broken ? line.style_dashed : line.style_solid))
+    if showMT and not o.broken
+        float mt = (o.top + o.bot) / 2
+        lns.push(line.new(o.x0, mt, xr, mt, xloc=xloc.bar_index, color=color.new(c, 30), style=line.style_dotted))
+    string head = o.broken ? "BREAKER (ex-" + (o.dir == -1 ? "offre → support)" : "demande → résistance)") : (first ? "★ " : "") + (o.dir == -1 ? "OB OFFRE " : "OB DEMANDE ") + str.tostring(math.round(s)) + "/100"
+    string tags = (o.choch ? "CHoCH" : "BOS") + (o.sweep ? " · Sweep" : "") + " · FVG " + str.tostring(o.disp, "0.0") + " ATR" + (o.touches == 0 ? " · Frais" : " · " + str.tostring(o.touches) + " touche(s)")
+    lbs.push(label.new(xr, (o.top + o.bot) / 2, head + "\n" + tags, xloc=xloc.bar_index, style=label.style_label_left, color=color.new(c, 100), textcolor=c, size=size.small))
+
+if barstate.islast
+    for b in bxs
+        b.delete()
+    for l in lns
+        l.delete()
+    for l in lbs
+        l.delete()
+    bxs.clear()
+    lns.clear()
+    lbs.clear()
+
+    array<float> sSup = array.new_float()
+    array<int>   iSup = array.new_int()
+    array<float> sDem = array.new_float()
+    array<int>   iDem = array.new_int()
+    array<int>   iBrk = array.new_int()
+    for [i, o] in obs
+        if o.broken
+            iBrk.push(i)
+        else
+            float s = f_score(o)
+            if s >= minScore
+                if o.dir == -1
+                    sSup.push(s)
+                    iSup.push(i)
+                else
+                    sDem.push(s)
+                    iDem.push(i)
+
+    int nSup = sSup.size()
+    if nSup > 0
+        array<int> ord = sSup.sort_indices(order.descending)
+        for k = 0 to math.min(showN, nSup) - 1
+            f_draw(obs.get(iSup.get(ord.get(k))), sSup.get(ord.get(k)), k, cSup)
+    if showDem and sDem.size() > 0
+        array<int> ordD = sDem.sort_indices(order.descending)
+        for k = 0 to math.min(showDemN, sDem.size()) - 1
+            f_draw(obs.get(iDem.get(ordD.get(k))), sDem.get(ordD.get(k)), k, cDem)
+    if showBrk and iBrk.size() > 0
+        int shown = 0
+        for k = iBrk.size() - 1 to 0
+            OB o = obs.get(iBrk.get(k))
+            if o.dir == -1 and shown < 2
+                f_draw(o, 0.0, 99, cBrk)
+                shown += 1
+
+    if showTbl
+        table.clear(tbl, 0, 0, 4, 4)
+        color tc = color.white
+        table.cell(tbl, 0, 0, "OB offre", text_color=cSup, text_size=size.small)
+        table.cell(tbl, 1, 0, "Zone", text_color=tc, text_size=size.small)
+        table.cell(tbl, 2, 0, "Score", text_color=tc, text_size=size.small)
+        table.cell(tbl, 3, 0, "Touches", text_color=tc, text_size=size.small)
+        table.cell(tbl, 4, 0, "Distance", text_color=tc, text_size=size.small)
+        if nSup > 0
+            array<int> ordT = sSup.sort_indices(order.descending)
+            for k = 0 to math.min(4, nSup) - 1
+                OB o = obs.get(iSup.get(ordT.get(k)))
+                float s = sSup.get(ordT.get(k))
+                float d = atr > 0 ? math.max(0, o.bot - close) / atr : 0.0
+                table.cell(tbl, 0, k + 1, (k == 0 ? "★ #" : "#") + str.tostring(k + 1), text_color=tc, text_size=size.small)
+                table.cell(tbl, 1, k + 1, str.tostring(o.bot, format.mintick) + " – " + str.tostring(o.top, format.mintick), text_color=cSup, text_size=size.small)
+                table.cell(tbl, 2, k + 1, str.tostring(math.round(s)) + "/100", text_color=s >= 70 ? color.lime : tc, text_size=size.small)
+                table.cell(tbl, 3, k + 1, o.touches == 0 ? "frais" : str.tostring(o.touches), text_color=tc, text_size=size.small)
+                table.cell(tbl, 4, k + 1, d == 0 ? "dans la zone" : str.tostring(d, "0.0") + " ATR", text_color=tc, text_size=size.small)
+        else
+            table.cell(tbl, 0, 1, "aucun OB ≥ " + str.tostring(minScore), text_color=color.gray, text_size=size.small)
+
+// ============================== ALERTES ==============================
+bool inBest = false
+if not na(bestBot)
+    inBest := high >= bestBot and close <= bestTop + buf
+alertcondition(inBest and not inBest[1], "Prix entre dans l'OB d'offre le plus fort", "{{ticker}} : entrée dans l'OB d'offre le plus fort ({{close}})")
+alertcondition(evReject, "Rejet sur un OB d'offre", "{{ticker}} : rejet baissier sur un OB d'offre ({{close}})")
+alertcondition(evBreak, "Cassure d'un OB d'offre", "{{ticker}} : un OB d'offre est cassé → breaker ({{close}})")
