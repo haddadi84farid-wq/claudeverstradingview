@@ -322,7 +322,7 @@ f_eval(Zone z, array<Zone> fz, float lo, float hi, int gD, bool dOn) =>
     z.score
 
 // Plan : TP1 = liquidité opposée non prise la plus proche (>= 1R), TP2 = la suivante / extrême H4 / 3R, plafonné
-f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> pools, array<float> piv, float slOv) =>
+f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> pools, array<float> piv, float slOv, float legX) =>
     float entry = isBuy ? top - (top - bot) * entryPct : bot + (top - bot) * entryPct
     float sl = not na(slOv) ? slOv : (isBuy ? bot - slBuf * atrv : top + slBuf * atrv)
     float risk = math.max(math.abs(entry - sl), syminfo.mintick)
@@ -334,10 +334,12 @@ f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> poo
         if not q.swept and q.dir == side and (isBuy ? q.lvl >= minT : q.lvl <= minT)
             if na(tp1) or (isBuy ? q.lvl < tp1 : q.lvl > tp1)
                 tp1 := q.lvl
-    if na(tp1)
-        for p in piv
-            if (isBuy ? p >= minT : p <= minT) and (na(tp1) or (isBuy ? p < tp1 : p > tp1))
-                tp1 := p
+    // TP1 = cible la plus PROCHE (>= 1R) parmi : pools, pivots, extrême de la jambe (Fibo 0)
+    for p in piv
+        if (isBuy ? p >= minT : p <= minT) and (na(tp1) or (isBuy ? p < tp1 : p > tp1))
+            tp1 := p
+    if not na(legX) and (isBuy ? legX >= minT : legX <= minT) and (na(tp1) or (isBuy ? legX < tp1 : legX > tp1))
+        tp1 := legX
     if na(tp1)
         tp1 := isBuy ? entry + 2 * risk : entry - 2 * risk
     for q in pools
@@ -1030,7 +1032,7 @@ if barstate.isconfirmed
         if not na(bB)
             if (fbB or (bB.score >= minScore and (not reqLiq or bB.liq))) and (not trkAligned or dirBias == 1)
                 // repli : SL sous l'origine de la jambe (creux du swing)
-                [e1, s1, a1, c1, r1] = f_plan(true, bB.top, bB.bot, atr, h4PH, liqs, phP, fbB ? legSB - slBuf * atr : na)
+                [e1, s1, a1, c1, r1] = f_plan(true, bB.top, bB.bot, atr, h4PH, liqs, phP, fbB ? legSB - slBuf * atr : na, legOkB ? legEB : na)
                 pBEn := e1
                 pBSl := s1
                 pBT1 := a1
@@ -1043,7 +1045,7 @@ if barstate.isconfirmed
         if not na(bS)
             if (fbS or (bS.score >= minScore and (not reqLiq or bS.liq))) and (not trkAligned or dirBias == -1)
                 // repli : SL au-dessus de l'origine de la jambe (sommet du swing)
-                [e2, s2, a2, c2, r2] = f_plan(false, bS.top, bS.bot, atr, h4PL, liqs, plP, fbS ? legSS + slBuf * atr : na)
+                [e2, s2, a2, c2, r2] = f_plan(false, bS.top, bS.bot, atr, h4PL, liqs, plP, fbS ? legSS + slBuf * atr : na, legOkS ? legES : na)
                 pSEn := e2
                 pSSl := s2
                 pST1 := a2
