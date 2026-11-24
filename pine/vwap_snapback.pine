@@ -293,6 +293,11 @@ if barstate.isconfirmed
 
 plotshape(evEntryL, "Entrée achat", shape.triangleup, location.belowbar, cBuy, size=size.small)
 plotshape(evEntryS, "Entrée vente", shape.triangledown, location.abovebar, cSell, size=size.small)
+// signaux valides mais BLOQUÉS (ADX, session, pertes du jour, TP trop petit) : croix grise
+plotshape(setL and not evEntryL, "Achat bloqué", shape.xcross, location.belowbar, color.new(color.gray, 20), size=size.tiny)
+plotshape(setS and not evEntryS, "Vente bloquée", shape.xcross, location.abovebar, color.new(color.gray, 20), size=size.tiny)
+// fond gris = régime de TENDANCE (ADX haut) : la stratégie ne trade pas
+bgcolor(useAdx and not rangeOk ? color.new(color.gray, 90) : na, title="Régime tendance")
 plot(kDir != 0 ? kSl : na, "Trade : SL", display=display.data_window)
 plot(kDir != 0 ? kT1 : na, "Trade : TP1", display=display.data_window)
 plot(kDir != 0 ? kT2 : na, "Trade : TP2", display=display.data_window)
