@@ -1,0 +1,1261 @@
+//@version=6
+indicator("TopDown SMC | Execution M15/M5 + DXY v1.6", shorttitle="TD-SMC 1.6", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500, max_bars_back=1000)
+
+// =====================================================================
+//  v1.5 — corrections vs v1.4
+//  [1] HTF non-repaint : f_struct()[1] + lookahead_on (historique = live)
+//  [1] Coût en prix OU en ticks (forex correct)
+//  [1] Plus d'écrasement d'ordre : l'ordre en attente = plan du MEILLEUR OB, recalculé chaque bougie
+//  [2] Backtest = exactement le setup affiché (même sélection, même score, même plan)
+//  [2] OTE / premium-discount évalués à chaque bougie (plus seulement à la création)
+//  [3] Liquidité = vrais pools (EQH/EQL, PDH/PDL, range Asie) balayés par l'OB
+//  [3] Volume profile inversé : LVN = bonus (HVN = zone d'acceptation)
+//  [3] Mitigation à la 1re touche (OB consommé) + filtre premium / discount
+//  [3] Displacement : FVG mini 0.3 ATR + bonus proportionnel
+//  [4] Filtre sessions London / NY ; TP = liquidité opposée non prise
+//  [+] Gestion : 50% TP1 + BE / 50% TP1 sans BE / 100% TP2 ; stats par session + espérance
+// =====================================================================
+
+// ============================ INPUTS ================================
+gr0 = "0) Affichage (défaut : graphique épuré)"
+modeSel   = input.string("Biais H4+H1 aligné seulement", "Directions affichées", options=["Achats + Ventes", "Biais H4+H1 aligné seulement"], group=gr0)
+showPlan  = input.bool(true, "Plan entrée / SL / TP du meilleur OB", group=gr0)
+showTable = input.bool(true, "Tableau de synthèse", group=gr0)
+showAllOb = input.bool(false, "Afficher les autres OB", group=gr0)
+showFvg   = input.bool(false, "Afficher FVG / IFVG / BPR", group=gr0)
+showLiq   = input.bool(false, "Afficher pools de liquidité", group=gr0)
+showCh    = input.bool(false, "Afficher canaux / range", group=gr0)
+showIdm   = input.bool(false, "Afficher inducement", group=gr0)
+showFibo  = input.bool(false, "Afficher Fibo + zone OTE", group=gr0)
+showVP    = input.bool(false, "Afficher volume profile", group=gr0)
+showHtf   = input.bool(false, "Afficher BOS / CHoCH HTF", group=gr0)
+showH4Ln  = input.bool(false, "Afficher dernier sommet / creux H4", group=gr0)
+
+gr1 = "1) Structure HTF (non-repaint)"
+autoTf = input.bool(true, "Réglages AUTO selon le TF du graphique (ignore les valeurs manuelles ci-dessous)", group=gr1)
+tfTrendIn  = input.timeframe("240", "TF tendance + BOS", group=gr1)
+tfBiasIn   = input.timeframe("60", "TF biais directionnel", group=gr1)
+lenTrendIn = input.int(3, "Pivot TF tendance (swing)", minval=1, group=gr1)
+lenBiasIn  = input.int(3, "Pivot TF biais (interne)", minval=1, group=gr1)
+
+gr2 = "2) Structure locale (TF du graphique : M15 ou M5)"
+lenLTFIn     = input.int(2, "Pivot structure / OB", minval=1, group=gr2)
+lenLiqIn     = input.int(3, "Pivot liquidité / dealing range", minval=2, group=gr2)
+lenMinorIn   = input.int(5, "Pivot inducement", minval=1, group=gr2)
+eqTol      = input.float(0.06, "Tolérance equal H/L (x ATR)", minval=0.01, step=0.01, group=gr2)
+rngTol     = input.float(1.4, "Tolérance range (x ATR)", minval=0.1, step=0.1, group=gr2)
+minGapIn     = input.float(0.3, "Displacement : FVG mini (x ATR)", minval=0.0, step=0.05, group=gr2)
+fvgWin     = input.int(2, "FVG créé par l'OB : fenêtre après l'OB (bougies)", minval=1, maxval=15, group=gr2)
+obMax      = input.int(6, "OB gardés en mémoire", minval=1, maxval=30, group=gr2)
+fvgMax     = input.int(6, "FVG / IFVG / BPR gardés en mémoire", minval=1, maxval=50, group=gr2)
+mitigFirst = input.bool(true, "OB consommé après la 1re touche (mitigation)", group=gr2)
+tapWin     = input.int(3, "Fenêtre de la 1re touche (bougies)", minval=1, maxval=20, group=gr2)
+drLookIn     = input.int(24, "Dealing range H1 : extension récente (bougies)", minval=5, group=gr2)
+
+gr3 = "3) Fibonacci / OTE"
+oteA = input.float(0.618, "OTE borne haute (ratio)", minval=0.3, maxval=0.9, step=0.001, group=gr3)
+oteB = input.float(0.79, "OTE borne basse (ratio)", minval=0.4, maxval=0.95, step=0.001, group=gr3)
+
+gr4 = "4) Volume profile"
+vpBarsIn  = input.int(200, "Barres analysées", minval=50, maxval=500, group=gr4)
+vpRows  = input.int(40, "Lignes (résolution)", minval=10, maxval=80, group=gr4)
+vpWidth = input.int(30, "Largeur (barres)", minval=10, maxval=80, group=gr4)
+vaPct   = input.float(70.0, "Value area %", minval=50.0, maxval=95.0, group=gr4)
+
+grL = "5) Pools de liquidité"
+usePD    = input.bool(true, "PDH / PDL", group=grL)
+useAsia  = input.bool(true, "Range Asie (haut / bas)", group=grL)
+sessAsia = input.session("0000-0700", "Session Asie", group=grL)
+
+grS = "6) Sessions (killzones)"
+useSess = input.bool(true, "Entrées uniquement en session", group=grS)
+sessLon = input.session("0800-1100", "London", group=grS)
+sessNy  = input.session("1430-1700", "New York", group=grS)
+sessTz  = input.string("Europe/Paris", "Fuseau horaire des sessions", group=grS)
+
+gr5 = "7) Score / plan de trade"
+minScore = input.int(50, "Score minimum pour le plan", minval=0, maxval=100, group=gr5)
+reqLiq   = input.bool(false, "Plan seulement si liquidité prise", group=gr5)
+pdFilter = input.bool(true, "Exclure achat en premium / vente en discount", group=gr5)
+entryPct = input.float(0.5, "Entrée : profondeur dans l'OB (0=bord, 1=fond)", minval=0.0, maxval=1.0, step=0.05, group=gr5)
+slBuf    = input.float(0.2, "Marge du SL (x ATR)", minval=0.0, step=0.05, group=gr5)
+
+gr7 = "8) Suivi des performances (backtest intégré)"
+trkOn       = input.bool(true, "Suivre les trades (stats dans le tableau)", group=gr7)
+trkAligned  = input.bool(true, "Seulement dans le sens du biais H4+H1", group=gr7)
+trkMgmt     = input.string("50% TP1 + BE", "Gestion", options=["50% TP1 + BE", "50% TP1 sans BE", "100% TP2"], group=gr7)
+trkExpireIn   = input.int(100, "OB valide N bougies max", minval=10, group=gr7)
+trkMaxRR    = input.float(5.0, "TP2 : RR maximum (plafond)", minval=2.0, step=0.5, group=gr7)
+trkCostMode = input.string("Prix", "Unité du coût", options=["Prix", "Ticks"], group=gr7)
+trkCost     = input.float(0.35, "Coût spread + frais (aller-retour)", minval=0.0, step=0.05, group=gr7)
+trkFar      = input.float(6.0, "Ignorer un OB à plus de N x ATR du prix", minval=1.0, step=0.5, group=gr7)
+trkMaxHoldIn  = input.int(150, "Durée max d'un trade (bougies)", minval=10, group=gr7)
+obOrigin    = input.bool(false, "OB à l'origine du mouvement (sans exiger de FVG)", group=gr7)
+
+grD = "10) DXY (indice dollar)"
+dxySym   = input.symbol("TVC:DXY", "Symbole DXY", group=grD)
+dxyMode  = input.string("Score (bonus / malus)", "Usage du DXY", options=["Score (bonus / malus)", "Filtre bloquant", "Désactivé"], group=grD)
+dxyRel   = input.string("Inverse (XAU, EUR, GBP)", "Relation avec l'actif", options=["Inverse (XAU, EUR, GBP)", "Directe (USDJPY, USDCAD, USDCHF)"], group=grD)
+corrLen  = input.int(50, "Corrélation : période (bougies)", minval=10, group=grD)
+corrMin  = input.float(0.3, "Corrélation minimum (valeur absolue)", minval=0.0, maxval=1.0, step=0.05, group=grD)
+smtMax   = input.int(80, "SMT : écart max entre 2 pivots (bougies)", minval=10, group=grD)
+
+gr6 = "9) Couleurs"
+cBuy    = input.color(#26A69A, "OB achat", group=gr6)
+cSell   = input.color(#EF5350, "OB vente", group=gr6)
+cObOte  = input.color(#9C27B0, "OB dans OTE", group=gr6)
+cBest   = input.color(#FFD600, "Bordure meilleur OB", group=gr6)
+cFvgB   = input.color(color.new(#42A5F5, 85), "FVG haussier", group=gr6)
+cFvgS   = input.color(color.new(#FF9800, 85), "FVG baissier", group=gr6)
+cIfvg   = input.color(color.new(#B0BEC5, 70), "IFVG", group=gr6)
+cBpr    = input.color(color.new(#00E5FF, 70), "BPR", group=gr6)
+cFvgOte = input.color(color.new(#E040FB, 50), "FVG / IFVG / BPR dans OTE", group=gr6)
+cOte    = input.color(color.new(#FFC107, 80), "Zone OTE", group=gr6)
+cLiq    = input.color(#FF9800, "Liquidité", group=gr6)
+cVA     = input.color(color.new(#5C6BC0, 70), "VP : value area", group=gr6)
+cVP     = input.color(color.new(#90A4AE, 80), "VP : hors value area", group=gr6)
+cPoc    = input.color(color.new(#FF6D00, 20), "VP : POC", group=gr6)
+
+
+// ===================== PROFIL AUTO SELON LE TF =====================
+//  M1 : H1 / M15 | M3-M5 : H4 / H1 | M15 : H4 / H1 | M30-H1 : D / H4 | > H1 : W / D
+//  Les durées (validité OB, durée max, VP, dealing range) sont en TEMPS, converties en bougies.
+int tfSec = timeframe.in_seconds()
+int prof = tfSec <= 60 ? 0 : tfSec <= 300 ? 1 : tfSec <= 900 ? 2 : tfSec <= 3600 ? 3 : 4
+f_bars(float hours, int mn, int mx) =>
+    math.max(mn, math.min(mx, int(math.round(hours * 3600 / tfSec))))
+string tfTrend  = autoTf ? (prof == 0 ? "60" : prof <= 2 ? "240" : prof == 3 ? "D" : "W") : tfTrendIn
+string tfBias   = autoTf ? (prof == 0 ? "15" : prof <= 2 ? "60" : prof == 3 ? "240" : "D") : tfBiasIn
+int   lenTrend   = autoTf ? 3 : lenTrendIn
+int   lenBias    = autoTf ? 3 : lenBiasIn
+int   lenLTF     = autoTf ? (prof == 0 ? 3 : 2) : lenLTFIn
+int   lenLiq     = autoTf ? (prof == 0 ? 4 : 3) : lenLiqIn
+int   lenMinor   = autoTf ? (prof == 0 ? 8 : prof == 1 ? 5 : 4) : lenMinorIn
+float minGap     = autoTf ? (prof == 0 ? 0.4 : prof == 1 ? 0.3 : prof == 2 ? 0.25 : 0.2) : minGapIn
+int   trkExpire  = autoTf ? f_bars(8, 10, 500) : trkExpireIn
+int   trkMaxHold = autoTf ? f_bars(12, 10, 500) : trkMaxHoldIn
+int   drLook     = autoTf ? f_bars(2, 10, 200) : drLookIn
+int   vpBars     = autoTf ? f_bars(16, 50, 500) : vpBarsIn
+string autoTxt   = autoTf ? "AUTO " + tfTrend + "/" + tfBias + " | OB " + str.tostring(trkExpire) + "b | FVG " + str.tostring(minGap) + " ATR" : "manuel"
+
+bool mgmtBE   = trkMgmt == "50% TP1 + BE"
+bool mgmtFull = trkMgmt == "100% TP2"
+
+// ============================== TYPES ===============================
+type Zone
+    float top
+    float bot
+    int   dir
+    int   kind      // 0 OB, 1 FVG, 2 IFVG, 3 BPR
+    int   t         // bar_index de la bougie OB / FVG
+    int   created   // bar_index de création (BOS)
+    bool  liq
+    float vp        // volume relatif du nœud (0..1) à la création
+    float disp      // taille du FVG de displacement (x ATR)
+    float score
+    bool  inOte
+    bool  conf
+    bool  disc      // bon côté du dealing range
+    bool  prem      // mauvais côté du dealing range
+    int   tapBar    // 1re touche (fenêtre de mitigation)
+    bool  smt       // divergence SMT avec le DXY dans la jambe
+    bool  dxyAl     // dans le sens du DXY
+    bool  dxyAg     // contre le DXY
+    box   bx
+
+type Liq
+    float lvl
+    int   dir       // 1 = buy-side (au-dessus), -1 = sell-side (en dessous)
+    bool  swept
+    int   x0
+    int   kind      // 0 EQH/EQL, 1 PDH/PDL, 2 Asie
+    int   sweptAt
+
+// ============================ FONCTIONS =============================
+// Structure HTF, valeurs de la bougie HTF CLOTUREE ([1]) -> appeler avec lookahead_on
+f_struct(int len) =>
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low, len, len)
+    var float sh = na
+    var float sl = na
+    var float lph = na
+    var float lpl = na
+    var int trend = 0
+    int bos = 0
+    int choch = 0
+    if not na(ph)
+        sh := ph
+        lph := ph
+    if not na(pl)
+        sl := pl
+        lpl := pl
+    if not na(sh) and close > sh
+        bos := 1
+        choch := trend == -1 ? 1 : 0
+        trend := 1
+        sh := na
+    else if not na(sl) and close < sl
+        bos := -1
+        choch := trend == 1 ? 1 : 0
+        trend := -1
+        sl := na
+    [trend[1], bos[1], choch[1], lph[1], lpl[1]]
+
+f_ovl(float t1, float b1, float t2, float b2) =>
+    math.min(t1, t2) > math.max(b1, b2)
+
+// OB qui a balayé un VRAI pool (EQ, PDH/PDL, Asie) au moment de sa formation
+f_liqTaken(array<Liq> pools, float ext, int fromIdx, int toIdx, bool bull) =>
+    bool res = false
+    for q in pools
+        if q.swept and q.dir == (bull ? -1 : 1) and q.sweptAt >= fromIdx and q.sweptAt <= toIdx and q.x0 < q.sweptAt
+            if (bull and ext < q.lvl) or (not bull and ext > q.lvl)
+                res := true
+    res
+
+f_hasOb(array<Zone> arr, int x0, int d) =>
+    bool res = false
+    for z in arr
+        if z.t == x0 and z.dir == d
+            res := true
+    res
+
+f_addZone(array<Zone> arr, float top, float bot, int d, int kind, int x0, bool lq, float vp, float disp, int cap) =>
+    box b = box.new(x0, top, bar_index, bot, xloc=xloc.bar_index, bgcolor=na, border_color=na)
+    Zone z = Zone.new(top, bot, d, kind, x0, bar_index, lq, vp, disp, 0.0, false, false, false, false, na, false, false, false, b)
+    array.push(arr, z)
+    if array.size(arr) > cap
+        Zone o = array.shift(arr)
+        box.delete(o.bx)
+    z
+
+f_zoneCol(Zone z) =>
+    color c = na
+    if z.kind == 1
+        c := z.dir == 1 ? cFvgB : cFvgS
+    else if z.kind == 2
+        c := cIfvg
+    else
+        c := cBpr
+    c
+
+f_row(float price, float lo, float stp, int rows) =>
+    int r = int(math.floor((price - lo) / stp))
+    math.max(0, math.min(rows - 1, r))
+
+f_fibo(float legStart, float legEnd, int legEndIdx, float zTop, float zBot, array<line> tl, array<label> tlb, array<box> tbx) =>
+    array<float> fr = array.from(0.0, 0.5, 0.618, 0.705, 0.79, 1.0)
+    for rr in fr
+        float y = legEnd - rr * (legEnd - legStart)
+        array.push(tl, line.new(legEndIdx, y, bar_index + 8, y, xloc=xloc.bar_index, color=color.new(color.gray, 40), style=line.style_dotted))
+        array.push(tlb, label.new(bar_index + 8, y, str.tostring(rr, "0.###"), style=label.style_none, textcolor=color.gray, size=size.tiny))
+    array.push(tbx, box.new(legEndIdx, zTop, bar_index + 8, zBot, xloc=xloc.bar_index, bgcolor=cOte, border_color=color.new(cOte, 20)))
+    0
+
+// Volume relatif (0..1) du nœud de la zone, calculé une fois à la création
+f_vpn(float top, float bot, float hi, float lo, int bars, int rows) =>
+    float res = 0.0
+    float stp0 = (hi - lo) / rows
+    if stp0 > 0
+        array<float> vol0 = array.new_float(rows, 0.0)
+        int nb0 = math.min(bars, bar_index + 1)
+        for bi = 0 to nb0 - 1
+            int r0 = f_row(low[bi], lo, stp0, rows)
+            int r1 = f_row(high[bi], lo, stp0, rows)
+            float vv = nz(volume[bi]) / (r1 - r0 + 1)
+            for r = r0 to r1
+                array.set(vol0, r, array.get(vol0, r) + vv)
+        float mx = array.max(vol0)
+        if mx > 0 and top > lo and bot < hi
+            int ra = f_row(bot, lo, stp0, rows)
+            int rb = f_row(top, lo, stp0, rows)
+            float sv = 0.0
+            for r = ra to rb
+                sv += array.get(vol0, r)
+            res := (sv / (rb - ra + 1)) / mx
+    res
+
+// Score unique (affichage = backtest) — recalculé chaque bougie
+//  liquidité 30 | OTE 20 | premium/discount 15 | IFVG/BPR 15 | LVN 10 | displacement 10
+f_eval(Zone z, array<Zone> fz, float lo, float hi, int gD, bool dOn) =>
+    bool legOk = not na(lo) and not na(hi) and hi > lo
+    float rg = hi - lo
+    bool isB = z.dir == 1
+    float oTop = isB ? hi - oteA * rg : lo + oteB * rg
+    float oBot = isB ? hi - oteB * rg : lo + oteA * rg
+    bool inO = legOk and f_ovl(z.top, z.bot, oTop, oBot)
+    bool cf = false
+    for f in fz
+        if f.kind >= 2 and (f.dir == z.dir or f.kind == 3) and f_ovl(z.top, z.bot, f.top, f.bot)
+            cf := true
+    float eq = (lo + hi) / 2
+    float mid = (z.top + z.bot) / 2
+    bool disc = legOk and (z.dir == 1 ? mid <= eq : mid >= eq)
+    z.inOte := inO
+    z.conf := cf
+    z.disc := disc
+    z.prem := legOk and not disc
+    float base = (z.liq ? 30.0 : 0.0) + (inO ? 20.0 : 0.0) + (disc ? 15.0 : 0.0) + (cf ? 15.0 : 0.0) + 10.0 * (1.0 - math.min(z.vp, 1.0)) + 10.0 * math.min(z.disp, 1.0)
+    bool al = dOn and gD == z.dir
+    bool ag = dOn and gD == -z.dir
+    z.dxyAl := al
+    z.dxyAg := ag
+    // DXY : 15 pts (sens 8 + SMT 7), -15 si contre le dollar ; neutre si corrélation cassée
+    z.score := dOn ? math.max(0.0, base * 0.85 + (al ? 8.0 : 0.0) + (z.smt ? 7.0 : 0.0) - (ag ? 15.0 : 0.0)) : base
+    z.score
+
+// Plan : TP1 = liquidité opposée non prise la plus proche (>= 1R), TP2 = la suivante / extrême H4 / 3R, plafonné
+f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> pools, array<float> piv) =>
+    float entry = isBuy ? top - (top - bot) * entryPct : bot + (top - bot) * entryPct
+    float sl = isBuy ? bot - slBuf * atrv : top + slBuf * atrv
+    float risk = math.max(math.abs(entry - sl), syminfo.mintick)
+    float minT = isBuy ? entry + risk : entry - risk
+    int side = isBuy ? 1 : -1
+    float tp1 = na
+    float tp2 = na
+    for q in pools
+        if not q.swept and q.dir == side and (isBuy ? q.lvl >= minT : q.lvl <= minT)
+            if na(tp1) or (isBuy ? q.lvl < tp1 : q.lvl > tp1)
+                tp1 := q.lvl
+    if na(tp1)
+        for p in piv
+            if (isBuy ? p >= minT : p <= minT) and (na(tp1) or (isBuy ? p < tp1 : p > tp1))
+                tp1 := p
+    if na(tp1)
+        tp1 := isBuy ? entry + 2 * risk : entry - 2 * risk
+    for q in pools
+        if not q.swept and q.dir == side and (isBuy ? q.lvl > tp1 + 0.5 * risk : q.lvl < tp1 - 0.5 * risk)
+            if na(tp2) or (isBuy ? q.lvl < tp2 : q.lvl > tp2)
+                tp2 := q.lvl
+    if na(tp2) and not na(h4Ext) and (isBuy ? h4Ext > tp1 + 0.5 * risk : h4Ext < tp1 - 0.5 * risk)
+        tp2 := h4Ext
+    if na(tp2)
+        tp2 := isBuy ? entry + 3 * risk : entry - 3 * risk
+    float capP = isBuy ? entry + trkMaxRR * risk : entry - trkMaxRR * risk
+    tp2 := isBuy ? math.min(tp2, capP) : math.max(tp2, capP)
+    tp1 := isBuy ? math.min(tp1, tp2) : math.max(tp1, tp2)
+    [entry, sl, tp1, tp2, risk]
+
+// Mise en forme du meilleur OB + inducement + plan. Retourne [statut, plan]
+f_setup(Zone z, bool aligned, bool planOk, float en, float sl, float t1, float t2, string why, array<float> idmPr, array<int> idmIx, array<line> tl, array<label> tlb) =>
+    bool isBuy = z.dir == 1
+    color fillC = z.inOte ? color.new(cObOte, 55) : color.new(isBuy ? cBuy : cSell, 70)
+    box.set_bgcolor(z.bx, fillC)
+    box.set_border_color(z.bx, cBest)
+    box.set_border_width(z.bx, aligned ? 3 : 1)
+    box.set_border_style(z.bx, aligned ? line.style_solid : line.style_dashed)
+    box.set_extend(z.bx, extend.none)
+    box.set_right(z.bx, bar_index + 25)
+
+    float idmP = na
+    int idmX = na
+    int nIdm0 = array.size(idmPr)
+    if nIdm0 > 0
+        for k = 0 to nIdm0 - 1
+            float pk = array.get(idmPr, k)
+            int xk = array.get(idmIx, k)
+            if xk > z.t and ((isBuy and pk > z.top) or (not isBuy and pk < z.bot))
+                if na(idmP) or (isBuy and pk < idmP) or (not isBuy and pk > idmP)
+                    idmP := pk
+                    idmX := xk
+    string idmTxt = "IDM: aucun"
+    if not na(idmP)
+        bool sw = false
+        int nI = math.min(bar_index - idmX, 500)
+        for bb = 0 to nI
+            if (isBuy and low[bb] < idmP) or (not isBuy and high[bb] > idmP)
+                sw := true
+        idmTxt := sw ? "IDM pris" : "IDM non pris"
+        if showIdm
+            array.push(tl, line.new(idmX, idmP, bar_index + 3, idmP, xloc=xloc.bar_index, color=sw ? color.gray : color.yellow, style=line.style_dotted))
+
+    string tags = (z.inOte ? " | OTE H1" : "") + (z.disc ? (isBuy ? " | discount" : " | premium") : "") + (z.conf ? " | IFVG/BPR" : "") + (z.dxyAl ? " | DXY ✓" : "") + (z.dxyAg ? " | CONTRE DXY" : "") + (z.smt ? " | SMT" : "")
+    string l1 = (isBuy ? "ACHAT" : "VENTE") + " | " + str.tostring(z.score, "#") + " pts | FVG " + str.tostring(z.disp, "0.0") + " ATR" + tags
+    string l2 = "VP " + str.tostring(z.vp * 100, "#") + "%" + (z.vp <= 0.35 ? " (LVN)" : "") + " | " + idmTxt + (z.liq ? " | liq. prise" : " | LIQ. NON PRISE") + (aligned ? "" : " | CONTRE-BIAIS")
+    array.push(tlb, label.new(bar_index - 6, isBuy ? z.bot : z.top, l1 + "\n" + l2, style=isBuy ? label.style_label_up : label.style_label_down, color=color.new(isBuy ? cBuy : cSell, 25), textcolor=z.liq ? color.white : color.yellow, size=size.small))
+
+    string plan = why
+    if planOk
+        float risk = math.max(math.abs(en - sl), syminfo.mintick)
+        float rr1 = math.abs(t1 - en) / risk
+        float rr2 = math.abs(t2 - en) / risk
+        plan := "E " + str.tostring(en, format.mintick) + " | SL " + str.tostring(sl, format.mintick) + " | TP1 " + str.tostring(t1, format.mintick) + " (" + str.tostring(rr1, "0.0") + "R) | TP2 " + str.tostring(t2, format.mintick) + " (" + str.tostring(rr2, "0.0") + "R)"
+        if showPlan
+            int x1p = z.t
+            int x2p = bar_index + 25
+            array.push(tl, line.new(x1p, en, x2p, en, xloc=xloc.bar_index, color=color.aqua, width=2))
+            array.push(tl, line.new(x1p, sl, x2p, sl, xloc=xloc.bar_index, color=color.red, width=2))
+            array.push(tl, line.new(x1p, t1, x2p, t1, xloc=xloc.bar_index, color=color.green, width=1))
+            array.push(tl, line.new(x1p, t2, x2p, t2, xloc=xloc.bar_index, color=color.lime, width=1))
+            array.push(tlb, label.new(x2p, en, "E " + str.tostring(en, format.mintick), style=label.style_label_left, color=color.new(color.aqua, 55), textcolor=color.white, size=size.tiny))
+            array.push(tlb, label.new(x2p, sl, "SL " + str.tostring(sl, format.mintick), style=label.style_label_left, color=color.new(color.red, 55), textcolor=color.white, size=size.tiny))
+            array.push(tlb, label.new(x2p, t1, "TP1 " + str.tostring(rr1, "0.0") + "R", style=label.style_label_left, color=color.new(color.green, 55), textcolor=color.white, size=size.tiny))
+            array.push(tlb, label.new(x2p, t2, "TP2 " + str.tostring(rr2, "0.0") + "R", style=label.style_label_left, color=color.new(color.lime, 55), textcolor=color.white, size=size.tiny))
+    string st = str.tostring(z.score, "#") + " pts" + (z.liq ? " | liq. prise" : " | LIQ NON PRISE") + tags + (aligned ? " | aligné" : " | contre-biais")
+    [st, plan]
+
+// ================== STRUCTURE HTF (H4 / H1) — NON REPAINT ==================
+[h4T, h4Bos, h4Ch, h4PH, h4PL] = request.security(syminfo.tickerid, tfTrend, f_struct(lenTrend), lookahead=barmerge.lookahead_on)
+[h1T, h1Bos, h1Ch, h1PH, h1PL] = request.security(syminfo.tickerid, tfBias, f_struct(lenBias), lookahead=barmerge.lookahead_on)
+
+int dirBias = (h4T != 0 and h4T == h1T) ? h4T : 0
+bool modeBoth = modeSel == "Achats + Ventes"
+bool allowBuy = modeBoth or dirBias == 1
+bool allowSell = modeBoth or dirBias == -1
+chgH4 = ta.change(h4Bos)
+chgH1 = ta.change(h1Bos)
+
+plot(showH4Ln ? h4PH : na, "H4 dernier sommet", color=color.new(color.green, 55), style=plot.style_stepline, linewidth=1)
+plot(showH4Ln ? h4PL : na, "H4 dernier creux", color=color.new(color.red, 55), style=plot.style_stepline, linewidth=1)
+
+if barstate.isconfirmed and showHtf
+    if chgH4 != 0 and h4Bos != 0
+        label.new(bar_index, h4Bos == 1 ? low : high, (h4Ch == 1 ? "CHoCH H4" : "BOS H4"), style=h4Bos == 1 ? label.style_label_up : label.style_label_down, color=h4Bos == 1 ? color.green : color.red, textcolor=color.white, size=size.small)
+    if chgH1 != 0 and h1Bos != 0
+        label.new(bar_index, h1Bos == 1 ? low : high, (h1Ch == 1 ? "CHoCH H1" : "BOS H1"), style=h1Bos == 1 ? label.style_label_up : label.style_label_down, color=color.new(h1Bos == 1 ? color.green : color.red, 40), textcolor=color.white, size=size.tiny)
+
+// ======================== INDICATEURS DE BASE ========================
+atr  = ta.atr(14)
+phL  = ta.pivothigh(high, lenLTF, lenLTF)
+plL  = ta.pivotlow(low, lenLTF, lenLTF)
+phQ  = ta.pivothigh(high, lenLiq, lenLiq)
+plQ  = ta.pivotlow(low, lenLiq, lenLiq)
+phM  = ta.pivothigh(high, lenMinor, lenMinor)
+plM  = ta.pivotlow(low, lenMinor, lenMinor)
+vpHi = ta.highest(high, vpBars)
+vpLo = ta.lowest(low, vpBars)
+// Dealing range H1 (premium / discount + OTE), étendu si le prix l'a dépassé
+float drHi = math.max(nz(h1PH, high), ta.highest(high, drLook))
+float drLo = math.min(nz(h1PL, low), ta.lowest(low, drLook))
+
+bool inLon  = not na(time(timeframe.period, sessLon, sessTz))
+bool inNy   = not na(time(timeframe.period, sessNy, sessTz))
+bool inSess = not useSess or inLon or inNy
+bool inAsia = not na(time(timeframe.period, sessAsia, sessTz))
+[pdh, pdl] = request.security(syminfo.tickerid, "D", [high[1], low[1]], lookahead=barmerge.lookahead_on)
+bool newDay = ta.change(time("D")) != 0
+float costPx = trkCostMode == "Ticks" ? trkCost * syminfo.mintick : trkCost
+
+// ============================ DXY (non-repaint) ============================
+bool dxyOn0 = dxyMode != "Désactivé"
+int  dxyRelS = dxyRel == "Inverse (XAU, EUR, GBP)" ? -1 : 1
+f_emaDir() =>
+    float e = ta.ema(close, 21)
+    int r = close[1] > e[1] and e[1] > e[2] ? 1 : close[1] < e[1] and e[1] < e[2] ? -1 : 0
+    r
+[dT, dBos, dCh, dPH, dPL] = request.security(dxySym, tfBias, f_struct(lenBias), lookahead=barmerge.lookahead_on)
+int dEma = request.security(dxySym, tfBias, f_emaDir(), lookahead=barmerge.lookahead_on)
+// structure ET EMA d'accord = tendance ; désaccord = neutre
+int dxyDir = dT != 0 and (dEma == dT or dEma == 0) ? dT : (dT == 0 and dEma != 0 ? dEma : 0)
+[dxH, dxL, dxC] = request.security(dxySym, timeframe.period, [high, low, close])
+float dCorr = ta.correlation(ta.change(close), ta.change(dxC), corrLen)
+bool corrOk = not na(dCorr) and (dxyRelS == -1 ? dCorr <= -corrMin : dCorr >= corrMin)
+bool dxyOn  = dxyOn0 and corrOk
+int  gDir   = dxyDir * dxyRelS   // direction favorisée pour l'actif tradé
+var float smPL = na
+var float smPLd = na
+var int   smPLi = na
+var float smPH = na
+var float smPHd = na
+var int   smPHi = na
+var int   smtBullBar = na
+var int   smtBearBar = na
+bool evSmtB = false
+bool evSmtS = false
+
+// =============================== ETAT ================================
+var array<Zone> obs  = array.new<Zone>()
+var array<Zone> fvgs = array.new<Zone>()
+var array<Liq> liqs  = array.new<Liq>()
+var array<float> phP = array.new_float()
+var array<int> phI   = array.new_int()
+var array<float> plP = array.new_float()
+var array<int> plI   = array.new_int()
+var array<float> mhP = array.new_float()
+var array<int> mhI   = array.new_int()
+var array<float> mlP = array.new_float()
+var array<int> mlI   = array.new_int()
+
+var array<line> tmpL   = array.new<line>()
+var array<label> tmpLb = array.new<label>()
+var array<box> tmpB    = array.new<box>()
+
+var float lPH = na
+var float lPL = na
+var int lPHi  = na
+var int lPLi  = na
+var float bSH = na
+var float bSL = na
+
+var float asH = na
+var float asL = na
+var int asHi  = na
+var int asLi  = na
+
+var bool legOkB = false
+var float legSB = na
+var float legEB = na
+var int legEiB  = na
+var float oteTopB = na
+var float oteBotB = na
+var bool legOkS = false
+var float legSS = na
+var float legES = na
+var int legEiS  = na
+var float oteTopS = na
+var float oteBotS = na
+
+var Zone gBestB = na
+var Zone gBestS = na
+
+// --- ordres en attente (= plan du meilleur OB, recalculé chaque bougie)
+var float pBEn = na
+var float pBSl = na
+var float pBT1 = na
+var float pBT2 = na
+var float pBSc = na
+var float pSEn = na
+var float pSSl = na
+var float pST1 = na
+var float pST2 = na
+var float pSSc = na
+
+// --- trade en cours + stats
+var int kDir = 0
+var float kEn = na
+var float kSl = na
+var float kSl0 = na
+var float kT1 = na
+var float kT2 = na
+var float kRisk = na
+var int kBar = na
+var bool kP1 = false
+var float kReal = 0.0
+var bool kImm = false
+var float kSc = 0.0
+var int kSess = 0
+var int kN = 0
+var int kW = 0
+var int kNb = 0
+var int kWb = 0
+var int kNs = 0
+var int kWs = 0
+var float kRb = 0.0
+var float kRs = 0.0
+var float kGW = 0.0
+var float kGL = 0.0
+var float kNet = 0.0
+var float kPeak = 0.0
+var float kDD = 0.0
+var int kXsl = 0
+var int kXbe = 0
+var int kXt2 = 0
+var int kXto = 0
+var int kNh = 0
+var float kRh = 0.0
+var int kNl = 0
+var float kRl = 0.0
+var int kNlon = 0
+var float kRlon = 0.0
+var int kNny = 0
+var float kRny = 0.0
+var int kNoth = 0
+var float kRoth = 0.0
+
+bool evFill = false
+var int dOb = 0
+var int dSet = 0
+var int dFill = 0
+var float dMaxSc = 0.0
+var int lastPB = na
+var int lastPS = na
+
+// ===================== MISE A JOUR (barres closes) ====================
+if barstate.isconfirmed
+    // --- A. pivots structure locale
+    if not na(phL)
+        lPH := phL
+        lPHi := bar_index - lenLTF
+        bSH := phL
+    if not na(plL)
+        lPL := plL
+        lPLi := bar_index - lenLTF
+        bSL := plL
+
+    // --- A. pivots liquidité + EQH / EQL
+    if not na(phQ)
+        float dB = dxyRelS == -1 ? dxL[lenLiq] : dxH[lenLiq]
+        if not na(smPH) and not na(dB) and not na(smPHd) and phQ > smPH and bar_index - lenLiq - smPHi <= smtMax
+            if dxyRelS == -1 ? dB >= smPHd : dB <= smPHd
+                smtBearBar := bar_index
+                evSmtS := true
+        smPH := phQ
+        smPHd := dB
+        smPHi := bar_index - lenLiq
+        int szh = array.size(phP)
+        if szh > 0
+            float prvH = array.get(phP, szh - 1)
+            if math.abs(phQ - prvH) <= eqTol * atr
+                array.push(liqs, Liq.new(math.max(phQ, prvH), 1, false, array.get(phI, szh - 1), 0, na))
+        array.push(phP, phQ)
+        array.push(phI, bar_index - lenLiq)
+        if array.size(phP) > 8
+            array.shift(phP)
+            array.shift(phI)
+    if not na(plQ)
+        float dA = dxyRelS == -1 ? dxH[lenLiq] : dxL[lenLiq]
+        if not na(smPL) and not na(dA) and not na(smPLd) and plQ < smPL and bar_index - lenLiq - smPLi <= smtMax
+            if dxyRelS == -1 ? dA <= smPLd : dA >= smPLd
+                smtBullBar := bar_index
+                evSmtB := true
+        smPL := plQ
+        smPLd := dA
+        smPLi := bar_index - lenLiq
+        int szl = array.size(plP)
+        if szl > 0
+            float prvL = array.get(plP, szl - 1)
+            if math.abs(plQ - prvL) <= eqTol * atr
+                array.push(liqs, Liq.new(math.min(plQ, prvL), -1, false, array.get(plI, szl - 1), 0, na))
+        array.push(plP, plQ)
+        array.push(plI, bar_index - lenLiq)
+        if array.size(plP) > 8
+            array.shift(plP)
+            array.shift(plI)
+
+    // --- A. pivots mineurs (inducement)
+    if not na(plM)
+        array.push(mlP, plM)
+        array.push(mlI, bar_index - lenMinor)
+        if array.size(mlP) > 12
+            array.shift(mlP)
+            array.shift(mlI)
+    if not na(phM)
+        array.push(mhP, phM)
+        array.push(mhI, bar_index - lenMinor)
+        if array.size(mhP) > 12
+            array.shift(mhP)
+            array.shift(mhI)
+
+    // --- B. pools PDH / PDL + range Asie
+    if usePD and newDay and not na(pdh) and not na(pdl)
+        array.push(liqs, Liq.new(pdh, 1, false, bar_index - 1, 1, na))
+        array.push(liqs, Liq.new(pdl, -1, false, bar_index - 1, 1, na))
+    if useAsia
+        if inAsia
+            if not inAsia[1] or na(asH)
+                asH := high
+                asHi := bar_index
+                asL := low
+                asLi := bar_index
+            else
+                if high > asH
+                    asH := high
+                    asHi := bar_index
+                if low < asL
+                    asL := low
+                    asLi := bar_index
+        else if inAsia[1] and not na(asH)
+            array.push(liqs, Liq.new(asH, 1, false, asHi, 2, na))
+            array.push(liqs, Liq.new(asL, -1, false, asLi, 2, na))
+            asH := na
+            asL := na
+
+    // --- C. pools balayés + nettoyage
+    for q in liqs
+        if not q.swept and bar_index > q.x0 and ((q.dir == 1 and high > q.lvl) or (q.dir == -1 and low < q.lvl))
+            q.swept := true
+            q.sweptAt := bar_index
+    int nLq0 = array.size(liqs)
+    if nLq0 > 0
+        for i = nLq0 - 1 to 0
+            Liq q0 = array.get(liqs, i)
+            if (q0.swept and bar_index - q0.sweptAt > 300) or bar_index - q0.x0 > 3000
+                array.remove(liqs, i)
+    while array.size(liqs) > 40
+        array.shift(liqs)
+
+    // --- D. gestion du trade ouvert (SL traité avant TP dans une même bougie)
+    if trkOn and kDir != 0 and bar_index > kBar
+        bool kClosed = false
+        float kExit = na
+        int kWhy = 0
+        bool hSL = kDir == 1 ? low <= kSl : high >= kSl
+        bool hT1 = kDir == 1 ? high >= kT1 : low <= kT1
+        bool hT2 = kDir == 1 ? high >= kT2 : low <= kT2
+        if kImm
+            kClosed := true
+            kExit := kSl
+            kWhy := 1
+        else if hSL
+            kClosed := true
+            kExit := kSl
+            kWhy := kP1 and mgmtBE ? 2 : 1
+        else if not kP1 and not mgmtFull and hT1
+            kP1 := true
+            kReal := 0.5 * kDir * (kT1 - kEn) / kRisk
+            if mgmtBE
+                kSl := kEn
+        else if (kP1 or mgmtFull) and hT2
+            kClosed := true
+            kExit := kT2
+            kWhy := 3
+        if not kClosed and bar_index - kBar >= trkMaxHold
+            kClosed := true
+            kExit := close
+            kWhy := 4
+        if kClosed
+            float kRem = kP1 ? 0.5 : 1.0
+            float kRes = kReal + kRem * kDir * (kExit - kEn) / kRisk - costPx / kRisk
+            kN += 1
+            kXsl += kWhy == 1 ? 1 : 0
+            kXbe += kWhy == 2 ? 1 : 0
+            kXt2 += kWhy == 3 ? 1 : 0
+            kXto += kWhy == 4 ? 1 : 0
+            if kSc >= 70
+                kNh += 1
+                kRh += kRes
+            else
+                kNl += 1
+                kRl += kRes
+            if kSess == 1
+                kNlon += 1
+                kRlon += kRes
+            else if kSess == 2
+                kNny += 1
+                kRny += kRes
+            else
+                kNoth += 1
+                kRoth += kRes
+            if kRes > 0
+                kW += 1
+                kGW += kRes
+            else
+                kGL += -kRes
+            kNet += kRes
+            if kDir == 1
+                kNb += 1
+                kRb += kRes
+                if kRes > 0
+                    kWb += 1
+            else
+                kNs += 1
+                kRs += kRes
+                if kRes > 0
+                    kWs += 1
+            kPeak := math.max(kPeak, kNet)
+            kDD := math.max(kDD, kPeak - kNet)
+            kDir := 0
+
+    // --- E. remplissage des ordres limites (plan de la bougie précédente), en session uniquement
+    if trkOn and kDir == 0 and inSess
+        bool fB = not na(pBEn) and low <= pBEn
+        bool fS = not na(pSEn) and high >= pSEn
+        if fB or fS
+            bool goB = fB and (not fS or pBSc >= pSSc)
+            kDir := goB ? 1 : -1
+            kEn := goB ? pBEn : pSEn
+            kSl := goB ? pBSl : pSSl
+            kSl0 := kSl
+            kT1 := goB ? pBT1 : pST1
+            kT2 := goB ? pBT2 : pST2
+            kSc := goB ? pBSc : pSSc
+            kRisk := math.max(math.abs(kEn - kSl), syminfo.mintick)
+            kBar := bar_index
+            kP1 := false
+            kReal := 0.0
+            kImm := goB ? low <= kSl : high >= kSl
+            kSess := inLon ? 1 : inNy ? 2 : 0
+            evFill := true
+            dFill += 1
+
+    // --- F. BOS local haussier -> OB haussier
+    if not na(bSH) and not na(lPLi) and close > bSH
+        int nB = math.min(bar_index - lPLi, 150)
+        float mnB = na
+        int miB = -1
+        float gpB = 0.0
+        // OB achat = bougie BAISSIERE la plus basse de la jambe, suivie d'un FVG haussier (displacement)
+        if nB >= 3
+            array<float> gapUp = array.new_float(nB + 1, 0.0)
+            for f = 2 to nB
+                float g = low[f - 2] - high[f]
+                if g > 0 and g >= minGap * atr
+                    array.set(gapUp, f, g)
+            for i = 2 to nB
+                if close[i] < open[i] and (na(mnB) or low[i] < mnB)
+                    float gMax = 0.0
+                    for f = math.max(2, i - fvgWin) to i
+                        gMax := math.max(gMax, array.get(gapUp, f))
+                    if gMax > 0 or obOrigin
+                        mnB := low[i]
+                        miB := i
+                        gpB := gMax
+        if miB >= 0
+            int obxB = bar_index - miB
+            if not f_hasOb(obs, obxB, 1)
+                float extB = low
+                for i = 0 to nB
+                    extB := math.min(extB, low[i])
+                bool lqB = f_liqTaken(liqs, extB, bar_index - nB - 5, bar_index, true)
+                float vpnB = f_vpn(high[miB], low[miB], vpHi, vpLo, vpBars, vpRows)
+                Zone zNb = f_addZone(obs, high[miB], low[miB], 1, 0, obxB, lqB, vpnB, atr > 0 ? gpB / atr : 0.0, obMax)
+                zNb.smt := not na(smtBullBar) and smtBullBar >= obxB - 10
+                dOb += 1
+        bSH := na
+
+    // --- F. BOS local baissier -> OB baissier
+    if not na(bSL) and not na(lPHi) and close < bSL
+        int nS = math.min(bar_index - lPHi, 150)
+        float mxS = na
+        int miS = -1
+        float gpS = 0.0
+        if nS >= 3
+            array<float> gapDn = array.new_float(nS + 1, 0.0)
+            for f = 2 to nS
+                float g = low[f] - high[f - 2]
+                if g > 0 and g >= minGap * atr
+                    array.set(gapDn, f, g)
+            for i = 2 to nS
+                if close[i] > open[i] and (na(mxS) or high[i] > mxS)
+                    float gMax = 0.0
+                    for f = math.max(2, i - fvgWin) to i
+                        gMax := math.max(gMax, array.get(gapDn, f))
+                    if gMax > 0 or obOrigin
+                        mxS := high[i]
+                        miS := i
+                        gpS := gMax
+        if miS >= 0
+            int obxS = bar_index - miS
+            if not f_hasOb(obs, obxS, -1)
+                float extS = high
+                for i = 0 to nS
+                    extS := math.max(extS, high[i])
+                bool lqS = f_liqTaken(liqs, extS, bar_index - nS - 5, bar_index, false)
+                float vpnS = f_vpn(high[miS], low[miS], vpHi, vpLo, vpBars, vpRows)
+                Zone zNs = f_addZone(obs, high[miS], low[miS], -1, 0, obxS, lqS, vpnS, atr > 0 ? gpS / atr : 0.0, obMax)
+                zNs.smt := not na(smtBearBar) and smtBearBar >= obxS - 10
+                dOb += 1
+        bSL := na
+
+    // --- G. FVG + BPR
+    if bar_index >= 2
+        if low > high[2] and (low - high[2]) >= minGap * atr
+            float bpT1 = na
+            float bpB1 = na
+            for g1z in fvgs
+                if g1z.kind == 1 and g1z.dir == -1
+                    float t1 = math.min(low, g1z.top)
+                    float b1 = math.max(high[2], g1z.bot)
+                    if t1 > b1
+                        bpT1 := t1
+                        bpB1 := b1
+            f_addZone(fvgs, low, high[2], 1, 1, bar_index - 2, false, 0.0, 0.0, fvgMax)
+            if not na(bpT1)
+                f_addZone(fvgs, bpT1, bpB1, 1, 3, bar_index - 2, false, 0.0, 0.0, fvgMax)
+        if high < low[2] and (low[2] - high) >= minGap * atr
+            float bpT2 = na
+            float bpB2 = na
+            for g2z in fvgs
+                if g2z.kind == 1 and g2z.dir == 1
+                    float t2 = math.min(low[2], g2z.top)
+                    float b2 = math.max(high, g2z.bot)
+                    if t2 > b2
+                        bpT2 := t2
+                        bpB2 := b2
+            f_addZone(fvgs, low[2], high, -1, 1, bar_index - 2, false, 0.0, 0.0, fvgMax)
+            if not na(bpT2)
+                f_addZone(fvgs, bpT2, bpB2, -1, 3, bar_index - 2, false, 0.0, 0.0, fvgMax)
+
+    // --- H. OB : invalidation (clôture à travers) + mitigation (1re touche)
+    int nObsM = array.size(obs)
+    if nObsM > 0
+        for i = nObsM - 1 to 0
+            Zone zo = array.get(obs, i)
+            bool inval = (zo.dir == 1 and close < zo.bot) or (zo.dir == -1 and close > zo.top)
+            bool tapNow = bar_index > zo.created and ((zo.dir == 1 and low <= zo.top) or (zo.dir == -1 and high >= zo.bot))
+            if tapNow and na(zo.tapBar)
+                zo.tapBar := bar_index
+            bool consumed = mitigFirst and not na(zo.tapBar) and bar_index - zo.tapBar >= tapWin - 1
+            if inval or consumed
+                box.delete(zo.bx)
+                array.remove(obs, i)
+
+    // --- I. FVG -> IFVG, suppression des IFVG / BPR invalidés
+    int nFvM = array.size(fvgs)
+    if nFvM > 0
+        for i = nFvM - 1 to 0
+            Zone zf = array.get(fvgs, i)
+            if zf.kind == 1
+                if zf.dir == 1 and close < zf.bot
+                    zf.kind := 2
+                    zf.dir := -1
+                else if zf.dir == -1 and close > zf.top
+                    zf.kind := 2
+                    zf.dir := 1
+            else
+                if (zf.dir == -1 and close > zf.top) or (zf.dir == 1 and close < zf.bot)
+                    box.delete(zf.bx)
+                    array.remove(fvgs, i)
+
+    // --- J. dealing range + OTE pour les deux directions
+    legOkB := false
+    legOkS := false
+    oteTopB := na
+    oteBotB := na
+    oteTopS := na
+    oteBotS := na
+    if array.size(phP) > 0 and array.size(plP) > 0
+        int ihB = array.size(phP) - 1
+        float hB = array.get(phP, ihB)
+        int hBi = array.get(phI, ihB)
+        float oB = na
+        for k = array.size(plP) - 1 to 0
+            if array.get(plI, k) < hBi
+                oB := array.get(plP, k)
+                break
+        if not na(oB)
+            int ilB = array.size(plP) - 1
+            bool brkB = array.get(plI, ilB) > hBi and array.get(plP, ilB) < oB
+            if not brkB and close > oB and close < hB
+                legOkB := true
+                legSB := oB
+                legEB := hB
+                legEiB := hBi
+                float pAB = hB - oteA * (hB - oB)
+                float pBB = hB - oteB * (hB - oB)
+                oteTopB := math.max(pAB, pBB)
+                oteBotB := math.min(pAB, pBB)
+        int ilS = array.size(plP) - 1
+        float lS = array.get(plP, ilS)
+        int lSi = array.get(plI, ilS)
+        float oS = na
+        for k = array.size(phP) - 1 to 0
+            if array.get(phI, k) < lSi
+                oS := array.get(phP, k)
+                break
+        if not na(oS)
+            int ihS = array.size(phP) - 1
+            bool brkS = array.get(phI, ihS) > lSi and array.get(phP, ihS) > oS
+            if not brkS and close < oS and close > lS
+                legOkS := true
+                legSS := oS
+                legES := lS
+                legEiS := lSi
+                float pAS = lS - oteA * (lS - oS)
+                float pBS = lS - oteB * (lS - oS)
+                oteTopS := math.max(pAS, pBS)
+                oteBotS := math.min(pAS, pBS)
+
+    // --- K. score + meilleur OB par direction (règle UNIQUE affichage = backtest)
+    Zone bB = na
+    Zone bS = na
+    float sBb = -1.0
+    float sSb = -1.0
+    for z in obs
+        bool isB = z.dir == 1
+        float sc = f_eval(z, fvgs, drLo, drHi, gDir, dxyOn)
+        dMaxSc := math.max(dMaxSc, sc)
+        bool fresh = bar_index - z.created <= trkExpire
+        bool near = isB ? close - z.top <= trkFar * atr : z.bot - close <= trkFar * atr
+        bool okPD = not pdFilter or not z.prem
+        bool okDxy = not (dxyMode == "Filtre bloquant" and z.dxyAg)
+        if fresh and near and okPD and okDxy
+            if isB and allowBuy and sc > sBb
+                sBb := sc
+                bB := z
+            if (not isB) and allowSell and sc > sSb
+                sSb := sc
+                bS := z
+    gBestB := bB
+    gBestS := bS
+
+    // --- K. ordres limites pour la prochaine bougie
+    pBEn := na
+    pBSl := na
+    pBT1 := na
+    pBT2 := na
+    pBSc := na
+    pSEn := na
+    pSSl := na
+    pST1 := na
+    pST2 := na
+    pSSc := na
+    if kDir == 0
+        if not na(bB)
+            if bB.score >= minScore and (not reqLiq or bB.liq) and (not trkAligned or dirBias == 1)
+                [e1, s1, a1, c1, r1] = f_plan(true, bB.top, bB.bot, atr, h4PH, liqs, phP)
+                pBEn := e1
+                pBSl := s1
+                pBT1 := a1
+                pBT2 := c1
+                pBSc := bB.score
+                if bB.t != nz(lastPB, -1)
+                    dSet += 1
+                    lastPB := bB.t
+        if not na(bS)
+            if bS.score >= minScore and (not reqLiq or bS.liq) and (not trkAligned or dirBias == -1)
+                [e2, s2, a2, c2, r2] = f_plan(false, bS.top, bS.bot, atr, h4PL, liqs, plP)
+                pSEn := e2
+                pSSl := s2
+                pST1 := a2
+                pST2 := c2
+                pSSc := bS.score
+                if bS.t != nz(lastPS, -1)
+                    dSet += 1
+                    lastPS := bS.t
+
+// Valeurs exposées (Data Window / lecture MCP)
+plot(pBEn, "Ordre achat : entrée", display=display.data_window)
+plot(pBSl, "Ordre achat : SL", display=display.data_window)
+plot(pSEn, "Ordre vente : entrée", display=display.data_window)
+plot(pSSl, "Ordre vente : SL", display=display.data_window)
+plot(kNet, "Suivi : net (R)", display=display.data_window)
+
+// ========================= DESSIN (dernière barre) ====================
+var table tb = table.new(position.top_right, 2, 18, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+
+f_why(Zone z, int d) =>
+    string w = "-"
+    if kDir != 0
+        w := "trade en cours"
+    else if z.score < minScore
+        w := "pas de plan (score < " + str.tostring(minScore) + ")"
+    else if reqLiq and not z.liq
+        w := "pas de plan (liquidité non prise)"
+    else if trkAligned and dirBias != d
+        w := "pas de plan (contre-biais)"
+    w
+
+if barstate.islast
+    for l in tmpL
+        line.delete(l)
+    array.clear(tmpL)
+    for lb in tmpLb
+        label.delete(lb)
+    array.clear(tmpLb)
+    for bx in tmpB
+        box.delete(bx)
+    array.clear(tmpB)
+
+    // ---- volume profile (affichage uniquement ; le score utilise la valeur figée à la création)
+    if showVP
+        float stp = (vpHi - vpLo) / vpRows
+        int nbars = math.min(vpBars, bar_index + 1)
+        if stp > 0
+            array<float> vol = array.new_float(vpRows, 0.0)
+            for bi = 0 to nbars - 1
+                int r0 = f_row(low[bi], vpLo, stp, vpRows)
+                int r1 = f_row(high[bi], vpLo, stp, vpRows)
+                float vv = nz(volume[bi]) / (r1 - r0 + 1)
+                for r = r0 to r1
+                    array.set(vol, r, array.get(vol, r) + vv)
+            float totVol = array.sum(vol)
+            float maxVol = array.max(vol)
+            int pocR = array.indexof(vol, maxVol)
+            int vaLo = pocR
+            int vaHi = pocR
+            float acc = array.get(vol, pocR)
+            float vaTarget = totVol * vaPct / 100.0
+            while acc < vaTarget and (vaLo > 0 or vaHi < vpRows - 1)
+                float dn = vaLo > 0 ? array.get(vol, vaLo - 1) : -1.0
+                float upv = vaHi < vpRows - 1 ? array.get(vol, vaHi + 1) : -1.0
+                if upv >= dn
+                    vaHi += 1
+                    acc += upv
+                else
+                    vaLo -= 1
+                    acc += dn
+            if maxVol > 0
+                int xr = bar_index + 3 + vpWidth
+                for r = 0 to vpRows - 1
+                    float vr2 = array.get(vol, r)
+                    int w = math.max(1, int(math.round(vr2 / maxVol * vpWidth)))
+                    color cc = r == pocR ? cPoc : (r >= vaLo and r <= vaHi ? cVA : cVP)
+                    array.push(tmpB, box.new(xr - w, vpLo + (r + 1) * stp, xr, vpLo + r * stp, xloc=xloc.bar_index, bgcolor=cc, border_color=na))
+                float pocY = vpLo + (pocR + 0.5) * stp
+                array.push(tmpL, line.new(bar_index - nbars + 1, pocY, xr, pocY, xloc=xloc.bar_index, color=cPoc, style=line.style_dotted, width=1))
+
+    // ---- OB secondaires (masqués par défaut)
+    for z in obs
+        if showAllOb
+            box.set_bgcolor(z.bx, color.new(z.dir == 1 ? cBuy : cSell, 90))
+            box.set_border_color(z.bx, color.new(z.dir == 1 ? cBuy : cSell, 60))
+            box.set_extend(z.bx, extend.right)
+        else
+            box.set_bgcolor(z.bx, na)
+            box.set_border_color(z.bx, na)
+            box.set_extend(z.bx, extend.none)
+        box.set_border_width(z.bx, 1)
+        box.set_border_style(z.bx, line.style_solid)
+
+    // ---- FVG / IFVG / BPR : masqués, sauf option ou repli dans l'OTE
+    bool buyOteOb = false
+    if not na(gBestB)
+        buyOteOb := gBestB.inOte
+    bool sellOteOb = false
+    if not na(gBestS)
+        sellOteOb := gBestS.inOte
+    bool needFvgB = allowBuy and legOkB and not buyOteOb
+    bool needFvgS = allowSell and legOkS and not sellOteOb
+    bool shownFB = false
+    bool shownFS = false
+    for zf2 in fvgs
+        bool fInOte = (zf2.dir == 1 and legOkB and f_ovl(zf2.top, zf2.bot, oteTopB, oteBotB)) or (zf2.dir == -1 and legOkS and f_ovl(zf2.top, zf2.bot, oteTopS, oteBotS))
+        bool fallback = (zf2.dir == 1 and needFvgB and fInOte and not shownFB) or (zf2.dir == -1 and needFvgS and fInOte and not shownFS)
+        if fallback
+            if zf2.dir == 1
+                shownFB := true
+            else
+                shownFS := true
+            string kn = zf2.kind == 1 ? "FVG" : (zf2.kind == 2 ? "IFVG" : "BPR")
+            box.set_bgcolor(zf2.bx, cFvgOte)
+            box.set_border_color(zf2.bx, cBest)
+            box.set_right(zf2.bx, bar_index + 25)
+            box.set_extend(zf2.bx, extend.none)
+            array.push(tmpLb, label.new(bar_index - 6, zf2.dir == 1 ? zf2.bot : zf2.top, (zf2.dir == 1 ? "ACHAT" : "VENTE") + " | " + kn + " dans OTE (pas d'OB dans l'OTE)", style=zf2.dir == 1 ? label.style_label_up : label.style_label_down, color=color.new(cFvgOte, 20), textcolor=color.white, size=size.small))
+        else if showFvg
+            box.set_bgcolor(zf2.bx, fInOte ? cFvgOte : f_zoneCol(zf2))
+            box.set_border_color(zf2.bx, na)
+            box.set_extend(zf2.bx, extend.right)
+        else
+            box.set_bgcolor(zf2.bx, na)
+            box.set_border_color(zf2.bx, na)
+            box.set_extend(zf2.bx, extend.none)
+
+    // ---- meilleur OB ACHAT / VENTE : mêmes valeurs que les ordres suivis
+    string stBuy = "aucun OB valide"
+    string planBuy = "-"
+    string stSell = "aucun OB valide"
+    string planSell = "-"
+    if not na(gBestB)
+        [sB, pB] = f_setup(gBestB, dirBias == 1, not na(pBEn), pBEn, pBSl, pBT1, pBT2, f_why(gBestB, 1), mlP, mlI, tmpL, tmpLb)
+        stBuy := sB
+        planBuy := pB
+    if not na(gBestS)
+        [sS, pS] = f_setup(gBestS, dirBias == -1, not na(pSEn), pSEn, pSSl, pST1, pST2, f_why(gBestS, -1), mhP, mhI, tmpL, tmpLb)
+        stSell := sS
+        planSell := pS
+
+    // ---- trade en cours
+    if kDir != 0
+        int xa = kBar
+        int xb = bar_index + 25
+        array.push(tmpL, line.new(xa, kEn, xb, kEn, xloc=xloc.bar_index, color=color.aqua, width=2))
+        array.push(tmpL, line.new(xa, kSl, xb, kSl, xloc=xloc.bar_index, color=color.red, width=2))
+        array.push(tmpL, line.new(xa, kT1, xb, kT1, xloc=xloc.bar_index, color=color.green, style=kP1 ? line.style_dotted : line.style_solid))
+        array.push(tmpL, line.new(xa, kT2, xb, kT2, xloc=xloc.bar_index, color=color.lime))
+        array.push(tmpLb, label.new(xb, kEn, (kDir == 1 ? "ACHAT" : "VENTE") + " EN COURS" + (kP1 ? " | TP1 touché" : ""), style=label.style_label_left, color=color.new(color.aqua, 40), textcolor=color.white, size=size.small))
+
+    // ---- options d'affichage
+    if showFibo
+        if legOkB
+            f_fibo(legSB, legEB, legEiB, oteTopB, oteBotB, tmpL, tmpLb, tmpB)
+        if legOkS
+            f_fibo(legSS, legES, legEiS, oteTopS, oteBotS, tmpL, tmpLb, tmpB)
+
+    if showLiq
+        for q2 in liqs
+            if not q2.swept or bar_index - q2.sweptAt <= 100
+                string kTxt = q2.kind == 0 ? (q2.dir == 1 ? "EQH" : "EQL") : q2.kind == 1 ? (q2.dir == 1 ? "PDH" : "PDL") : (q2.dir == 1 ? "Asie H" : "Asie L")
+                string lt = kTxt + (q2.swept ? " pris" : (q2.dir == 1 ? " (BSL)" : " (SSL)"))
+                color lc = q2.swept ? color.gray : cLiq
+                array.push(tmpL, line.new(q2.x0, q2.lvl, q2.swept ? q2.sweptAt : bar_index, q2.lvl, xloc=xloc.bar_index, extend=q2.swept ? extend.none : extend.right, color=lc, style=q2.swept ? line.style_dotted : line.style_dashed))
+                array.push(tmpLb, label.new(bar_index, q2.lvl, lt, style=q2.dir == 1 ? label.style_label_down : label.style_label_up, color=color.new(color.black, 100), textcolor=lc, size=size.tiny))
+
+    if showCh
+        int sH = array.size(phP)
+        int sL = array.size(plP)
+        if sH >= 2 and sL >= 2
+            float ch1 = array.get(phP, sH - 1)
+            float ch2 = array.get(phP, sH - 2)
+            float cl1 = array.get(plP, sL - 1)
+            float cl2 = array.get(plP, sL - 2)
+            int ch1i = array.get(phI, sH - 1)
+            int ch2i = array.get(phI, sH - 2)
+            int cl1i = array.get(plI, sL - 1)
+            int cl2i = array.get(plI, sL - 2)
+            float tolR = rngTol * atr
+            float tolE = eqTol * atr
+            string chType = "aucun"
+            if math.abs(ch1 - ch2) <= tolR and math.abs(cl1 - cl2) <= tolR
+                chType := "Range"
+            else if ch1 > ch2 + tolE and cl1 > cl2 + tolE
+                chType := "Canal haussier"
+            else if ch1 < ch2 - tolE and cl1 < cl2 - tolE
+                chType := "Canal baissier"
+            if chType != "aucun"
+                color chCol = chType == "Canal haussier" ? color.new(color.green, 30) : (chType == "Canal baissier" ? color.new(color.red, 30) : color.new(color.blue, 30))
+                array.push(tmpL, line.new(ch2i, ch2, ch1i, ch1, xloc=xloc.bar_index, extend=extend.right, color=chCol, style=line.style_dashed))
+                array.push(tmpL, line.new(cl2i, cl2, cl1i, cl1, xloc=xloc.bar_index, extend=extend.right, color=chCol, style=line.style_dashed))
+                array.push(tmpLb, label.new(bar_index, ch1, chType, style=label.style_label_down, color=color.new(chCol, 60), textcolor=color.white, size=size.tiny))
+
+    // ---- tableau de synthèse
+    if showTable
+        bool tfOk = timeframe.in_seconds() <= 900
+        string h4txt = h4T == 1 ? "Haussier" : (h4T == -1 ? "Baissier" : "-")
+        string h1txt = h1T == 1 ? "Haussier" : (h1T == -1 ? "Baissier" : "-")
+        color tc = color.white
+        float kWr = kN > 0 ? 100.0 * kW / kN : 0.0
+        float kPf = kGL > 0 ? kGW / kGL : na
+        float kExp = kN > 0 ? kNet / kN : 0.0
+        string sessTxt = (inLon ? "London" : inNy ? "New York" : "hors session") + (tfOk ? "" : " | passe en M15/M5")
+        table.cell(tb, 0, 0, "H4 | H1", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 0, h4txt + " | " + h1txt + (dirBias != 0 ? "  (alignés)" : "  (non alignés)"), text_color=dirBias == 1 ? color.lime : (dirBias == -1 ? color.red : color.orange), text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 1, "Session", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 1, sessTxt, text_color=inSess and tfOk ? color.lime : color.orange, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 2, "ACHAT", text_color=cBuy, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 2, allowBuy ? stBuy : "désactivé (contre-biais)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 3, "Plan achat", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 3, planBuy, text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 4, "VENTE", text_color=cSell, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 4, allowSell ? stSell : "désactivé (contre-biais)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 5, "Plan vente", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 5, planSell, text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 6, "Suivi : trades", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 6, str.tostring(kN) + (kDir != 0 ? "  (1 en cours)" : "") + (kN < 30 ? "  — échantillon non significatif" : ""), text_color=kN < 30 ? color.orange : tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 7, "Win rate", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 7, str.tostring(kWr, "#.#") + " %", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 8, "Net | Espérance (R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 8, str.tostring(kNet, "#.##") + "  |  " + str.tostring(kExp, "#.###") + " R/trade", text_color=kExp >= 0 ? color.lime : color.red, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 9, "Profit factor", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 9, na(kPf) ? "-" : str.tostring(kPf, "#.##"), text_color=na(kPf) or kPf >= 1 ? color.lime : color.red, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 10, "Drawdown max (R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 10, str.tostring(kDD, "#.##"), text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 11, "Achats | Ventes (n, R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 11, str.tostring(kNb) + " (" + str.tostring(kRb, "#.##") + ")  |  " + str.tostring(kNs) + " (" + str.tostring(kRs, "#.##") + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 12, "London | NY | autre (n, R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 12, str.tostring(kNlon) + " (" + str.tostring(kRlon, "#.##") + ")  |  " + str.tostring(kNny) + " (" + str.tostring(kRny, "#.##") + ")  |  " + str.tostring(kNoth) + " (" + str.tostring(kRoth, "#.##") + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 13, "Sorties SL | BE | TP2 | durée", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 13, str.tostring(kXsl) + " | " + str.tostring(kXbe) + " | " + str.tostring(kXt2) + " | " + str.tostring(kXto), text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 14, "Score ≥70 | <70 (n, R)", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 14, str.tostring(kNh) + " (" + str.tostring(kRh, "#.##") + ")  |  " + str.tostring(kNl) + " (" + str.tostring(kRl, "#.##") + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 15, "Gestion | coût", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 15, trkMgmt + " | " + str.tostring(costPx, format.mintick) + " | " + autoTxt, text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 16, "Entonnoir OB | plans | remplis", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        string dxDirTxt = dxyDir == 1 ? "haussier" : dxyDir == -1 ? "baissier" : "neutre"
+        string favTxt = gDir == 1 ? "ACHATS" : gDir == -1 ? "VENTES" : "rien"
+        string smtTxt = na(smtBullBar) and na(smtBearBar) ? "aucun" : nz(smtBullBar, -1) > nz(smtBearBar, -1) ? "achat il y a " + str.tostring(bar_index - smtBullBar) + "b" : "vente il y a " + str.tostring(bar_index - smtBearBar) + "b"
+        string dxTxt = not dxyOn0 ? "désactivé" : "DXY " + dxDirTxt + " → favorise " + favTxt + " | corr " + str.tostring(dCorr, "0.00") + (corrOk ? "" : " (CASSÉE → neutre)") + " | SMT " + smtTxt
+        table.cell(tb, 0, 17, "DXY (" + tfBias + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 17, dxTxt, text_color=not dxyOn ? color.orange : gDir == 1 ? color.lime : gDir == -1 ? color.red : color.gray, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 16, str.tostring(dOb) + " | " + str.tostring(dSet) + " | " + str.tostring(dFill) + "  (score max vu " + str.tostring(dMaxSc, "#") + ")", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+
+// ============================== ALERTES ==============================
+bool touchB = false
+if not na(gBestB)
+    touchB := low <= gBestB.top
+bool touchS = false
+if not na(gBestS)
+    touchS := high >= gBestS.bot
+bool newSetupB = not na(pBEn) and na(pBEn[1])
+bool newSetupS = not na(pSEn) and na(pSEn[1])
+alertcondition(dirBias != 0 and dirBias != nz(dirBias[1]), "Biais H4+H1 aligné", "{{ticker}} : biais H4 + H1 aligné")
+alertcondition(chgH4 != 0 and h4Bos != 0, "BOS / CHoCH H4", "{{ticker}} : BOS ou CHoCH sur H4")
+alertcondition(newSetupB, "Nouveau plan ACHAT", "{{ticker}} : nouvel ordre limite d'achat sur le meilleur OB")
+alertcondition(newSetupS, "Nouveau plan VENTE", "{{ticker}} : nouvel ordre limite de vente sur le meilleur OB")
+alertcondition(touchB and inSess, "Prix touche le meilleur OB ACHAT", "{{ticker}} : le prix touche le meilleur OB d'achat (session)")
+alertcondition(touchS and inSess, "Prix touche le meilleur OB VENTE", "{{ticker}} : le prix touche le meilleur OB de vente (session)")
+alertcondition(evFill, "Ordre rempli (suivi)", "{{ticker}} : ordre limite rempli sur le meilleur OB")
+alertcondition(evSmtB, "SMT haussier vs DXY", "{{ticker}} : divergence SMT haussière avec le DXY")
+alertcondition(evSmtS, "SMT baissier vs DXY", "{{ticker}} : divergence SMT baissière avec le DXY")
+alertcondition(dxyOn and gDir != 0 and gDir != gDir[1], "DXY : changement de direction favorisée", "{{ticker}} : le DXY change la direction favorisée")
