@@ -26,7 +26,7 @@ showFvg   = input.bool(false, "Afficher FVG / IFVG / BPR", group=gr0)
 showLiq   = input.bool(false, "Afficher pools de liquidité", group=gr0)
 showCh    = input.bool(false, "Afficher canaux / range", group=gr0)
 showIdm   = input.bool(false, "Afficher inducement", group=gr0)
-showFibo  = input.bool(false, "Afficher Fibo + zone OTE", group=gr0)
+showFibo  = input.bool(true, "Afficher Fibo + zone OTE (sens du biais)", group=gr0)
 showVP    = input.bool(false, "Afficher volume profile", group=gr0)
 showHtf   = input.bool(false, "Afficher BOS / CHoCH HTF", group=gr0)
 showH4Ln  = input.bool(false, "Afficher dernier sommet / creux H4", group=gr0)
@@ -45,7 +45,7 @@ lenMinorIn   = input.int(5, "Pivot inducement", minval=1, group=gr2)
 eqTol      = input.float(0.06, "Tolérance equal H/L (x ATR)", minval=0.01, step=0.01, group=gr2)
 rngTol     = input.float(1.4, "Tolérance range (x ATR)", minval=0.1, step=0.1, group=gr2)
 minGapIn     = input.float(0.3, "Displacement : FVG mini (x ATR)", minval=0.0, step=0.05, group=gr2)
-fvgWin     = input.int(2, "FVG créé par l'OB : fenêtre après l'OB (bougies)", minval=1, maxval=15, group=gr2)
+fvgWinIn   = input.int(2, "FVG créé par l'OB : fenêtre après l'OB (bougies)", minval=1, maxval=15, group=gr2)
 obMax      = input.int(6, "OB gardés en mémoire", minval=1, maxval=30, group=gr2)
 fvgMax     = input.int(6, "FVG / IFVG / BPR gardés en mémoire", minval=1, maxval=50, group=gr2)
 mitigFirst = input.bool(true, "OB consommé après la 1re touche (mitigation)", group=gr2)
@@ -76,6 +76,7 @@ sessTz  = input.string("Europe/Paris", "Fuseau horaire des sessions", group=grS)
 gr5 = "7) Score / plan de trade"
 minScore = input.int(50, "Score minimum pour le plan", minval=0, maxval=100, group=gr5)
 reqLiq   = input.bool(false, "Plan seulement si liquidité prise", group=gr5)
+useFb    = input.bool(true, "Plan de repli : FVG / IFVG / BPR dans l'OTE si aucun OB (sens du biais)", group=gr5)
 pdFilter = input.bool(false, "Exclure achat en premium / vente en discount (strict)", group=gr5)
 entryPct = input.float(0.5, "Entrée : profondeur dans l'OB (0=bord, 1=fond)", minval=0.0, maxval=1.0, step=0.05, group=gr5)
 slBuf    = input.float(0.2, "Marge du SL (x ATR)", minval=0.0, step=0.05, group=gr5)
@@ -131,6 +132,7 @@ int   lenBias    = autoTf ? 3 : lenBiasIn
 int   lenLTF     = autoTf ? (prof == 0 ? 3 : 2) : lenLTFIn
 int   lenLiq     = autoTf ? (prof == 0 ? 4 : 3) : lenLiqIn
 int   lenMinor   = autoTf ? (prof == 0 ? 8 : prof == 1 ? 5 : 4) : lenMinorIn
+int   fvgWin     = autoTf ? (prof == 0 ? 5 : prof == 1 ? 4 : 3) : fvgWinIn
 float minGap     = autoTf ? (prof == 0 ? 0.4 : prof == 1 ? 0.3 : prof == 2 ? 0.25 : 0.2) : minGapIn
 int   trkExpire  = autoTf ? f_bars(8, 10, 500) : trkExpireIn
 int   trkMaxHold = autoTf ? f_bars(12, 10, 500) : trkMaxHoldIn
@@ -320,9 +322,9 @@ f_eval(Zone z, array<Zone> fz, float lo, float hi, int gD, bool dOn) =>
     z.score
 
 // Plan : TP1 = liquidité opposée non prise la plus proche (>= 1R), TP2 = la suivante / extrême H4 / 3R, plafonné
-f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> pools, array<float> piv) =>
+f_plan(bool isBuy, float top, float bot, float atrv, float h4Ext, array<Liq> pools, array<float> piv, float slOv) =>
     float entry = isBuy ? top - (top - bot) * entryPct : bot + (top - bot) * entryPct
-    float sl = isBuy ? bot - slBuf * atrv : top + slBuf * atrv
+    float sl = not na(slOv) ? slOv : (isBuy ? bot - slBuf * atrv : top + slBuf * atrv)
     float risk = math.max(math.abs(entry - sl), syminfo.mintick)
     float minT = isBuy ? entry + risk : entry - risk
     int side = isBuy ? 1 : -1
@@ -385,7 +387,7 @@ f_setup(Zone z, bool aligned, bool planOk, float en, float sl, float t1, float t
             array.push(tl, line.new(idmX, idmP, bar_index + 3, idmP, xloc=xloc.bar_index, color=sw ? color.gray : color.yellow, style=line.style_dotted))
 
     string tags = (z.inOte ? " | OTE H1" : "") + (z.disc ? (isBuy ? " | discount" : " | premium") : "") + (z.conf ? " | IFVG/BPR" : "") + (z.dxyAl ? " | DXY ✓" : "") + (z.dxyAg ? " | CONTRE DXY" : "") + (z.smt ? " | SMT" : "")
-    string l1 = (isBuy ? "ACHAT" : "VENTE") + " | " + str.tostring(z.score, "#") + " pts | FVG " + str.tostring(z.disp, "0.0") + " ATR" + tags
+    string l1 = (z.kind != 0 ? "REPLI " + (z.kind == 1 ? "FVG" : z.kind == 2 ? "IFVG" : "BPR") + " en OTE | " : "") + (isBuy ? "ACHAT" : "VENTE") + " | " + str.tostring(z.score, "#") + " pts | FVG " + str.tostring(z.disp, "0.0") + " ATR" + tags
     string l2 = "VP " + str.tostring(z.vp * 100, "#") + "%" + (z.vp <= 0.35 ? " (LVN)" : "") + " | " + idmTxt + (z.liq ? " | liq. prise" : " | LIQ. NON PRISE") + (aligned ? "" : " | CONTRE-BIAIS")
     array.push(tlb, label.new(bar_index - 6, isBuy ? z.bot : z.top, l1 + "\n" + l2, style=isBuy ? label.style_label_up : label.style_label_down, color=color.new(isBuy ? cBuy : cSell, 25), textcolor=z.liq ? color.white : color.yellow, size=size.small))
 
@@ -992,6 +994,24 @@ if barstate.isconfirmed
             if (not isB) and allowSell and sc > sSb
                 sSb := sc
                 bS := z
+    // --- K. repli : aucun OB valide -> FVG / IFVG / BPR dans l'OTE de la jambe, dans le sens du biais
+    bool fbB = false
+    bool fbS = false
+    if useFb
+        if na(bB) and allowBuy and legOkB and dirBias == 1
+            for fz2 in fvgs
+                if fz2.dir == 1 and f_ovl(fz2.top, fz2.bot, oteTopB, oteBotB) and close > fz2.top and bar_index - fz2.created <= trkExpire
+                    float sc2 = f_eval(fz2, fvgs, drLo, drHi, gDir, dxyOn)
+                    if na(bB) or sc2 > bB.score
+                        bB := fz2
+                        fbB := true
+        if na(bS) and allowSell and legOkS and dirBias == -1
+            for fz3 in fvgs
+                if fz3.dir == -1 and f_ovl(fz3.top, fz3.bot, oteTopS, oteBotS) and close < fz3.bot and bar_index - fz3.created <= trkExpire
+                    float sc3 = f_eval(fz3, fvgs, drLo, drHi, gDir, dxyOn)
+                    if na(bS) or sc3 > bS.score
+                        bS := fz3
+                        fbS := true
     gBestB := bB
     gBestS := bS
 
@@ -1008,8 +1028,9 @@ if barstate.isconfirmed
     pSSc := na
     if kDir == 0
         if not na(bB)
-            if bB.score >= minScore and (not reqLiq or bB.liq) and (not trkAligned or dirBias == 1)
-                [e1, s1, a1, c1, r1] = f_plan(true, bB.top, bB.bot, atr, h4PH, liqs, phP)
+            if (fbB or (bB.score >= minScore and (not reqLiq or bB.liq))) and (not trkAligned or dirBias == 1)
+                // repli : SL sous l'origine de la jambe (creux du swing)
+                [e1, s1, a1, c1, r1] = f_plan(true, bB.top, bB.bot, atr, h4PH, liqs, phP, fbB ? legSB - slBuf * atr : na)
                 pBEn := e1
                 pBSl := s1
                 pBT1 := a1
@@ -1020,8 +1041,9 @@ if barstate.isconfirmed
                     dSet += 1
                     lastPB := bB.t
         if not na(bS)
-            if bS.score >= minScore and (not reqLiq or bS.liq) and (not trkAligned or dirBias == -1)
-                [e2, s2, a2, c2, r2] = f_plan(false, bS.top, bS.bot, atr, h4PL, liqs, plP)
+            if (fbS or (bS.score >= minScore and (not reqLiq or bS.liq))) and (not trkAligned or dirBias == -1)
+                // repli : SL au-dessus de l'origine de la jambe (sommet du swing)
+                [e2, s2, a2, c2, r2] = f_plan(false, bS.top, bS.bot, atr, h4PL, liqs, plP, fbS ? legSS + slBuf * atr : na)
                 pSEn := e2
                 pSSl := s2
                 pST1 := a2
@@ -1119,10 +1141,10 @@ if barstate.islast
     // ---- FVG / IFVG / BPR : masqués, sauf option ou repli dans l'OTE
     bool buyOteOb = false
     if not na(gBestB)
-        buyOteOb := gBestB.inOte
+        buyOteOb := gBestB.inOte or gBestB.kind != 0
     bool sellOteOb = false
     if not na(gBestS)
-        sellOteOb := gBestS.inOte
+        sellOteOb := gBestS.inOte or gBestS.kind != 0
     bool needFvgB = allowBuy and legOkB and not buyOteOb
     bool needFvgS = allowSell and legOkS and not sellOteOb
     bool shownFB = false
@@ -1177,9 +1199,11 @@ if barstate.islast
     // ---- options d'affichage
     if showFibo
         if legOkB
-            f_fibo(legSB, legEB, legEiB, oteTopB, oteBotB, tmpL, tmpLb, tmpB)
+            if allowBuy
+                f_fibo(legSB, legEB, legEiB, oteTopB, oteBotB, tmpL, tmpLb, tmpB)
         if legOkS
-            f_fibo(legSS, legES, legEiS, oteTopS, oteBotS, tmpL, tmpLb, tmpB)
+            if allowSell
+                f_fibo(legSS, legES, legEiS, oteTopS, oteBotS, tmpL, tmpLb, tmpB)
 
     if showLiq
         for q2 in liqs
