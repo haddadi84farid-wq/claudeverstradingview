@@ -1,0 +1,333 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// VWAP Snap-back — scalping retour à la moyenne (M1 – M5), conçu pour XAUUSD
+// Achat (vente = miroir) :
+//  1. Régime de RANGE : ADX(14) du TF M5 < 20 (sinon jour de tendance → pas de trade)
+//  2. Excès : une bougie clôture SOUS la bande VWAP −2σ avec RSI(2) < 5
+//  3. Déclencheur : la bougie suivante clôture de nouveau DANS la bande (et haussière)
+//     → entrée à la clôture
+//  4. TP1 = bande −1σ (70 %), TP2 = VWAP ; SL = plus bas de l'excursion − 0,5 ATR
+//  5. Stop temps 10 bougies ; 2 pertes dans la journée → stop
+// Protection : pas de trade si l'excursion dépasse 3,5σ (news / tendance),
+// TP1 ≥ N x spread, RR mini vers TP1. Non-repaint, coût inclus, SL avant TP.
+// ─────────────────────────────────────────────────────────────────────────────
+indicator("VWAP Snap-back — Scalping retour à la moyenne", "VWAP Snap", overlay=true, max_lines_count=500, max_labels_count=500)
+
+// ============================ INPUTS ================================
+g1 = "1) Setup"
+dirMode  = input.string("Achats + Ventes", "Directions", options=["Achats + Ventes", "Achats seulement", "Ventes seulement"], group=g1)
+bandIn   = input.float(2.0, "Bande d'excès (σ)", minval=1.0, step=0.1, group=g1)
+bandTp   = input.float(1.0, "Bande du TP1 (σ)", minval=0.0, step=0.1, group=g1)
+bandMax  = input.float(3.5, "Excès maximum (σ) : au-delà, pas de trade", minval=2.0, step=0.1, group=g1)
+rsiLen   = input.int(2, "RSI longueur", minval=2, group=g1)
+rsiLo    = input.float(5, "RSI achat si <", minval=1, maxval=50, group=g1)
+rsiHi    = input.float(95, "RSI vente si >", minval=50, maxval=99, group=g1)
+needBody = input.bool(true, "Bougie de réintégration dans le sens du trade", group=g1)
+warmBars = input.int(15, "Ignorer les N premières bougies de la journée VWAP", minval=0, group=g1)
+
+g2 = "2) Régime (filtre de range)"
+useAdx = input.bool(true, "Trader seulement en range (ADX bas)", group=g2)
+adxTf  = input.timeframe("5", "TF de l'ADX", group=g2)
+adxMax = input.float(20, "ADX maximum", minval=5, step=1, group=g2)
+
+g3 = "3) Sorties & risque"
+slBuf    = input.float(0.5, "SL : marge sous l'excursion (x ATR)", minval=0.0, step=0.05, group=g3)
+pct1     = input.int(70, "% fermé au TP1 (le reste au VWAP)", minval=0, maxval=100, group=g3)
+beAfter  = input.bool(true, "SL au break-even après TP1", group=g3)
+timeStop = input.int(10, "Stop temps (bougies)", minval=2, group=g3)
+minRR    = input.float(0.4, "RR minimum jusqu'au TP1", minval=0.1, step=0.05, group=g3)
+minTpC   = input.float(3.0, "TP1 ≥ N x le coût", minval=1.0, step=0.5, group=g3)
+maxLoss  = input.int(2, "Pertes max par jour (0 = illimité)", minval=0, group=g3)
+
+g4 = "4) Sessions"
+sessMode = input.string("24h, stats séparées", "Entrées", options=["Session seulement", "24h, stats séparées"], group=g4)
+sessA    = input.session("0800-1100", "London", group=g4)
+sessB    = input.session("1430-1700", "New York", group=g4)
+sessTz   = input.string("Europe/Paris", "Fuseau horaire", group=g4)
+
+g5 = "5) Backtest"
+costMode = input.string("Prix", "Unité du coût", options=["Prix", "Ticks"], group=g5)
+cost     = input.float(0.35, "Spread + frais aller-retour", minval=0.0, step=0.05, group=g5)
+
+g6 = "6) Affichage"
+showBands = input.bool(true, "VWAP + bandes", group=g6)
+showHist  = input.int(20, "Trades passés dessinés", minval=0, maxval=80, group=g6)
+showTbl   = input.bool(true, "Tableau", group=g6)
+cBuy      = input.color(#26A69A, "Achat", group=g6)
+cSell     = input.color(#EF5350, "Vente", group=g6)
+
+// ============================ CALCULS ===============================
+float atr = ta.atr(14)
+bool  newDay = timeframe.change("D")
+[vw, up1, lo1] = ta.vwap(hlc3, newDay, 1.0)
+float sd  = up1 - vw
+float lo2 = vw - bandIn * sd
+float up2 = vw + bandIn * sd
+float loT = vw - bandTp * sd
+float upT = vw + bandTp * sd
+float loX = vw - bandMax * sd
+float upX = vw + bandMax * sd
+float rsi = ta.rsi(close, rsiLen)
+int   sinceDay = ta.barssince(newDay)
+
+f_adx() =>
+    [p, m, a] = ta.dmi(14, 14)
+    a[1]
+float adxH   = request.security(syminfo.tickerid, adxTf, f_adx(), lookahead=barmerge.lookahead_on)
+bool rangeOk = not useAdx or (not na(adxH) and adxH < adxMax)
+
+bool inA = not na(time(timeframe.period, sessA, sessTz))
+bool inB = not na(time(timeframe.period, sessB, sessTz))
+bool inSessWin = inA or inB
+bool inSess = sessMode != "Session seulement" or inSessWin
+bool allowL = dirMode != "Ventes seulement"
+bool allowS = dirMode != "Achats seulement"
+float costPx = costMode == "Ticks" ? cost * syminfo.mintick : cost
+bool vwOk = sd > 0 and nz(sinceDay, 0) >= warmBars
+
+float excLo = ta.lowest(low, 3)
+float excHi = ta.highest(high, 3)
+bool extL  = vwOk and close[1] < lo2[1] and math.min(rsi[1], rsi[2]) < rsiLo
+bool extS  = vwOk and close[1] > up2[1] and math.max(rsi[1], rsi[2]) > rsiHi
+bool trigL = extL and close > lo2 and (not needBody or close > open)
+bool trigS = extS and close < up2 and (not needBody or close < open)
+bool saneL = excLo > loX
+bool saneS = excHi < upX
+bool setL  = allowL and trigL and saneL
+bool setS  = allowS and trigS and saneS
+
+plot(showBands ? vw : na, "VWAP", color=#FF9800, linewidth=2)
+plot(showBands ? up1 : na, "+1σ", color=color.new(#90A4AE, 40), style=plot.style_circles, linewidth=1)
+plot(showBands ? lo1 : na, "-1σ", color=color.new(#90A4AE, 40), style=plot.style_circles, linewidth=1)
+plot(showBands ? up2 : na, "+2σ", color=color.new(cSell, 20), linewidth=1)
+plot(showBands ? lo2 : na, "-2σ", color=color.new(cBuy, 20), linewidth=1)
+plot(showBands ? upX : na, "+3.5σ", color=color.new(cSell, 75), linewidth=1)
+plot(showBands ? loX : na, "-3.5σ", color=color.new(cBuy, 75), linewidth=1)
+
+// ============================== ETAT ================================
+var int   kDir = 0
+var float kEn = na
+var float kSl = na
+var float kRisk = na
+var float kT1 = na
+var float kT2 = na
+var int   kBar = na
+var int   kStage = 0
+var float kRem = 1.0
+var float kReal = 0.0
+var bool  kInS = true
+var int   dayLoss = 0
+var array<line>  cur   = array.new<line>()
+var array<line>  histL = array.new<line>()
+var array<label> histB = array.new<label>()
+
+var int   sN = 0
+var int   sW = 0
+var float sNet = 0.0
+var float sGW = 0.0
+var float sGL = 0.0
+var float sPeak = 0.0
+var float sDD = 0.0
+var int   sT1 = 0
+var int   sNL = 0
+var float sRL = 0.0
+var int   sNS = 0
+var float sRS = 0.0
+var int   sNin = 0
+var float sRin = 0.0
+var int   sNout = 0
+var float sRout = 0.0
+var int   xSL = 0
+var int   xBE = 0
+var int   xT2 = 0
+var int   xTime = 0
+// entonnoir
+var int dExt = 0
+var int dTrig = 0
+var int dSane = 0
+var int dAdx = 0
+var int dSess = 0
+var int dDay = 0
+var int dTp = 0
+var int dTaken = 0
+
+bool evEntryL = false
+bool evEntryS = false
+bool evTp1 = false
+bool evSl = false
+
+f_keep(line l) =>
+    histL.push(l)
+    while histL.size() > showHist * 4
+        line.delete(histL.shift())
+f_keepLb(label lb) =>
+    histB.push(lb)
+    while histB.size() > showHist * 2
+        label.delete(histB.shift())
+
+// ===================== MOTEUR (bougies clôturées) =====================
+if barstate.isconfirmed
+    if newDay
+        dayLoss := 0
+
+    // ---- 1. gestion du trade (SL avant TP dans une même bougie)
+    if kDir != 0 and bar_index > kBar
+        bool closed = false
+        float ex = na
+        int why = 0
+        bool hSL = kDir == 1 ? low <= kSl : high >= kSl
+        if hSL
+            closed := true
+            ex := kSl
+            why := (kStage >= 1 and beAfter) ? 2 : 1
+        else
+            if kStage == 0 and (kDir == 1 ? high >= kT1 : low <= kT1)
+                float f1 = pct1 / 100.0
+                kReal += f1 * kDir * (kT1 - kEn) / kRisk
+                kRem -= f1
+                kStage := 1
+                sT1 += 1
+                evTp1 := true
+                if beAfter
+                    kSl := kEn
+                if kRem <= 0.0001
+                    closed := true
+                    ex := kT1
+                    why := 3
+            if not closed and kStage == 1 and (kDir == 1 ? high >= kT2 : low <= kT2)
+                closed := true
+                ex := kT2
+                why := 3
+            if not closed and bar_index - kBar >= timeStop
+                closed := true
+                ex := close
+                why := 4
+        if closed
+            float res = kReal + kRem * kDir * (ex - kEn) / kRisk - costPx / kRisk
+            sN += 1
+            sNet += res
+            if res > 0
+                sW += 1
+                sGW += res
+            else
+                sGL += -res
+                dayLoss += 1
+            sPeak := math.max(sPeak, sNet)
+            sDD := math.max(sDD, sPeak - sNet)
+            if kDir == 1
+                sNL += 1
+                sRL += res
+            else
+                sNS += 1
+                sRS += res
+            if kInS
+                sNin += 1
+                sRin += res
+            else
+                sNout += 1
+                sRout += res
+            xSL += why == 1 ? 1 : 0
+            xBE += why == 2 ? 1 : 0
+            xT2 += why == 3 ? 1 : 0
+            xTime += why == 4 ? 1 : 0
+            evSl := why == 1
+            for l in cur
+                line.set_x2(l, bar_index)
+            cur.clear()
+            if showHist > 0
+                f_keepLb(label.new(bar_index, kDir == 1 ? high : low, (res >= 0 ? "+" : "") + str.tostring(res, "0.00") + "R", style=kDir == 1 ? label.style_label_down : label.style_label_up, color=color.new(res >= 0 ? color.green : color.red, 20), textcolor=color.white, size=size.tiny))
+            kDir := 0
+        else
+            for l in cur
+                line.set_x2(l, bar_index + 3)
+
+    // ---- 2. entonnoir + nouvelle entrée (à la clôture de la bougie de réintégration)
+    if (extL and allowL) or (extS and allowS)
+        dExt += 1
+    if (trigL and allowL) or (trigS and allowS)
+        dTrig += 1
+    if setL or setS
+        dSane += 1
+    if kDir == 0 and (setL or setS)
+        int d = setL ? 1 : -1
+        float en = close
+        float sl = d == 1 ? excLo - slBuf * atr : excHi + slBuf * atr
+        float tp1 = d == 1 ? loT : upT
+        float tp2 = vw
+        float rk = math.max(math.abs(en - sl), syminfo.mintick)
+        float dist1 = d * (tp1 - en)
+        bool dayOk = maxLoss == 0 or dayLoss < maxLoss
+        bool tpOk = dist1 > 0 and dist1 / rk >= minRR and dist1 >= minTpC * costPx
+        if not rangeOk
+            dAdx += 1
+        else if not inSess
+            dSess += 1
+        else if not dayOk
+            dDay += 1
+        else if not tpOk
+            dTp += 1
+        else
+            dTaken += 1
+            kDir := d
+            kEn := en
+            kSl := sl
+            kRisk := rk
+            kT1 := tp1
+            kT2 := d * (tp2 - tp1) > 0 ? tp2 : tp1
+            kBar := bar_index
+            kStage := 0
+            kRem := 1.0
+            kReal := 0.0
+            kInS := inSessWin
+            evEntryL := d == 1
+            evEntryS := d == -1
+            if showHist > 0
+                color c = d == 1 ? cBuy : cSell
+                cur.push(line.new(bar_index, kEn, bar_index + 3, kEn, color=color.aqua, width=2))
+                cur.push(line.new(bar_index, kSl, bar_index + 3, kSl, color=color.red, width=2))
+                cur.push(line.new(bar_index, kT1, bar_index + 3, kT1, color=color.new(color.green, 20), width=1))
+                cur.push(line.new(bar_index, kT2, bar_index + 3, kT2, color=color.lime, width=2))
+                for l in cur
+                    f_keep(l)
+                f_keepLb(label.new(bar_index, kEn, (d == 1 ? "ACHAT " : "VENTE ") + str.tostring(kEn, format.mintick) + "\nSL " + str.tostring(kSl, format.mintick) + "\nTP1 " + str.tostring(kT1, format.mintick) + " (" + str.tostring(dist1 / rk, "0.00") + "R) | TP2 VWAP " + str.tostring(kT2, format.mintick), style=label.style_label_right, color=color.new(c, 15), textcolor=color.white, size=size.tiny))
+
+plotshape(evEntryL, "Entrée achat", shape.triangleup, location.belowbar, cBuy, size=size.small)
+plotshape(evEntryS, "Entrée vente", shape.triangledown, location.abovebar, cSell, size=size.small)
+plot(kDir != 0 ? kSl : na, "Trade : SL", display=display.data_window)
+plot(kDir != 0 ? kT1 : na, "Trade : TP1", display=display.data_window)
+plot(kDir != 0 ? kT2 : na, "Trade : TP2", display=display.data_window)
+plot(sNet, "Backtest : net (R)", display=display.data_window)
+
+// ============================== TABLEAU ==============================
+var table tb = table.new(position.top_right, 2, 14, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+f_row(int r, string a, string b, color cb) =>
+    table.cell(tb, 0, r, a, text_color=color.white, text_size=size.small, text_halign=text.align_left)
+    table.cell(tb, 1, r, b, text_color=cb, text_size=size.small, text_halign=text.align_left)
+
+if barstate.islast and showTbl
+    float wr = sN > 0 ? 100.0 * sW / sN : 0.0
+    float ex = sN > 0 ? sNet / sN : 0.0
+    float pf = sGL > 0 ? sGW / sGL : na
+    float aw = sW > 0 ? sGW / sW : 0.0
+    float al = sN - sW > 0 ? sGL / (sN - sW) : 0.0
+    string pos = kDir != 0 ? (kDir == 1 ? "ACHAT" : "VENTE") + " " + str.tostring(kEn, format.mintick) + " | SL " + str.tostring(kSl, format.mintick) + " | TP1 " + str.tostring(kT1, format.mintick) + " | TP2 " + str.tostring(kT2, format.mintick) : "aucune"
+    f_row(0, "Régime (ADX " + adxTf + ")", na(adxH) ? "-" : str.tostring(adxH, "0.0") + (rangeOk ? "  RANGE → stratégie active" : "  TENDANCE → pas de trade"), rangeOk ? color.lime : color.orange)
+    f_row(1, "Session | pertes du jour", (inA ? "London" : inB ? "New York" : "hors session") + " | " + str.tostring(dayLoss) + "/" + str.tostring(maxLoss), inSessWin ? color.lime : color.gray)
+    f_row(2, "Position", pos, color.white)
+    f_row(3, "Trades", str.tostring(sN) + (sN < 50 ? "  — moins de 50 : non significatif" : ""), sN < 50 ? color.orange : color.white)
+    f_row(4, "Win rate (objectif 70–80 %)", str.tostring(wr, "0.0") + " %", wr >= 70 ? color.lime : wr >= 60 ? color.orange : color.red)
+    f_row(5, "Net | Espérance", str.tostring(sNet, "0.00") + " R | " + str.tostring(ex, "0.000") + " R/trade", ex >= 0 ? color.lime : color.red)
+    f_row(6, "Profit factor | DD max", (na(pf) ? "-" : str.tostring(pf, "0.00")) + " | " + str.tostring(sDD, "0.00") + " R", na(pf) or pf >= 1 ? color.lime : color.red)
+    f_row(7, "Gain moyen | Perte moyenne", "+" + str.tostring(aw, "0.00") + " R | -" + str.tostring(al, "0.00") + " R", color.white)
+    f_row(8, "TP1 atteint", sN > 0 ? str.tostring(100.0 * sT1 / sN, "0") + " %" : "-", color.white)
+    f_row(9, "Sorties SL | BE | TP | temps", str.tostring(xSL) + " | " + str.tostring(xBE) + " | " + str.tostring(xT2) + " | " + str.tostring(xTime), color.white)
+    f_row(10, "Achats | Ventes (n, R)", str.tostring(sNL) + " (" + str.tostring(sRL, "0.0") + ") | " + str.tostring(sNS) + " (" + str.tostring(sRS, "0.0") + ")", color.white)
+    f_row(11, "En session | hors session (n, R)", str.tostring(sNin) + " (" + str.tostring(sRin, "0.0") + ") | " + str.tostring(sNout) + " (" + str.tostring(sRout, "0.0") + ")", color.white)
+    f_row(12, "Excès → réintégration → valides", str.tostring(dExt) + " → " + str.tostring(dTrig) + " → " + str.tostring(dSane) + " | pris " + str.tostring(dTaken), color.gray)
+    f_row(13, "Bloqués : ADX | session | pertes jour | TP trop petit", str.tostring(dAdx) + " | " + str.tostring(dSess) + " | " + str.tostring(dDay) + " | " + str.tostring(dTp), color.gray)
+
+// ============================== ALERTES ==============================
+alertcondition(evEntryL, "Entrée ACHAT (snap-back)", "{{ticker}} : achat retour VWAP à {{close}}")
+alertcondition(evEntryS, "Entrée VENTE (snap-back)", "{{ticker}} : vente retour VWAP à {{close}}")
+alertcondition(evTp1, "TP1 atteint", "{{ticker}} : TP1 atteint (SL au break-even)")
+alertcondition(evSl, "Stop loss touché", "{{ticker}} : stop loss touché")
