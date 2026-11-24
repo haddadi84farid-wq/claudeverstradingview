@@ -9,39 +9,48 @@
 //     → ordre STOP au-dessus de son plus haut, valable N bougies
 // Ajouts pro : pas d'achat en extension (distance VWAP en ATR), risque min/max en ATR,
 // sessions London/NY, SL traité avant TP dans une même bougie, coût inclus, non-repaint.
+// Mode SCALPING M1–M5 : profil auto par TF, filtre EMA 21 HTF, corps de bougie mini,
+// risque ≥ N x spread, marché mort ignoré, stats en session / hors session.
 // ─────────────────────────────────────────────────────────────────────────────
 indicator("EMA 9/21 + VWAP + ADX — Entrées & TP", "EVA Pro", overlay=true, max_lines_count=500, max_labels_count=500)
 
 // ============================ INPUTS ================================
+g0 = "0) Mode scalping M1 – M5"
+autoScalp = input.bool(true, "Profil SCALPING automatique selon le TF (ignore les valeurs manuelles)", group=g0)
+useHtf    = input.bool(true, "Filtre de tendance HTF (EMA 21 du TF supérieur)", group=g0)
+bodyMin   = input.float(0.4, "Bougie de confirmation : corps mini (% de la bougie)", minval=0.0, maxval=1.0, step=0.05, group=g0)
+riskCost  = input.float(4.0, "Risque minimum = N x le coût (le spread pèse ≤ 1/N R)", minval=1.0, step=0.5, group=g0)
+atrCost   = input.float(3.0, "Marché mort : ignorer si ATR < N x le coût", minval=0.0, step=0.5, group=g0)
+
 g1 = "1) Signaux"
 dirMode   = input.string("Achats + Ventes", "Directions", options=["Achats + Ventes", "Achats seulement", "Ventes seulement"], group=g1)
 lenF      = input.int(9, "EMA rapide", minval=2, group=g1)
 lenS      = input.int(21, "EMA lente", minval=3, group=g1)
 adxLen    = input.int(14, "ADX longueur", minval=5, group=g1)
-adxMin    = input.float(20, "ADX minimum", minval=5, step=1, group=g1)
+adxMinIn    = input.float(20, "ADX minimum", minval=5, step=1, group=g1)
 adxRising = input.bool(false, "ADX en hausse (vs 3 bougies) — strict", group=g1)
-crossLook = input.int(60, "Croisement EMA récent (≤ N bougies, 0 = ignorer)", minval=0, group=g1)
+crossLookIn = input.int(60, "Croisement EMA récent (≤ N bougies, 0 = ignorer)", minval=0, group=g1)
 needPull  = input.bool(true, "Exiger un pullback vers l'EMA 9", group=g1)
-pullBars  = input.int(5, "Pullback : dans les N dernières bougies", minval=1, maxval=20, group=g1)
+pullBarsIn  = input.int(5, "Pullback : dans les N dernières bougies", minval=1, maxval=20, group=g1)
 pullTol   = input.float(0.25, "Pullback : tolérance autour de l'EMA 9 (x ATR)", minval=0.0, step=0.05, group=g1)
-maxExt    = input.float(1.5, "Distance max au VWAP (x ATR)", minval=0.2, step=0.1, group=g1)
-trigWin   = input.int(2, "Validité de l'ordre stop (bougies)", minval=1, maxval=10, group=g1)
+maxExtIn    = input.float(1.5, "Distance max au VWAP (x ATR)", minval=0.2, step=0.1, group=g1)
+trigWinIn   = input.int(2, "Validité de l'ordre stop (bougies)", minval=1, maxval=10, group=g1)
 
 g2 = "2) Risque & objectifs"
 slMode  = input.string("Bas de la bougie de confirmation", "Stop loss", options=["Bas de la bougie de confirmation", "Au-delà de l'EMA 21"], group=g2)
 slBuf   = input.float(0.1, "Marge du SL (x ATR)", minval=0.0, step=0.05, group=g2)
 minRisk = input.float(0.3, "Risque minimum (x ATR)", minval=0.05, step=0.05, group=g2)
 maxRisk = input.float(2.5, "Risque maximum (x ATR)", minval=0.5, step=0.1, group=g2)
-tp1R    = input.float(1.0, "TP1 (R)", minval=0.3, step=0.1, group=g2)
-tp2R    = input.float(2.0, "TP2 (R)", minval=0.5, step=0.1, group=g2)
-tp3R    = input.float(3.0, "TP3 (R)", minval=1.0, step=0.1, group=g2)
-pct1    = input.int(40, "% fermé à TP1", minval=0, maxval=100, group=g2)
-pct2    = input.int(30, "% fermé à TP2 (le reste à TP3)", minval=0, maxval=100, group=g2)
+tp1RIn    = input.float(1.0, "TP1 (R)", minval=0.3, step=0.1, group=g2)
+tp2RIn    = input.float(2.0, "TP2 (R)", minval=0.5, step=0.1, group=g2)
+tp3RIn    = input.float(3.0, "TP3 (R)", minval=1.0, step=0.1, group=g2)
+pct1In    = input.int(40, "% fermé à TP1", minval=0, maxval=100, group=g2)
+pct2In    = input.int(30, "% fermé à TP2 (le reste à TP3)", minval=0, maxval=100, group=g2)
 beAfter = input.bool(true, "SL au break-even après TP1", group=g2)
 exitEma = input.bool(true, "Sortie si clôture de l'autre côté de l'EMA 21", group=g2)
 
 g3 = "3) Sessions"
-useSess = input.bool(true, "Entrées uniquement en session", group=g3)
+sessMode = input.string("24h, stats séparées", "Entrées", options=["Session seulement", "24h, stats séparées"], group=g3)
 sessA   = input.session("0800-1100", "London", group=g3)
 sessB   = input.session("1430-1700", "New York", group=g3)
 sessTz  = input.string("Europe/Paris", "Fuseau horaire", group=g3)
@@ -49,7 +58,7 @@ sessTz  = input.string("Europe/Paris", "Fuseau horaire", group=g3)
 g4 = "4) Backtest"
 costMode = input.string("Prix", "Unité du coût", options=["Prix", "Ticks"], group=g4)
 cost     = input.float(0.35, "Spread + frais aller-retour", minval=0.0, step=0.05, group=g4)
-maxHold  = input.int(100, "Durée max d'un trade (bougies)", minval=5, group=g4)
+maxHoldIn  = input.int(100, "Durée max d'un trade (bougies)", minval=5, group=g4)
 
 g5 = "5) Affichage"
 showMa   = input.bool(true, "EMA 9 / EMA 21 / VWAP", group=g5)
@@ -57,6 +66,28 @@ showHist = input.int(15, "Trades passés dessinés", minval=0, maxval=60, group=
 showTbl  = input.bool(true, "Tableau", group=g5)
 cBuy     = input.color(#26A69A, "Achat", group=g5)
 cSell    = input.color(#EF5350, "Vente", group=g5)
+
+// ===================== PROFIL SCALPING AUTO =====================
+//  M1 : filtre M15 | M2-M3 : filtre M15 | M5 : filtre H1
+//  TP 1R / 1,5R / 2,5R (50 % / 30 % / 20 %), BE après TP1, durée max ~45 min
+int tfSec = timeframe.in_seconds()
+int prof = tfSec <= 60 ? 0 : tfSec <= 180 ? 1 : tfSec <= 300 ? 2 : 3
+bool scalp = autoScalp and prof <= 2
+f_bars(float minutes, int mn) =>
+    math.max(mn, int(math.round(minutes * 60 / tfSec)))
+float adxMin    = scalp ? (prof == 0 ? 22.0 : prof == 1 ? 21.0 : 20.0) : adxMinIn
+int   crossLook = scalp ? f_bars(120, 10) : crossLookIn
+int   pullBars  = scalp ? (prof == 0 ? 6 : prof == 1 ? 5 : 4) : pullBarsIn
+float maxExt    = scalp ? (prof == 0 ? 1.2 : prof == 1 ? 1.3 : 1.5) : maxExtIn
+int   trigWin   = scalp ? (prof == 0 ? 3 : 2) : trigWinIn
+float tp1R      = scalp ? 1.0 : tp1RIn
+float tp2R      = scalp ? 1.5 : tp2RIn
+float tp3R      = scalp ? 2.5 : tp3RIn
+int   pct1      = scalp ? 50 : pct1In
+int   pct2      = scalp ? 30 : pct2In
+int   maxHold   = scalp ? f_bars(45, 6) : maxHoldIn
+string htfTf    = prof <= 1 ? "15" : prof == 2 ? "60" : "240"
+string profTxt  = scalp ? (prof == 0 ? "SCALP M1" : prof == 1 ? "SCALP M2-M3" : "SCALP M5") + " | filtre " + htfTf + " | TP " + str.tostring(tp1R) + "/" + str.tostring(tp2R) + "/" + str.tostring(tp3R) + "R" : "manuel"
 
 // ============================ CALCULS ===============================
 float atr = ta.atr(14)
@@ -69,24 +100,34 @@ int sinceDn = ta.barssince(ta.crossunder(e9, e21))
 bool adxOk  = adx > adxMin and (not adxRising or adx > adx[3])
 bool inA    = not na(time(timeframe.period, sessA, sessTz))
 bool inB    = not na(time(timeframe.period, sessB, sessTz))
-bool inSess = not useSess or inA or inB
+bool inSessWin = inA or inB
+bool inSess = sessMode != "Session seulement" or inSessWin
 bool allowL = dirMode != "Ventes seulement"
 bool allowS = dirMode != "Achats seulement"
 float costPx = costMode == "Ticks" ? cost * syminfo.mintick : cost
+// tendance HTF non-repaint
+f_htf() =>
+    float e = ta.ema(close, 21)
+    [e[1], e[2], close[1]]
+[hE1, hE2, hC1] = request.security(syminfo.tickerid, htfTf, f_htf(), lookahead=barmerge.lookahead_on)
+bool htfBull = not useHtf or (hC1 > hE1 and hE1 >= hE2)
+bool htfBear = not useHtf or (hC1 < hE1 and hE1 <= hE2)
+bool body    = math.abs(close - open) >= bodyMin * (high - low)
+bool alive   = atrCost <= 0 or atr >= atrCost * costPx
 
 // diagnostic : chaque filtre séparément
-bool trendL = e9 > e21 and (crossLook == 0 or nz(sinceUp, 9999) <= crossLook)
-bool trendS = e9 < e21 and (crossLook == 0 or nz(sinceDn, 9999) <= crossLook)
+bool trendL = htfBull and e9 > e21 and (crossLook == 0 or nz(sinceUp, 9999) <= crossLook)
+bool trendS = htfBear and e9 < e21 and (crossLook == 0 or nz(sinceDn, 9999) <= crossLook)
 bool pullL  = not needPull or ta.lowest(low, pullBars) <= e9 + pullTol * atr
 bool pullS  = not needPull or ta.highest(high, pullBars) >= e9 - pullTol * atr
-bool candL  = close > open and close > e9 and close > vw
-bool candS  = close < open and close < e9 and close < vw
+bool candL  = close > open and body and close > e9 and close > vw
+bool candS  = close < open and body and close < e9 and close < vw
 bool momL   = adxOk and dip > dim
 bool momS   = adxOk and dim > dip
 bool extL   = close - vw <= maxExt * atr
 bool extS   = vw - close <= maxExt * atr
-bool confL = allowL and trendL and candL and momL and pullL and extL
-bool confS = allowS and trendS and candS and momS and pullS and extS
+bool confL = alive and allowL and trendL and candL and momL and pullL and extL
+bool confS = alive and allowS and trendS and candS and momS and pullS and extS
 
 plot(showMa ? e9 : na, "EMA 9", color=#2962FF, linewidth=1)
 plot(showMa ? e21 : na, "EMA 21", color=#E53935, linewidth=1)
@@ -132,6 +173,11 @@ var float sRL = 0.0
 var int   sNS = 0
 var float sRS = 0.0
 var int   xSL = 0
+var bool  kInS = true
+var int   sNin = 0
+var float sRin = 0.0
+var int   sNout = 0
+var float sRout = 0.0
 var int   xBE = 0
 var int   xT3 = 0
 var int   xEma = 0
@@ -225,6 +271,12 @@ if barstate.isconfirmed
             else
                 sNS += 1
                 sRS += res
+            if kInS
+                sNin += 1
+                sRin += res
+            else
+                sNout += 1
+                sRout += res
             xSL += why == 1 ? 1 : 0
             xBE += why == 2 ? 1 : 0
             xT3 += why == 3 ? 1 : 0
@@ -273,6 +325,7 @@ if barstate.isconfirmed
             kReal := 0.0
             kImm := pDir == 1 ? low <= pSl : high >= pSl
             evFill := true
+            kInS := inSessWin
             dFill += 1
             color c = pDir == 1 ? cBuy : cSell
             if showHist > 0
@@ -302,9 +355,10 @@ if barstate.isconfirmed
             float slBase = slMode == "Au-delà de l'EMA 21" ? (d == 1 ? math.min(low, e21) : math.max(high, e21)) : (d == 1 ? low : high)
             float sl = slBase - d * slBuf * atr
             float rk = math.abs(en - sl)
-            if rk < minRisk * atr or rk > maxRisk * atr
+            bool rkOk = rk >= minRisk * atr and rk <= maxRisk * atr and rk >= riskCost * costPx
+            if not rkOk
                 dRisk += 1
-            if rk >= minRisk * atr and rk <= maxRisk * atr
+            if rkOk
                 dSet += 1
                 pDir := d
                 pEn := en
@@ -330,7 +384,7 @@ plot(kDir != 0 ? kT3 : na, "Trade : TP3", display=display.data_window)
 plot(sNet, "Backtest : net (R)", display=display.data_window)
 
 // ============================== TABLEAU ==============================
-var table tb = table.new(position.top_right, 2, 14, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+var table tb = table.new(position.top_right, 2, 16, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
 f_row(int r, string a, string b, color cb) =>
     table.cell(tb, 0, r, a, text_color=color.white, text_size=size.small, text_halign=text.align_left)
     table.cell(tb, 1, r, b, text_color=cb, text_size=size.small, text_halign=text.align_left)
@@ -342,7 +396,7 @@ if barstate.islast and showTbl
     float ex = sN > 0 ? sNet / sN : 0.0
     float pf = sGL > 0 ? sGW / sGL : na
     f_row(0, "Tendance | ADX", (e9 > e21 ? "Haussière" : "Baissière") + " | " + str.tostring(adx, "0.0") + (adx > adxMin ? " (OK)" : " (faible)"), adx > adxMin ? color.lime : color.orange)
-    f_row(1, "Session", inA ? "London" : inB ? "New York" : "hors session", inSess ? color.lime : color.orange)
+    f_row(1, "Session", (inA ? "London" : inB ? "New York" : "hors session") + " | HTF " + (htfBull and not htfBear ? "haussier" : htfBear and not htfBull ? "baissier" : "neutre"), inSessWin ? color.lime : color.orange)
     f_row(2, "Setup", st, color.white)
     f_row(3, "Plan", plan, color.white)
     f_row(4, "Trades", str.tostring(sN) + (sN < 30 ? "  — échantillon non significatif" : ""), sN < 30 ? color.orange : color.white)
@@ -353,6 +407,8 @@ if barstate.islast and showTbl
     f_row(9, "Achats | Ventes (n, R)", str.tostring(sNL) + " (" + str.tostring(sRL, "0.0") + ") | " + str.tostring(sNS) + " (" + str.tostring(sRS, "0.0") + ")", color.white)
     f_row(10, "Sorties SL | BE | TP | EMA | durée", str.tostring(xSL) + " | " + str.tostring(xBE) + " | " + str.tostring(xT3) + " | " + str.tostring(xEma) + " | " + str.tostring(xTime), color.white)
     f_row(11, "Coût inclus", str.tostring(costPx, format.mintick) + " / trade", color.gray)
+    f_row(14, "En session | hors session (n, R)", str.tostring(sNin) + " (" + str.tostring(sRin, "0.0") + ") | " + str.tostring(sNout) + " (" + str.tostring(sRout, "0.0") + ")", sRout < 0 and sNout >= 20 ? color.orange : color.white)
+    f_row(15, "Profil", profTxt, color.gray)
     f_row(12, "Filtres : tendance → bougie → ADX → pullback", str.tostring(dTrend) + " → " + str.tostring(dCand) + " → " + str.tostring(dMom) + " → " + str.tostring(dPull), color.gray)
     f_row(13, "Ordres : posés | rejet risque | déclenchés | expirés | invalidés | hors session", str.tostring(dSet) + " | " + str.tostring(dRisk) + " | " + str.tostring(dFill) + " | " + str.tostring(dExp) + " | " + str.tostring(dInv) + " | " + str.tostring(dSess), color.gray)
 
