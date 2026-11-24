@@ -76,7 +76,7 @@ sessTz  = input.string("Europe/Paris", "Fuseau horaire des sessions", group=grS)
 gr5 = "7) Score / plan de trade"
 minScore = input.int(50, "Score minimum pour le plan", minval=0, maxval=100, group=gr5)
 reqLiq   = input.bool(false, "Plan seulement si liquidité prise", group=gr5)
-pdFilter = input.bool(true, "Exclure achat en premium / vente en discount", group=gr5)
+pdFilter = input.bool(false, "Exclure achat en premium / vente en discount (strict)", group=gr5)
 entryPct = input.float(0.5, "Entrée : profondeur dans l'OB (0=bord, 1=fond)", minval=0.0, maxval=1.0, step=0.05, group=gr5)
 slBuf    = input.float(0.2, "Marge du SL (x ATR)", minval=0.0, step=0.05, group=gr5)
 
@@ -161,7 +161,20 @@ type Zone
     bool  smt       // divergence SMT avec le DXY dans la jambe
     bool  dxyAl     // dans le sens du DXY
     bool  dxyAg     // contre le DXY
+    bool  planned   // a déjà donné un plan
+    bool  fBias
+    bool  fPrem
+    bool  fDxy
+    bool  fScore
     box   bx
+
+// rejets : 0 biais | 1 premium | 2 DXY | 3 score | 4 hors portée (trop loin / trop vieux)
+var array<int> rej = array.new_int(5, 0)
+f_tally(Zone z) =>
+    if z.kind == 0 and not z.planned
+        int k = z.fBias ? 0 : z.fPrem ? 1 : z.fDxy ? 2 : z.fScore ? 3 : 4
+        array.set(rej, k, array.get(rej, k) + 1)
+    0
 
 type Liq
     float lvl
@@ -222,10 +235,11 @@ f_hasOb(array<Zone> arr, int x0, int d) =>
 
 f_addZone(array<Zone> arr, float top, float bot, int d, int kind, int x0, bool lq, float vp, float disp, int cap) =>
     box b = box.new(x0, top, bar_index, bot, xloc=xloc.bar_index, bgcolor=na, border_color=na)
-    Zone z = Zone.new(top, bot, d, kind, x0, bar_index, lq, vp, disp, 0.0, false, false, false, false, na, false, false, false, b)
+    Zone z = Zone.new(top, bot, d, kind, x0, bar_index, lq, vp, disp, 0.0, false, false, false, false, na, false, false, false, false, false, false, false, false, b)
     array.push(arr, z)
     if array.size(arr) > cap
         Zone o = array.shift(arr)
+        f_tally(o)
         box.delete(o.bx)
     z
 
@@ -301,7 +315,8 @@ f_eval(Zone z, array<Zone> fz, float lo, float hi, int gD, bool dOn) =>
     z.dxyAl := al
     z.dxyAg := ag
     // DXY : 15 pts (sens 8 + SMT 7), -15 si contre le dollar ; neutre si corrélation cassée
-    z.score := dOn ? math.max(0.0, base * 0.85 + (al ? 8.0 : 0.0) + (z.smt ? 7.0 : 0.0) - (ag ? 15.0 : 0.0)) : base
+    // DXY = confirmation : bonus seulement (+8 sens, +7 SMT) ; le blocage n'existe qu'en mode « Filtre bloquant »
+    z.score := dOn ? math.min(100.0, base + (al ? 8.0 : 0.0) + (z.smt ? 7.0 : 0.0)) : base
     z.score
 
 // Plan : TP1 = liquidité opposée non prise la plus proche (>= 1R), TP2 = la suivante / extrême H4 / 3R, plafonné
@@ -877,6 +892,7 @@ if barstate.isconfirmed
                 zo.tapBar := bar_index
             bool consumed = mitigFirst and not na(zo.tapBar) and bar_index - zo.tapBar >= tapWin - 1
             if inval or consumed
+                f_tally(zo)
                 box.delete(zo.bx)
                 array.remove(obs, i)
 
@@ -959,6 +975,16 @@ if barstate.isconfirmed
         bool near = isB ? close - z.top <= trkFar * atr : z.bot - close <= trkFar * atr
         bool okPD = not pdFilter or not z.prem
         bool okDxy = not (dxyMode == "Filtre bloquant" and z.dxyAg)
+        bool dirOk = (isB ? allowBuy : allowSell) and (not trkAligned or dirBias == z.dir)
+        if fresh and near
+            if not dirOk
+                z.fBias := true
+            else if not okPD
+                z.fPrem := true
+            else if not okDxy
+                z.fDxy := true
+            else if sc < minScore or (reqLiq and not z.liq)
+                z.fScore := true
         if fresh and near and okPD and okDxy
             if isB and allowBuy and sc > sBb
                 sBb := sc
@@ -989,6 +1015,7 @@ if barstate.isconfirmed
                 pBT1 := a1
                 pBT2 := c1
                 pBSc := bB.score
+                bB.planned := true
                 if bB.t != nz(lastPB, -1)
                     dSet += 1
                     lastPB := bB.t
@@ -1000,6 +1027,7 @@ if barstate.isconfirmed
                 pST1 := a2
                 pST2 := c2
                 pSSc := bS.score
+                bS.planned := true
                 if bS.t != nz(lastPS, -1)
                     dSet += 1
                     lastPS := bS.t
@@ -1012,7 +1040,7 @@ plot(pSSl, "Ordre vente : SL", display=display.data_window)
 plot(kNet, "Suivi : net (R)", display=display.data_window)
 
 // ========================= DESSIN (dernière barre) ====================
-var table tb = table.new(position.top_right, 2, 18, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+var table tb = table.new(position.top_right, 2, 19, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
 
 f_why(Zone z, int d) =>
     string w = "-"
@@ -1237,6 +1265,8 @@ if barstate.islast
         string smtTxt = na(smtBullBar) and na(smtBearBar) ? "aucun" : nz(smtBullBar, -1) > nz(smtBearBar, -1) ? "achat il y a " + str.tostring(bar_index - smtBullBar) + "b" : "vente il y a " + str.tostring(bar_index - smtBearBar) + "b"
         string dxTxt = not dxyOn0 ? "désactivé" : "DXY " + dxDirTxt + " → favorise " + favTxt + " | corr " + str.tostring(dCorr, "0.00") + (corrOk ? "" : " (CASSÉE → neutre)") + " | SMT " + smtTxt
         table.cell(tb, 0, 17, "DXY (" + tfBias + ")", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 0, 18, "OB sans plan : biais | premium | DXY | score | hors portée", text_color=tc, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 1, 18, str.tostring(array.get(rej, 0)) + " | " + str.tostring(array.get(rej, 1)) + " | " + str.tostring(array.get(rej, 2)) + " | " + str.tostring(array.get(rej, 3)) + " | " + str.tostring(array.get(rej, 4)), text_color=color.gray, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 1, 17, dxTxt, text_color=not dxyOn ? color.orange : gDir == 1 ? color.lime : gDir == -1 ? color.red : color.gray, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 1, 16, str.tostring(dOb) + " | " + str.tostring(dSet) + " | " + str.tostring(dFill) + "  (score max vu " + str.tostring(dMaxSc, "#") + ")", text_color=color.gray, text_size=size.small, text_halign=text.align_left)
 
