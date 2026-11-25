@@ -3,8 +3,8 @@
 // BOS + Order Block 5★ — Multi-TF
 // Séquence (baissière ; haussière = miroir) :
 //   1. BOS : une bougie CLÔTURE sous le dernier creux de structure            ★
-//   2. OB  : juste après le BOS, la bougie de retracement (haussière)          ★
-//   3. FVG : l'OB est suivi d'un FVG (haut de la bougie +2 < bas de l'OB)     ★
+//   2. OB  : après le BOS, la dernière bougie de retracement (haussière/doji) ★
+//   3. FVG : un FVG baissier démarre sur l'OB ou jusqu'à 3 bougies après     ★
 //   4. Liquidité de l'OB prise : la bougie juste après l'OB dépasse l'OB       ★
 //   5. Sweep : la mèche de l'OB a pris la liquidité de la bougie précédente    ★
 //   5★ = les 5 critères réunis.
@@ -14,8 +14,10 @@ indicator("BOS + Order Block 5★ — Multi-TF", "BOS OB 5★", overlay=true, ma
 
 // ============================ INPUTS ================================
 g1 = "1) Détection"
-lenSw   = input.int(3, "Pivot de structure (bougies de chaque côté)", minval=1, group=g1)
-obWin   = input.int(5, "OB : chercher dans les N bougies après le BOS", minval=1, maxval=30, group=g1)
+lenSw   = input.int(2, "Pivot de structure (bougies de chaque côté)", minval=1, group=g1)
+obWin   = input.int(6, "OB : au plus N bougies après le BOS", minval=1, maxval=30, group=g1)
+fAfter  = input.int(3, "FVG : peut démarrer jusqu'à N bougies après l'OB", minval=0, maxval=10, group=g1)
+allowDj = input.bool(true, "Accepter une bougie neutre (doji) comme OB", group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
 liqMode = input.string("La bougie suivante casse l'OB (ton image)", "Étoile 4 : liquidité de l'OB", options=["La bougie suivante casse l'OB (ton image)", "La bougie suivante balaie l'OB par la mèche"], group=g1)
 
@@ -55,9 +57,30 @@ f_tfName(string tf) =>
 f_state(int st) =>
     st == 0 ? "frais" : st == 1 ? "touché" : "invalidé"
 
+// ============ RECHERCHE DE L'OB (appelée quand un FVG se forme) ============
+// FVG = bougies [2],[1],[0]. OB = dernière bougie opposée (ou doji) entre le BOS et le début du FVG.
+f_findOb(int dir, int age, int fa, int win, bool doji, float gapAtr, float a, bool lqWick) =>
+    int k0 = -1
+    int st = 0
+    bool fvg = dir == -1 ? (high < low[2] and low[2] - high >= gapAtr * a) : (low > high[2] and low - high[2] >= gapAtr * a)
+    if fvg and age >= 3
+        int kMax = math.min(age - 1, 2 + fa)
+        for k = 2 to kMax
+            bool opp = dir == -1 ? close[k] > open[k] : close[k] < open[k]
+            if opp or (doji and close[k] == open[k])
+                k0 := k
+                break
+        if k0 > 0 and age - k0 > win
+            k0 := -1
+        if k0 > 0
+            bool lq = dir == -1 ? (lqWick ? high[k0 - 1] > high[k0] : low[k0 - 1] < low[k0]) : (lqWick ? low[k0 - 1] < low[k0] : high[k0 - 1] > high[k0])
+            bool sw = dir == -1 ? high[k0] > high[k0 + 1] : low[k0] < low[k0 + 1]
+            st := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
+    [k0, st]
+
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
 // Renvoie le dernier BOS + le dernier OB vente et OB achat, valeurs de la bougie CLÔTURÉE.
-f_engine(int len, int win, float gapAtr, bool lqWick) =>
+f_engine(int len, int win, int fa, bool doji, float gapAtr, bool lqWick) =>
     float a  = ta.atr(14)
     float ePh = ta.pivothigh(high, len, len)
     float ePl = ta.pivotlow(low, len, len)
@@ -107,30 +130,29 @@ f_engine(int len, int win, float gapAtr, bool lqWick) =>
         eBar := bar_index
         eUsed := false
         eSH := na
-    // OB juste après le BOS : bougie [2] opposée + FVG [2]→[0]
-    if not eUsed and not na(eBar) and bar_index - 2 > eBar and bar_index - 2 - eBar <= win
-        if eBos == -1 and close[2] > open[2] and high < low[2] and low[2] - high >= gapAtr * a
-            bool lq = lqWick ? high[1] > high[2] : low[1] < low[2]
-            bool sw = high[2] > high[3]
-            dTop := high[2]
-            dBot := low[2]
-            dTm := time[2]
-            dSt := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
-            dState := 0
-            dDet := bar_index
+    // OB après le BOS, confirmé par un FVG
+    if not eUsed and not na(eBar)
+        int age = bar_index - eBar
+        if age - 2 > win + fa
             eUsed := true
-        else if eBos == 1 and close[2] < open[2] and low > high[2] and low - high[2] >= gapAtr * a
-            bool lq = lqWick ? low[1] < low[2] : high[1] > high[2]
-            bool sw = low[2] < low[3]
-            uTop := high[2]
-            uBot := low[2]
-            uTm := time[2]
-            uSt := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
-            uState := 0
-            uDet := bar_index
-            eUsed := true
-    if not eUsed and not na(eBar) and bar_index - 2 - eBar > win
-        eUsed := true
+        else
+            [k0, st] = f_findOb(eBos, age, fa, win, doji, gapAtr, a, lqWick)
+            if k0 > 0
+                if eBos == -1
+                    dTop := high[k0]
+                    dBot := low[k0]
+                    dTm := time[k0]
+                    dSt := st
+                    dState := 0
+                    dDet := bar_index
+                else
+                    uTop := high[k0]
+                    uBot := low[k0]
+                    uTm := time[k0]
+                    uSt := st
+                    uState := 0
+                    uDet := bar_index
+                eUsed := true
     [eBos[1], eLvl[1], dTop[1], dBot[1], dTm[1], dSt[1], dState[1], uTop[1], uBot[1], uTm[1], uSt[1], uState[1]]
 
 // ================== TF DU GRAPHIQUE : détection + dessin ==================
@@ -219,38 +241,32 @@ if barstate.isconfirmed
         sH := na
         evBos := true
 
-    // ---- OB juste après le BOS (bougie [2]) confirmé par le FVG
-    if not used and not na(bosBar) and bar_index - 2 > bosBar and bar_index - 2 - bosBar <= obWin
-        int d = 0
-        int st = 0
-        if bosDir == -1 and close[2] > open[2] and high < low[2] and low[2] - high >= minGap * atr
-            bool lq = liqWick ? high[1] > high[2] : low[1] < low[2]
-            bool sw = high[2] > high[3]
-            d := -1
-            st := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
-        else if bosDir == 1 and close[2] < open[2] and low > high[2] and low - high[2] >= minGap * atr
-            bool lq = liqWick ? low[1] < low[2] : high[1] > high[2]
-            bool sw = low[2] < low[3]
-            d := 1
-            st := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
-        if d != 0
+    // ---- OB après le BOS, confirmé par un FVG (dernière bougie opposée avant le FVG)
+    if not used and not na(bosBar)
+        int age = bar_index - bosBar
+        if age - 2 > obWin + fAfter
             used := true
-            evNewBear := d == -1
-            evNewBull := d == 1
-            evNew5 := st == 5
-            if st >= minStars
-                color c = d == -1 ? cBear : cBull
-                bool five = st == 5
-                box b = box.new(bar_index - 2, high[2], bar_index + extR, low[2], bgcolor=color.new(c, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(c, 50), border_width=five ? 2 : 1)
-                OB o = OB.new(high[2], low[2], d, bar_index - 2, bar_index, st, 0, b, na)
-                o.lb := label.new(bar_index + extR, (high[2] + low[2]) / 2, f_label(o), style=label.style_label_left, color=color.new(c, 100), textcolor=five ? c5 : c, size=size.small)
-                obs.push(o)
-                while obs.size() > maxObs
-                    OB old = obs.shift()
-                    box.delete(old.bx)
-                    label.delete(old.lb)
-    if not used and not na(bosBar) and bar_index - 2 - bosBar > obWin
-        used := true
+        else
+            [k0, st] = f_findOb(bosDir, age, fAfter, obWin, allowDj, minGap, atr, liqWick)
+            if k0 > 0
+                int d = bosDir
+                used := true
+                evNewBear := d == -1
+                evNewBull := d == 1
+                evNew5 := st == 5
+                if st >= minStars
+                    color c = d == -1 ? cBear : cBull
+                    bool five = st == 5
+                    float oTop = high[k0]
+                    float oBot = low[k0]
+                    box b = box.new(bar_index - k0, oTop, bar_index + extR, oBot, bgcolor=color.new(c, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(c, 50), border_width=five ? 2 : 1)
+                    OB o = OB.new(oTop, oBot, d, bar_index - k0, bar_index, st, 0, b, na)
+                    o.lb := label.new(bar_index + extR, (oTop + oBot) / 2, f_label(o), style=label.style_label_left, color=color.new(c, 100), textcolor=five ? c5 : c, size=size.small)
+                    obs.push(o)
+                    while obs.size() > maxObs
+                        OB old = obs.shift()
+                        box.delete(old.bx)
+                        label.delete(old.lb)
 
 // ======================= MULTI-TF (non-repaint) =======================
 int chartSec = timeframe.in_seconds()
@@ -262,10 +278,10 @@ string tA = okA ? tfA : timeframe.period
 string tB = okB ? tfB : timeframe.period
 string tC = okC ? tfC : timeframe.period
 string tD = okD ? tfD : timeframe.period
-[aBos, aLvl, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, obWin, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[bBos, bLvl, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, obWin, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[cBosD, cLvl, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, obWin, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[dBos, dLvl, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, obWin, minGap, liqWick), lookahead=barmerge.lookahead_on)
+[aBos, aLvl, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
+[bBos, bLvl, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
+[cBosD, cLvl, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
+[dBos, dLvl, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
 
 // nouvel OB 5★ sur un TF supérieur
 bool htfNew5 = (okA and ((aDS == 5 and aDTm != aDTm[1]) or (aUS == 5 and aUTm != aUTm[1]))) or (okB and ((bDS == 5 and bDTm != bDTm[1]) or (bUS == 5 and bUTm != bUTm[1]))) or (okC and ((cDS == 5 and cDTm != cDTm[1]) or (cUS == 5 and cUTm != cUTm[1]))) or (okD and ((dDS == 5 and dDTm != dDTm[1]) or (dUS == 5 and dUTm != dUTm[1])))
