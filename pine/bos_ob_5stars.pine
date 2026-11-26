@@ -1,13 +1,15 @@
 //@version=6
 // ─────────────────────────────────────────────────────────────────────────────
 // BOS + Order Block 5★ — Multi-TF
-// Séquence (baissière ; haussière = miroir) :
-//   1. BOS : une bougie CLÔTURE sous le dernier creux de structure            ★
-//   2. OB  : après le BOS, la dernière bougie de retracement (haussière/doji) ★
-//   3. FVG : un FVG baissier démarre sur l'OB ou jusqu'à 3 bougies après     ★
-//   4. Liquidité de l'OB prise : la bougie juste après l'OB dépasse l'OB       ★
-//   5. Sweep : la mèche de l'OB a pris la liquidité de la bougie précédente    ★
-//   5★ = les 5 critères réunis.
+// Modèle (baissier ; haussier = miroir) :
+//   OB → la MÈCHE de la bougie suivante balaie le haut de l'OB → impulsion avec FVG → BOS
+//   Zone = OB + bougie de sweep (du haut de la mèche au plus bas des deux bougies).
+// Étoiles :
+//   ★ OB à l'origine de l'impulsion
+//   ★ FVG (displacement)
+//   ★ BOS confirmé à la clôture (avant ou après l'OB, dans la fenêtre)
+//   ★ Sweep : la mèche de la bougie suivante dépasse l'OB (liquidité de l'OB prise)
+//   ★ Liquidité externe : cette mèche dépasse aussi le dernier sommet précédent
 // Multi-TF : même moteur sur M5 / M15 / H1 / H4 (non-repaint, [1] + lookahead_on).
 // ─────────────────────────────────────────────────────────────────────────────
 indicator("BOS + Order Block 5★ — Multi-TF", "BOS OB 5★", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
@@ -15,11 +17,10 @@ indicator("BOS + Order Block 5★ — Multi-TF", "BOS OB 5★", overlay=true, ma
 // ============================ INPUTS ================================
 g1 = "1) Détection"
 lenSw   = input.int(2, "Pivot de structure (bougies de chaque côté)", minval=1, group=g1)
-obWin   = input.int(6, "OB : au plus N bougies après le BOS", minval=1, maxval=30, group=g1)
-fAfter  = input.int(3, "FVG : peut démarrer jusqu'à N bougies après l'OB", minval=0, maxval=10, group=g1)
-allowDj = input.bool(true, "Accepter une bougie neutre (doji) comme OB", group=g1)
+fAfter  = input.int(3, "FVG : peut démarrer jusqu'à N bougies après le sommet", minval=0, maxval=10, group=g1)
+bosWin  = input.int(12, "BOS : doit arriver dans les N bougies après l'OB", minval=1, maxval=50, group=g1)
+extLook = input.int(10, "Liquidité externe : sommets des N bougies avant l'OB", minval=2, maxval=50, group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
-liqMode = input.string("La bougie suivante casse l'OB (ton image)", "Étoile 4 : liquidité de l'OB", options=["La bougie suivante casse l'OB (ton image)", "La bougie suivante balaie l'OB par la mèche"], group=g1)
 
 g2 = "2) Affichage (TF du graphique)"
 minStars  = input.int(3, "Étoiles minimum affichées", minval=3, maxval=5, group=g2)
@@ -44,8 +45,6 @@ cBull = input.color(#26A69A, "OB achat", group=g4)
 c5    = input.color(#FFD600, "Bordure 5★", group=g4)
 cBos  = input.color(#E91E63, "BOS", group=g4)
 
-bool liqWick = liqMode != "La bougie suivante casse l'OB (ton image)"
-
 // ============================ OUTILS ================================
 f_stars(int n) =>
     str.repeat("★", n) + str.repeat("☆", 5 - n)
@@ -57,39 +56,56 @@ f_tfName(string tf) =>
 f_state(int st) =>
     st == 0 ? "frais" : st == 1 ? "touché" : "invalidé"
 
-// ============ RECHERCHE DE L'OB (appelée quand un FVG se forme) ============
-// FVG = bougies [2],[1],[0]. OB = dernière bougie opposée (ou doji) entre le BOS et le début du FVG.
-f_findOb(int dir, int age, int fa, int win, bool doji, float gapAtr, float a, bool lqWick) =>
-    int k0 = -1
-    int st = 0
+// Candidat OB quand un FVG se forme (bougies [2],[1],[0]).
+// s = bougie au sommet (creux) du mouvement juste avant le FVG.
+// Si sa mèche dépasse la bougie d'avant → OB = bougie d'avant, sweep = vrai.
+f_cand(int dir, int fa, float gapAtr, float a, int xl) =>
     bool fvg = dir == -1 ? (high < low[2] and low[2] - high >= gapAtr * a) : (low > high[2] and low - high[2] >= gapAtr * a)
-    if fvg and age >= 3
-        int kMax = math.min(age - 1, 2 + fa)
-        for k = 2 to kMax
-            bool opp = dir == -1 ? close[k] > open[k] : close[k] < open[k]
-            if opp or (doji and close[k] == open[k])
-                k0 := k
-                break
-        if k0 > 0 and age - k0 > win
-            k0 := -1
-        if k0 > 0
-            bool lq = dir == -1 ? (lqWick ? high[k0 - 1] > high[k0] : low[k0 - 1] < low[k0]) : (lqWick ? low[k0 - 1] < low[k0] : high[k0 - 1] > high[k0])
-            bool sw = dir == -1 ? high[k0] > high[k0 + 1] : low[k0] < low[k0 + 1]
-            st := 3 + (lq ? 1 : 0) + (sw ? 1 : 0)
-    [k0, st]
+    int kOb = -1
+    float top = na
+    float bot = na
+    bool sw = false
+    bool ext = false
+    if fvg
+        int s = 2
+        for k = 2 to 3 + fa
+            if dir == -1 ? high[k] > high[s] : low[k] < low[s]
+                s := k
+        sw := dir == -1 ? high[s] > high[s + 1] : low[s] < low[s + 1]
+        kOb := sw ? s + 1 : s
+        top := math.max(high[s], high[kOb])
+        bot := math.min(low[s], low[kOb])
+        float ref = dir == -1 ? high[kOb + 1] : low[kOb + 1]
+        for j = kOb + 1 to kOb + xl
+            ref := dir == -1 ? math.max(ref, high[j]) : math.min(ref, low[j])
+        ext := sw and (dir == -1 ? high[s] > ref : low[s] < ref)
+    [kOb, top, bot, sw, ext]
 
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
-// Renvoie le dernier BOS + le dernier OB vente et OB achat, valeurs de la bougie CLÔTURÉE.
-f_engine(int len, int win, int fa, bool doji, float gapAtr, bool lqWick) =>
+// Renvoie le dernier BOS + le dernier OB vente / achat confirmé (valeurs de la bougie CLÔTURÉE).
+f_engine(int len, int fa, int bw, int xl, float gapAtr) =>
     float a  = ta.atr(14)
     float ePh = ta.pivothigh(high, len, len)
     float ePl = ta.pivotlow(low, len, len)
     var float eSH = na
     var float eSL = na
     var int   eBos = 0
-    var float eLvl = na
-    var int   eBar = na
-    var bool  eUsed = true
+    var int   lastBearBos = na
+    var int   lastBullBos = na
+    // candidats en attente de BOS
+    var float pdTop = na
+    var float pdBot = na
+    var int   pdTm = na
+    var int   pdBar = na
+    var int   pdObBar = na
+    var int   pdSt = 0
+    var float puTop = na
+    var float puBot = na
+    var int   puTm = na
+    var int   puBar = na
+    var int   puObBar = na
+    var int   puSt = 0
+    // OB confirmés
     var float dTop = na
     var float dBot = na
     var int   dTm = na
@@ -106,7 +122,7 @@ f_engine(int len, int win, int fa, bool doji, float gapAtr, bool lqWick) =>
         eSH := ePh
     if not na(ePl)
         eSL := ePl
-    // états des OB
+    // états
     if dState < 2 and not na(dTop)
         if close > dTop
             dState := 2
@@ -117,43 +133,59 @@ f_engine(int len, int win, int fa, bool doji, float gapAtr, bool lqWick) =>
             uState := 2
         else if bar_index > uDet and low <= uTop
             uState := 1
+    if not na(pdTop) and close > pdTop
+        pdTop := na
+    if not na(puBot) and close < puBot
+        puBot := na
+        puTop := na
+    // candidats
+    [kD, tD, bD, swD, exD] = f_cand(-1, fa, gapAtr, a, xl)
+    if kD > 0
+        pdTop := tD
+        pdBot := bD
+        pdTm := time[kD]
+        pdBar := bar_index
+        pdObBar := bar_index - kD
+        pdSt := 2 + (swD ? 1 : 0) + (exD ? 1 : 0)
+    [kU, tU, bU, swU, exU] = f_cand(1, fa, gapAtr, a, xl)
+    if kU > 0
+        puTop := tU
+        puBot := bU
+        puTm := time[kU]
+        puBar := bar_index
+        puObBar := bar_index - kU
+        puSt := 2 + (swU ? 1 : 0) + (exU ? 1 : 0)
     // BOS à la clôture
     if not na(eSL) and close < eSL
         eBos := -1
-        eLvl := eSL
-        eBar := bar_index
-        eUsed := false
+        lastBearBos := bar_index
         eSL := na
     else if not na(eSH) and close > eSH
         eBos := 1
-        eLvl := eSH
-        eBar := bar_index
-        eUsed := false
+        lastBullBos := bar_index
         eSH := na
-    // OB après le BOS, confirmé par un FVG
-    if not eUsed and not na(eBar)
-        int age = bar_index - eBar
-        if age - 2 > win + fa
-            eUsed := true
-        else
-            [k0, st] = f_findOb(eBos, age, fa, win, doji, gapAtr, a, lqWick)
-            if k0 > 0
-                if eBos == -1
-                    dTop := high[k0]
-                    dBot := low[k0]
-                    dTm := time[k0]
-                    dSt := st
-                    dState := 0
-                    dDet := bar_index
-                else
-                    uTop := high[k0]
-                    uBot := low[k0]
-                    uTm := time[k0]
-                    uSt := st
-                    uState := 0
-                    uDet := bar_index
-                eUsed := true
-    [eBos[1], eLvl[1], dTop[1], dBot[1], dTm[1], dSt[1], dState[1], uTop[1], uBot[1], uTm[1], uSt[1], uState[1]]
+    // confirmation : BOS entre l'OB et OB + bw bougies
+    if not na(pdTop) and not na(lastBearBos) and lastBearBos >= pdObBar and lastBearBos - pdObBar <= bw
+        dTop := pdTop
+        dBot := pdBot
+        dTm := pdTm
+        dSt := pdSt + 1
+        dState := 0
+        dDet := bar_index
+        pdTop := na
+    else if not na(pdTop) and bar_index - pdObBar > bw
+        pdTop := na
+    if not na(puTop) and not na(lastBullBos) and lastBullBos >= puObBar and lastBullBos - puObBar <= bw
+        uTop := puTop
+        uBot := puBot
+        uTm := puTm
+        uSt := puSt + 1
+        uState := 0
+        uDet := bar_index
+        puTop := na
+    else if not na(puTop) and bar_index - puObBar > bw
+        puTop := na
+    [eBos[1], dTop[1], dBot[1], dTm[1], dSt[1], dState[1], uTop[1], uBot[1], uTm[1], uSt[1], uState[1]]
 
 // ================== TF DU GRAPHIQUE : détection + dessin ==================
 type OB
@@ -163,11 +195,22 @@ type OB
     int   x
     int   det
     int   stars
+    bool  sw
+    bool  ext
     int   state
     box   bx
     label lb
 
+type Cand
+    float top
+    float bot
+    int   obBar
+    bool  sw
+    bool  ext
+
 var array<OB> obs = array.new<OB>()
+var Cand candD = na
+var Cand candU = na
 float atr = ta.atr(14)
 float ph  = ta.pivothigh(high, lenSw, lenSw)
 float pl  = ta.pivotlow(low, lenSw, lenSw)
@@ -176,8 +219,8 @@ var float sL = na
 var int   sHi = na
 var int   sLi = na
 var int   bosDir = 0
-var int   bosBar = na
-var bool  used = true
+var int   lastBearBos = na
+var int   lastBullBos = na
 
 bool evBos  = false
 bool evNew5 = false
@@ -185,7 +228,22 @@ bool evNewBear = false
 bool evNewBull = false
 
 f_label(OB o) =>
-    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + " · " + f_state(o.state)
+    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + " · liq. ext " + (o.ext ? "✓" : "✗") + " · " + f_state(o.state)
+
+f_confirm(Cand c, int d) =>
+    int st = 3 + (c.sw ? 1 : 0) + (c.ext ? 1 : 0)
+    if st >= minStars
+        color col = d == -1 ? cBear : cBull
+        bool five = st == 5
+        box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
+        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na)
+        o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
+        obs.push(o)
+        while obs.size() > maxObs
+            OB old = obs.shift()
+            box.delete(old.bx)
+            label.delete(old.lb)
+    st
 
 if barstate.isconfirmed
     if not na(ph)
@@ -195,7 +253,7 @@ if barstate.isconfirmed
         sL := pl
         sLi := bar_index - lenSw
 
-    // ---- états : touché / invalidé, extension des zones
+    // ---- états des OB : touché / invalidé, extension
     if obs.size() > 0
         for i = obs.size() - 1 to 0
             OB o = obs.get(i)
@@ -221,14 +279,29 @@ if barstate.isconfirmed
                     label.set_x(o.lb, bar_index + extR)
                     label.set_text(o.lb, f_label(o))
 
+    // ---- candidats invalidés avant le BOS
+    if not na(candD)
+        if close > candD.top or bar_index - candD.obBar > bosWin
+            candD := na
+    if not na(candU)
+        if close < candU.bot or bar_index - candU.obBar > bosWin
+            candU := na
+
+    // ---- nouveaux candidats (au moment où le FVG se forme)
+    [cKD, cTD, cBD, cSwD, cExD] = f_cand(-1, fAfter, minGap, atr, extLook)
+    if cKD > 0
+        candD := Cand.new(cTD, cBD, bar_index - cKD, cSwD, cExD)
+    [cKU, cTU, cBU, cSwU, cExU] = f_cand(1, fAfter, minGap, atr, extLook)
+    if cKU > 0
+        candU := Cand.new(cTU, cBU, bar_index - cKU, cSwU, cExU)
+
     // ---- BOS à la clôture
     if not na(sL) and close < sL
         if showBos
             line.new(sLi, sL, bar_index, sL, color=cBos, width=1)
             label.new(int(math.round((sLi + bar_index) / 2)), sL, "BOS", style=label.style_label_up, color=color.new(cBos, 100), textcolor=cBos, size=size.tiny)
         bosDir := -1
-        bosBar := bar_index
-        used := false
+        lastBearBos := bar_index
         sL := na
         evBos := true
     else if not na(sH) and close > sH
@@ -236,37 +309,23 @@ if barstate.isconfirmed
             line.new(sHi, sH, bar_index, sH, color=cBos, width=1)
             label.new(int(math.round((sHi + bar_index) / 2)), sH, "BOS", style=label.style_label_down, color=color.new(cBos, 100), textcolor=cBos, size=size.tiny)
         bosDir := 1
-        bosBar := bar_index
-        used := false
+        lastBullBos := bar_index
         sH := na
         evBos := true
 
-    // ---- OB après le BOS, confirmé par un FVG (dernière bougie opposée avant le FVG)
-    if not used and not na(bosBar)
-        int age = bar_index - bosBar
-        if age - 2 > obWin + fAfter
-            used := true
-        else
-            [k0, st] = f_findOb(bosDir, age, fAfter, obWin, allowDj, minGap, atr, liqWick)
-            if k0 > 0
-                int d = bosDir
-                used := true
-                evNewBear := d == -1
-                evNewBull := d == 1
-                evNew5 := st == 5
-                if st >= minStars
-                    color c = d == -1 ? cBear : cBull
-                    bool five = st == 5
-                    float oTop = high[k0]
-                    float oBot = low[k0]
-                    box b = box.new(bar_index - k0, oTop, bar_index + extR, oBot, bgcolor=color.new(c, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(c, 50), border_width=five ? 2 : 1)
-                    OB o = OB.new(oTop, oBot, d, bar_index - k0, bar_index, st, 0, b, na)
-                    o.lb := label.new(bar_index + extR, (oTop + oBot) / 2, f_label(o), style=label.style_label_left, color=color.new(c, 100), textcolor=five ? c5 : c, size=size.small)
-                    obs.push(o)
-                    while obs.size() > maxObs
-                        OB old = obs.shift()
-                        box.delete(old.bx)
-                        label.delete(old.lb)
+    // ---- confirmation : BOS entre l'OB et OB + bosWin bougies (avant ou après le FVG)
+    if not na(candD) and not na(lastBearBos)
+        if lastBearBos >= candD.obBar and lastBearBos - candD.obBar <= bosWin
+            int st = f_confirm(candD, -1)
+            evNewBear := true
+            evNew5 := evNew5 or st == 5
+            candD := na
+    if not na(candU) and not na(lastBullBos)
+        if lastBullBos >= candU.obBar and lastBullBos - candU.obBar <= bosWin
+            int st = f_confirm(candU, 1)
+            evNewBull := true
+            evNew5 := evNew5 or st == 5
+            candU := na
 
 // ======================= MULTI-TF (non-repaint) =======================
 int chartSec = timeframe.in_seconds()
@@ -278,12 +337,11 @@ string tA = okA ? tfA : timeframe.period
 string tB = okB ? tfB : timeframe.period
 string tC = okC ? tfC : timeframe.period
 string tD = okD ? tfD : timeframe.period
-[aBos, aLvl, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[bBos, bLvl, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[cBosD, cLvl, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
-[dBos, dLvl, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, obWin, fAfter, allowDj, minGap, liqWick), lookahead=barmerge.lookahead_on)
+[aBos, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+[bBos, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+[cBosD, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+[dBos, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
 
-// nouvel OB 5★ sur un TF supérieur
 bool htfNew5 = (okA and ((aDS == 5 and aDTm != aDTm[1]) or (aUS == 5 and aUTm != aUTm[1]))) or (okB and ((bDS == 5 and bDTm != bDTm[1]) or (bUS == 5 and bUTm != bUTm[1]))) or (okC and ((cDS == 5 and cDTm != cDTm[1]) or (cUS == 5 and cUTm != cUTm[1]))) or (okD and ((dDS == 5 and dDTm != dDTm[1]) or (dUS == 5 and dUTm != dUTm[1])))
 
 var array<box>   hBx = array.new<box>()
@@ -335,7 +393,6 @@ if barstate.islast
         table.cell(tb, 1, 0, "Dernier BOS", text_color=color.white, text_size=size.small)
         table.cell(tb, 2, 0, "Dernier OB VENTE", text_color=cBear, text_size=size.small)
         table.cell(tb, 3, 0, "Dernier OB ACHAT", text_color=cBull, text_size=size.small)
-        // TF du graphique : derniers OB dessinés
         float cdT = na
         float cdB = na
         int cdS = 0
