@@ -51,6 +51,16 @@ showHtf  = input.bool(false, "Dessiner aussi les OB des TF du tableau", group=g3
 htfStars = input.int(4, "Étoiles minimum (TF supérieurs)", minval=3, maxval=5, group=g3)
 showTbl  = input.bool(true, "Tableau multi-TF", group=g3)
 
+g5 = "5) Mesure de performance (backtest des OB)"
+btOn   = input.bool(true, "Mesurer chaque OB : ordre limite dans l'OB", group=g5)
+entPct = input.float(0.5, "Entrée : profondeur dans l'OB (0,5 = 50 %)", minval=0.0, maxval=1.0, step=0.05, group=g5)
+btBuf  = input.float(0.1, "SL : marge au-delà de l'OB (x ATR)", minval=0.0, step=0.05, group=g5)
+btTp   = input.float(2.0, "TP retenu pour l'espérance (R)", minval=0.5, maxval=3.0, step=0.5, group=g5)
+btExp  = input.int(50, "Ordre annulé après N bougies sans entrée", minval=5, group=g5)
+btHold = input.int(100, "Durée max d'un trade (bougies)", minval=5, group=g5)
+btCost = input.float(0.35, "Coût spread + frais (en prix)", minval=0.0, step=0.05, group=g5)
+showBt = input.bool(true, "Tableau de performance", group=g5)
+
 g4 = "4) Couleurs"
 cBear = input.color(#EF5350, "OB vente", group=g4)
 cBull = input.color(#26A69A, "OB achat", group=g4)
@@ -329,6 +339,52 @@ bool evNew5Ote = false
 bool evNewBear = false
 bool evNewBull = false
 
+// ===================== MESURE DE PERFORMANCE =====================
+// Chaque OB confirmé = un ordre limite à 50 % de l'OB, SL au-delà de l'OB.
+// On mesure si 1R / 2R / 3R sont atteints AVANT le SL (SL prioritaire dans une même bougie).
+type Trade
+    int   dir
+    float en
+    float sl
+    float risk
+    int   g
+    bool  ote
+    int   created
+    int   fillBar
+    int   state
+    float mfe
+
+var array<Trade> trades = array.new<Trade>()
+// index : 0 = 3★, 1 = 4★, 2 = 5★, 3 = OTE ✓, 4 = total
+var array<int>   bN  = array.new_int(5, 0)
+var array<int>   bW  = array.new_int(5, 0)
+var array<int>   b1  = array.new_int(5, 0)
+var array<int>   b2  = array.new_int(5, 0)
+var array<int>   b3  = array.new_int(5, 0)
+var array<float> bR  = array.new_float(5, 0.0)
+var int bExp = 0
+
+f_addTrade(Cand c, int d, int st) =>
+    if btOn and (maxSize <= 0 or c.top - c.bot <= maxSize * atr)
+        float en = d == -1 ? c.bot + (c.top - c.bot) * entPct : c.top - (c.top - c.bot) * entPct
+        float sl = d == -1 ? c.top + btBuf * atr : c.bot - btBuf * atr
+        float rk = math.max(math.abs(en - sl), syminfo.mintick)
+        trades.push(Trade.new(d, en, sl, rk, st % 10, st >= 10, bar_index, na, 0, 0.0))
+    0
+
+f_rec(Trade t, float res) =>
+    array<int> ks = array.from(t.g - 3, 4)
+    if t.ote
+        ks.push(3)
+    for k in ks
+        bN.set(k, bN.get(k) + 1)
+        bW.set(k, bW.get(k) + (res > 0 ? 1 : 0))
+        b1.set(k, b1.get(k) + (t.mfe >= 1.0 ? 1 : 0))
+        b2.set(k, b2.get(k) + (t.mfe >= 2.0 ? 1 : 0))
+        b3.set(k, b3.get(k) + (t.mfe >= 3.0 ? 1 : 0))
+        bR.set(k, bR.get(k) + res)
+    0
+
 f_label(OB o) =>
     (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + " · liq. ext " + (o.ext ? "✓" : "✗") + " · OTE " + (o.ote ? "✓" : "✗") + " · " + f_state(o.state)
 
@@ -438,6 +494,7 @@ if barstate.isconfirmed
     if not na(candD) and not na(lastBearBos)
         if lastBearBos >= candD.obBar and lastBearBos - candD.obBar <= bosWin
             int st = f_confirm(candD, -1)
+            f_addTrade(candD, -1, st)
             evNewBear := true
             evNew5 := evNew5 or st % 10 == 5
             evNew5Ote := evNew5Ote or st == 15
@@ -445,6 +502,7 @@ if barstate.isconfirmed
     if not na(candU) and not na(lastBullBos)
         if lastBullBos >= candU.obBar and lastBullBos - candU.obBar <= bosWin
             int st = f_confirm(candU, 1)
+            f_addTrade(candU, 1, st)
             evNewBull := true
             evNew5 := evNew5 or st % 10 == 5
             evNew5Ote := evNew5Ote or st == 15
@@ -580,6 +638,71 @@ if barstate.islast
         f_row(3, okB, tfB, bBos, bDT, bDB, bDS, bDSt, bUT, bUB, bUS, bUSt)
         f_row(4, okC, tfC, cBosD, cDT, cDB, cDS, cDSt, cUT, cUB, cUS, cUSt)
         f_row(5, okD, tfD, dBos, dDT, dDB, dDS, dDSt, dUT, dUB, dUS, dUSt)
+
+// ---- simulation des trades (bougies clôturées)
+if barstate.isconfirmed and btOn and trades.size() > 0
+    for i = trades.size() - 1 to 0
+        Trade t = trades.get(i)
+        if bar_index > t.created
+            bool done = false
+            float res = na
+            if t.state == 0
+                if t.dir == -1 ? high >= t.en : low <= t.en
+                    t.state := 1
+                    t.fillBar := bar_index
+                    if t.dir == -1 ? high >= t.sl : low <= t.sl
+                        done := true
+                        res := -1.0
+                else if bar_index - t.created > btExp
+                    bExp += 1
+                    trades.remove(i)
+                    continue
+            else
+                if t.dir == -1 ? high >= t.sl : low <= t.sl
+                    done := true
+                    res := t.mfe >= btTp ? btTp : -1.0
+                else
+                    t.mfe := math.max(t.mfe, t.dir == -1 ? (t.en - low) / t.risk : (high - t.en) / t.risk)
+                    if t.mfe >= math.max(3.0, btTp)
+                        done := true
+                        res := btTp
+                    else if bar_index - t.fillBar >= btHold
+                        done := true
+                        res := t.mfe >= btTp ? btTp : t.dir * (close - t.en) / t.risk
+            if done
+                f_rec(t, res - btCost / t.risk)
+                trades.remove(i)
+
+var table tbBt = table.new(position.bottom_right, 7, 7, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+f_btRow(int r, string name, int k) =>
+    int n = bN.get(k)
+    color w = color.white
+    float ex = n > 0 ? bR.get(k) / n : 0.0
+    table.cell(tbBt, 0, r, name, text_color=k == 2 ? c5 : w, text_size=size.small, text_halign=text.align_left)
+    table.cell(tbBt, 1, r, str.tostring(n), text_color=n < 30 ? color.orange : w, text_size=size.small)
+    table.cell(tbBt, 2, r, n > 0 ? str.tostring(100.0 * b1.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
+    table.cell(tbBt, 3, r, n > 0 ? str.tostring(100.0 * b2.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
+    table.cell(tbBt, 4, r, n > 0 ? str.tostring(100.0 * b3.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
+    table.cell(tbBt, 5, r, n > 0 ? str.tostring(ex, "0.00") + " R" : "-", text_color=ex > 0 ? color.lime : ex < 0 ? color.red : w, text_size=size.small)
+    table.cell(tbBt, 6, r, str.tostring(bR.get(k), "0.0") + " R", text_color=bR.get(k) >= 0 ? color.lime : color.red, text_size=size.small)
+    0
+
+if barstate.islast and btOn and showBt
+    color w = color.white
+    table.cell(tbBt, 0, 0, "Entrée " + str.tostring(entPct * 100, "0") + " % OB", text_color=w, text_size=size.small)
+    table.cell(tbBt, 1, 0, "Trades", text_color=w, text_size=size.small)
+    table.cell(tbBt, 2, 0, "1R atteint", text_color=w, text_size=size.small)
+    table.cell(tbBt, 3, 0, "2R atteint", text_color=w, text_size=size.small)
+    table.cell(tbBt, 4, 0, "3R atteint", text_color=w, text_size=size.small)
+    table.cell(tbBt, 5, 0, "Espérance (TP " + str.tostring(btTp, "0.0") + "R)", text_color=w, text_size=size.small)
+    table.cell(tbBt, 6, 0, "Net", text_color=w, text_size=size.small)
+    f_btRow(1, "★★★☆☆", 0)
+    f_btRow(2, "★★★★☆", 1)
+    f_btRow(3, "★★★★★", 2)
+    f_btRow(4, "+ OTE ✓", 3)
+    f_btRow(5, "TOTAL", 4)
+    table.cell(tbBt, 0, 6, "Non déclenchés : " + str.tostring(bExp) + " | en cours : " + str.tostring(trades.size()), text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.merge_cells(tbBt, 0, 6, 6, 6)
 
 // ============================== ALERTES ==============================
 bool in5 = false
