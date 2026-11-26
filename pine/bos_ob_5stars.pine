@@ -22,11 +22,15 @@ bosWin  = input.int(12, "BOS : doit arriver dans les N bougies après l'OB", min
 extLook = input.int(10, "Liquidité externe : sommets des N bougies avant l'OB", minval=2, maxval=50, group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
 
-g2 = "2) Affichage (TF du graphique)"
+g2 = "2) Affichage"
+tfShow    = input.timeframe("", "TF des OB affichés (vide = TF du graphique)", group=g2)
+maxPerDir = input.int(2, "OB affichés par sens (les plus récents)", minval=1, maxval=20, group=g2)
+maxSize   = input.float(3.0, "Ignorer les OB plus hauts que N x ATR (0 = off)", minval=0.0, step=0.5, group=g2)
 minStars  = input.int(3, "Étoiles minimum affichées", minval=3, maxval=5, group=g2)
 maxObs    = input.int(20, "OB affichés au maximum", minval=1, maxval=100, group=g2)
 extR      = input.int(15, "Extension à droite (bougies)", minval=0, group=g2)
 showBos   = input.bool(true, "Afficher les BOS", group=g2)
+hideTouch = input.bool(true, "Masquer un OB dès qu'il est touché (seulement les OB frais)", group=g2)
 showInval = input.bool(false, "Garder les OB invalidés (gris)", group=g2)
 
 g3 = "3) Multi-TF"
@@ -35,7 +39,7 @@ tfA      = input.timeframe("5", "TF 1", group=g3)
 tfB      = input.timeframe("15", "TF 2", group=g3)
 tfC      = input.timeframe("60", "TF 3", group=g3)
 tfD      = input.timeframe("240", "TF 4", group=g3)
-showHtf  = input.bool(true, "Dessiner les OB des TF supérieurs", group=g3)
+showHtf  = input.bool(false, "Dessiner aussi les OB des TF du tableau", group=g3)
 htfStars = input.int(4, "Étoiles minimum (TF supérieurs)", minval=3, maxval=5, group=g3)
 showTbl  = input.bool(true, "Tableau multi-TF", group=g3)
 
@@ -209,6 +213,7 @@ type Cand
     bool  ext
 
 var array<OB> obs = array.new<OB>()
+bool useChart = tfShow == "" or tfShow == timeframe.period
 var Cand candD = na
 var Cand candU = na
 float atr = ta.atr(14)
@@ -232,13 +237,24 @@ f_label(OB o) =>
 
 f_confirm(Cand c, int d) =>
     int st = 3 + (c.sw ? 1 : 0) + (c.ext ? 1 : 0)
-    if st >= minStars
+    bool sizeOk = maxSize <= 0 or c.top - c.bot <= maxSize * atr
+    if useChart and sizeOk and st >= minStars
         color col = d == -1 ? cBear : cBull
         bool five = st == 5
         box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
         OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na)
         o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
         obs.push(o)
+        // ne garder que les maxPerDir plus récents de ce sens
+        int cnt = 0
+        for i = obs.size() - 1 to 0
+            OB q = obs.get(i)
+            if q.dir == d
+                cnt += 1
+                if cnt > maxPerDir
+                    box.delete(q.bx)
+                    label.delete(q.lb)
+                    obs.remove(i)
         while obs.size() > maxObs
             OB old = obs.shift()
             box.delete(old.bx)
@@ -275,6 +291,11 @@ if barstate.isconfirmed
                 else
                     if o.state == 0 and bar_index > o.det and (o.dir == -1 ? high >= o.bot : low <= o.top)
                         o.state := 1
+                        if hideTouch
+                            box.delete(o.bx)
+                            label.delete(o.lb)
+                            obs.remove(i)
+                            continue
                     box.set_right(o.bx, bar_index + extR)
                     label.set_x(o.lb, bar_index + extR)
                     label.set_text(o.lb, f_label(o))
@@ -297,7 +318,7 @@ if barstate.isconfirmed
 
     // ---- BOS à la clôture
     if not na(sL) and close < sL
-        if showBos
+        if showBos and useChart
             line.new(sLi, sL, bar_index, sL, color=cBos, width=1)
             label.new(int(math.round((sLi + bar_index) / 2)), sL, "BOS", style=label.style_label_up, color=color.new(cBos, 100), textcolor=cBos, size=size.tiny)
         bosDir := -1
@@ -305,7 +326,7 @@ if barstate.isconfirmed
         sL := na
         evBos := true
     else if not na(sH) and close > sH
-        if showBos
+        if showBos and useChart
             line.new(sHi, sH, bar_index, sH, color=cBos, width=1)
             label.new(int(math.round((sHi + bar_index) / 2)), sH, "BOS", style=label.style_label_down, color=color.new(cBos, 100), textcolor=cBos, size=size.tiny)
         bosDir := 1
@@ -341,6 +362,8 @@ string tD = okD ? tfD : timeframe.period
 [bBos, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
 [cBosD, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
 [dBos, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+string tS = useChart ? timeframe.period : tfShow
+[sBos, sDT, sDB, sDTm, sDS, sDSt, sUT, sUB, sUTm, sUS, sUSt] = request.security(syminfo.tickerid, tS, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
 
 bool htfNew5 = (okA and ((aDS == 5 and aDTm != aDTm[1]) or (aUS == 5 and aUTm != aUTm[1]))) or (okB and ((bDS == 5 and bDTm != bDTm[1]) or (bUS == 5 and bUTm != bUTm[1]))) or (okC and ((cDS == 5 and cDTm != cDTm[1]) or (cUS == 5 and cUTm != cUTm[1]))) or (okD and ((dDS == 5 and dDTm != dDTm[1]) or (dUS == 5 and dUTm != dUTm[1])))
 
@@ -348,8 +371,8 @@ var array<box>   hBx = array.new<box>()
 var array<label> hLb = array.new<label>()
 var table tb = table.new(position.top_right, 4, 6, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
 
-f_htfZone(bool ok, string tf, float top, float bot, int tm, int st, int state, int d) =>
-    if ok and showHtf and not na(top) and state < 2 and st >= htfStars
+f_htfZone(bool ok, string tf, float top, float bot, int tm, int st, int state, int d, bool force) =>
+    if ok and (showHtf or force) and not na(top) and (hideTouch ? state == 0 : state < 2) and st >= (force ? minStars : htfStars)
         color c = d == -1 ? cBear : cBull
         int xr = time + extR * chartSec * 1000
         hBx.push(box.new(tm, top, xr, bot, xloc=xloc.bar_time, bgcolor=color.new(c, 92), border_color=st == 5 ? c5 : color.new(c, 40), border_style=line.style_dashed, border_width=st == 5 ? 2 : 1))
@@ -357,7 +380,7 @@ f_htfZone(bool ok, string tf, float top, float bot, int tm, int st, int state, i
     0
 
 f_cell(float top, float bot, int st, int state) =>
-    na(top) ? "—" : str.tostring(bot, format.mintick) + " – " + str.tostring(top, format.mintick) + "  " + f_stars(st) + " · " + f_state(state)
+    na(top) or (hideTouch and state != 0) ? "—" : str.tostring(bot, format.mintick) + " – " + str.tostring(top, format.mintick) + "  " + f_stars(st) + " · " + f_state(state)
 
 f_row(int r, bool ok, string tf, int bos, float dT, float dB, int dS, int dSt, float uT, float uB, int uS, int uSt) =>
     color w = color.white
@@ -379,14 +402,18 @@ if barstate.islast
         label.delete(l)
     hBx.clear()
     hLb.clear()
-    f_htfZone(okA, tfA, aDT, aDB, aDTm, aDS, aDSt, -1)
-    f_htfZone(okA, tfA, aUT, aUB, aUTm, aUS, aUSt, 1)
-    f_htfZone(okB, tfB, bDT, bDB, bDTm, bDS, bDSt, -1)
-    f_htfZone(okB, tfB, bUT, bUB, bUTm, bUS, bUSt, 1)
-    f_htfZone(okC, tfC, cDT, cDB, cDTm, cDS, cDSt, -1)
-    f_htfZone(okC, tfC, cUT, cUB, cUTm, cUS, cUSt, 1)
-    f_htfZone(okD, tfD, dDT, dDB, dDTm, dDS, dDSt, -1)
-    f_htfZone(okD, tfD, dUT, dUB, dUTm, dUS, dUSt, 1)
+    f_htfZone(okA, tfA, aDT, aDB, aDTm, aDS, aDSt, -1, false)
+    f_htfZone(okA, tfA, aUT, aUB, aUTm, aUS, aUSt, 1, false)
+    f_htfZone(okB, tfB, bDT, bDB, bDTm, bDS, bDSt, -1, false)
+    f_htfZone(okB, tfB, bUT, bUB, bUTm, bUS, bUSt, 1, false)
+    f_htfZone(okC, tfC, cDT, cDB, cDTm, cDS, cDSt, -1, false)
+    f_htfZone(okC, tfC, cUT, cUB, cUTm, cUS, cUSt, 1, false)
+    f_htfZone(okD, tfD, dDT, dDB, dDTm, dDS, dDSt, -1, false)
+    f_htfZone(okD, tfD, dUT, dUB, dUTm, dUS, dUSt, 1, false)
+    // TF choisi (différent du graphique) : ses derniers OB frais uniquement
+    if not useChart
+        f_htfZone(true, tfShow, sDT, sDB, sDTm, sDS, sDSt, -1, true)
+        f_htfZone(true, tfShow, sUT, sUB, sUTm, sUS, sUSt, 1, true)
 
     if showTbl
         table.cell(tb, 0, 0, "TF", text_color=color.white, text_size=size.small)
@@ -421,7 +448,7 @@ if barstate.islast
 // ============================== ALERTES ==============================
 bool in5 = false
 for o in obs
-    if o.stars == 5 and o.state < 2 and high >= o.bot and low <= o.top
+    if o.stars == 5 and o.state < 2 and high >= o.bot and low <= o.top and not hideTouch
         in5 := true
 alertcondition(evBos, "BOS (TF du graphique)", "{{ticker}} : BOS détecté")
 alertcondition(evNew5, "Nouvel OB 5★ (TF du graphique)", "{{ticker}} : nouvel order block 5 étoiles")
