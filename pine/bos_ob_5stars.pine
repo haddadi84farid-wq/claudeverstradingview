@@ -181,6 +181,18 @@ f_trend(int len) =>
 f_swStar(bool sw, bool ext) =>
     sw and (not ext or extMode == "Ignorer")
 
+// Le prix est-il déjà revenu dans l'OB entre sa formation et la confirmation par le BOS ?
+// (on saute l'OB, la bougie de sweep et la 1re bougie d'impulsion)
+f_mitig(int dir, float top, float bot, int obBar) =>
+    bool r = false
+    int n = bar_index - obBar - 3
+    if n >= 0
+        for k = 0 to n
+            if dir == -1 ? high[k] >= bot : low[k] <= top
+                r := true
+                break
+    r
+
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
 // Renvoie le dernier BOS + le dernier OB vente / achat confirmé (valeurs de la bougie CLÔTURÉE).
 f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
@@ -289,7 +301,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         dBot := pdBot
         dTm := pdTm
         dSt := pdSt + 1 + (swingTr == -1 ? 1 : 0) + (f_ote(-1, pdTop, pdBot, pdObBar, mhp, mhi, mlp, mli) ? 10 : 0)
-        dState := 0
+        dState := f_mitig(-1, pdTop, pdBot, pdObBar) ? 1 : 0
         dDet := bar_index
         pdTop := na
     else if not na(pdTop) and bar_index - pdObBar > bw
@@ -299,7 +311,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         uBot := puBot
         uTm := puTm
         uSt := puSt + 1 + (swingTr == 1 ? 1 : 0) + (f_ote(1, puTop, puBot, puObBar, mhp, mhi, mlp, mli) ? 10 : 0)
-        uState := 0
+        uState := f_mitig(1, puTop, puBot, puObBar) ? 1 : 0
         uDet := bar_index
         puTop := na
     else if not na(puTop) and bar_index - puObBar > bw
@@ -438,30 +450,33 @@ f_confirm(Cand c, int d) =>
     bool ote = f_ote(d, c.top, c.bot, c.obBar, gHp, gHi, gLp, gLi)
     bool excl = extMode == "Exclure l'OB" and c.ext
     bool sizeOk = maxSize <= 0 or c.top - c.bot <= maxSize * atr
+    // déjà consommé avant la confirmation → pas un OB frais (ni dessiné si masquage, ni tradé)
+    bool mitig = f_mitig(d, c.top, c.bot, c.obBar)
+    bool drawIt = not (mitig and hideTouch)
     // pas de doublon : si un OB frais du même sens chevauche, on garde le plus étoilé (à égalité, le plus récent)
     bool better = true
     if useChart and sizeOk and st >= minStars and obs.size() > 0
         for i = obs.size() - 1 to 0
             OB q = obs.get(i)
-            if q.dir == d and q.state < 2 and math.min(q.top, c.top) > math.max(q.bot, c.bot)
-                if q.stars > st
+            if drawIt and q.dir == d and q.state < 2 and math.min(q.top, c.top) > math.max(q.bot, c.bot)
+                if q.state == 0 and q.stars > st and not mitig
                     better := false
                 else
                     box.delete(q.bx)
                     label.delete(q.lb)
                     obs.remove(i)
-    if useChart and sizeOk and st >= minStars and better and (not reqOte or ote) and not excl
+    if useChart and drawIt and sizeOk and st >= minStars and better and (not reqOte or ote) and not excl
         color col = d == -1 ? cBear : cBull
         bool five = st == 5
         box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
-        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na, ote, al)
+        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, mitig ? 1 : 0, b, na, ote, al)
         o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
         obs.push(o)
         while obs.size() > maxObs
             OB old = obs.shift()
             box.delete(old.bx)
             label.delete(old.lb)
-    excl ? -1 : st + (ote ? 10 : 0) + (al ? 100 : 0)
+    excl or mitig ? -1 : st + (ote ? 10 : 0) + (al ? 100 : 0)
 
 if barstate.isconfirmed
     if not na(ph)
