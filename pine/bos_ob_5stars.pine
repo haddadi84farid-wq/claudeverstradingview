@@ -20,6 +20,7 @@ lenSw   = input.int(2, "Pivot de structure (bougies de chaque côté)", minval=1
 fAfter  = input.int(3, "FVG : peut démarrer jusqu'à N bougies après le sommet", minval=0, maxval=10, group=g1)
 bosWin  = input.int(12, "BOS : doit arriver dans les N bougies après l'OB", minval=1, maxval=50, group=g1)
 extLook = input.int(10, "Liquidité externe : sommets des N bougies avant l'OB", minval=2, maxval=50, group=g1)
+incWick = input.bool(false, "Zone : inclure la mèche du sweep (sinon bougie OB seule)", group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
 
 g2 = "2) Affichage"
@@ -63,7 +64,7 @@ f_state(int st) =>
 // Candidat OB quand un FVG se forme (bougies [2],[1],[0]).
 // s = bougie au sommet (creux) du mouvement juste avant le FVG.
 // Si sa mèche dépasse la bougie d'avant → OB = bougie d'avant, sweep = vrai.
-f_cand(int dir, int fa, float gapAtr, float a, int xl) =>
+f_cand(int dir, int fa, float gapAtr, float a, int xl, bool incW) =>
     bool fvg = dir == -1 ? (high < low[2] and low[2] - high >= gapAtr * a) : (low > high[2] and low - high[2] >= gapAtr * a)
     int kOb = -1
     float top = na
@@ -75,10 +76,16 @@ f_cand(int dir, int fa, float gapAtr, float a, int xl) =>
         for k = 2 to 3 + fa
             if dir == -1 ? high[k] > high[s] : low[k] < low[s]
                 s := k
-        sw := dir == -1 ? high[s] > high[s + 1] : low[s] < low[s + 1]
-        kOb := sw ? s + 1 : s
-        top := math.max(high[s], high[kOb])
-        bot := math.min(low[s], low[kOb])
+        // OB = dernière bougie OPPOSÉE (haussière pour une vente) au sommet ou juste avant
+        kOb := s
+        for k = s to s + 3
+            if dir == -1 ? close[k] >= open[k] : close[k] <= open[k]
+                kOb := k
+                break
+        // sweep = une bougie plus récente (le sommet) dépasse l'OB par la mèche
+        sw := kOb > s and (dir == -1 ? high[s] > high[kOb] : low[s] < low[kOb])
+        top := dir == -1 and incW and sw ? high[s] : high[kOb]
+        bot := dir == 1 and incW and sw ? low[s] : low[kOb]
         float ref = dir == -1 ? high[kOb + 1] : low[kOb + 1]
         for j = kOb + 1 to kOb + xl
             ref := dir == -1 ? math.max(ref, high[j]) : math.min(ref, low[j])
@@ -87,7 +94,7 @@ f_cand(int dir, int fa, float gapAtr, float a, int xl) =>
 
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
 // Renvoie le dernier BOS + le dernier OB vente / achat confirmé (valeurs de la bougie CLÔTURÉE).
-f_engine(int len, int fa, int bw, int xl, float gapAtr) =>
+f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
     float a  = ta.atr(14)
     float ePh = ta.pivothigh(high, len, len)
     float ePl = ta.pivotlow(low, len, len)
@@ -143,7 +150,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr) =>
         puBot := na
         puTop := na
     // candidats
-    [kD, tD, bD, swD, exD] = f_cand(-1, fa, gapAtr, a, xl)
+    [kD, tD, bD, swD, exD] = f_cand(-1, fa, gapAtr, a, xl, incW)
     if kD > 0
         pdTop := tD
         pdBot := bD
@@ -151,7 +158,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr) =>
         pdBar := bar_index
         pdObBar := bar_index - kD
         pdSt := 2 + (swD ? 1 : 0) + (exD ? 1 : 0)
-    [kU, tU, bU, swU, exU] = f_cand(1, fa, gapAtr, a, xl)
+    [kU, tU, bU, swU, exU] = f_cand(1, fa, gapAtr, a, xl, incW)
     if kU > 0
         puTop := tU
         puBot := bU
@@ -238,7 +245,19 @@ f_label(OB o) =>
 f_confirm(Cand c, int d) =>
     int st = 3 + (c.sw ? 1 : 0) + (c.ext ? 1 : 0)
     bool sizeOk = maxSize <= 0 or c.top - c.bot <= maxSize * atr
-    if useChart and sizeOk and st >= minStars
+    // pas de doublon : si un OB frais du même sens chevauche, on garde le plus étoilé (à égalité, le plus récent)
+    bool better = true
+    if useChart and sizeOk and st >= minStars and obs.size() > 0
+        for i = obs.size() - 1 to 0
+            OB q = obs.get(i)
+            if q.dir == d and q.state < 2 and math.min(q.top, c.top) > math.max(q.bot, c.bot)
+                if q.stars > st
+                    better := false
+                else
+                    box.delete(q.bx)
+                    label.delete(q.lb)
+                    obs.remove(i)
+    if useChart and sizeOk and st >= minStars and better
         color col = d == -1 ? cBear : cBull
         bool five = st == 5
         box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
@@ -309,10 +328,10 @@ if barstate.isconfirmed
             candU := na
 
     // ---- nouveaux candidats (au moment où le FVG se forme)
-    [cKD, cTD, cBD, cSwD, cExD] = f_cand(-1, fAfter, minGap, atr, extLook)
+    [cKD, cTD, cBD, cSwD, cExD] = f_cand(-1, fAfter, minGap, atr, extLook, incWick)
     if cKD > 0
         candD := Cand.new(cTD, cBD, bar_index - cKD, cSwD, cExD)
-    [cKU, cTU, cBU, cSwU, cExU] = f_cand(1, fAfter, minGap, atr, extLook)
+    [cKU, cTU, cBU, cSwU, cExU] = f_cand(1, fAfter, minGap, atr, extLook, incWick)
     if cKU > 0
         candU := Cand.new(cTU, cBU, bar_index - cKU, cSwU, cExU)
 
@@ -358,12 +377,12 @@ string tA = okA ? tfA : timeframe.period
 string tB = okB ? tfB : timeframe.period
 string tC = okC ? tfC : timeframe.period
 string tD = okD ? tfD : timeframe.period
-[aBos, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
-[bBos, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
-[cBosD, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
-[dBos, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+[aBos, aDT, aDB, aDTm, aDS, aDSt, aUT, aUB, aUTm, aUS, aUSt] = request.security(syminfo.tickerid, tA, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
+[bBos, bDT, bDB, bDTm, bDS, bDSt, bUT, bUB, bUTm, bUS, bUSt] = request.security(syminfo.tickerid, tB, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
+[cBosD, cDT, cDB, cDTm, cDS, cDSt, cUT, cUB, cUTm, cUS, cUSt] = request.security(syminfo.tickerid, tC, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
+[dBos, dDT, dDB, dDTm, dDS, dDSt, dUT, dUB, dUTm, dUS, dUSt] = request.security(syminfo.tickerid, tD, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
 string tS = useChart ? timeframe.period : tfShow
-[sBos, sDT, sDB, sDTm, sDS, sDSt, sUT, sUB, sUTm, sUS, sUSt] = request.security(syminfo.tickerid, tS, f_engine(lenSw, fAfter, bosWin, extLook, minGap), lookahead=barmerge.lookahead_on)
+[sBos, sDT, sDB, sDTm, sDS, sDSt, sUT, sUB, sUTm, sUS, sUSt] = request.security(syminfo.tickerid, tS, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
 
 bool htfNew5 = (okA and ((aDS == 5 and aDTm != aDTm[1]) or (aUS == 5 and aUTm != aUTm[1]))) or (okB and ((bDS == 5 and bDTm != bDTm[1]) or (bUS == 5 and bUTm != bUTm[1]))) or (okC and ((cDS == 5 and cDTm != cDTm[1]) or (cUS == 5 and cUTm != cUTm[1]))) or (okD and ((dDS == 5 and dDTm != dDTm[1]) or (dUS == 5 and dUTm != dUTm[1])))
 
