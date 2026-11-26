@@ -25,10 +25,10 @@ minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g
 
 g2 = "2) Affichage"
 tfShow    = input.timeframe("", "TF des OB affichés (vide = TF du graphique)", group=g2)
-maxPerDir = input.int(2, "OB affichés par sens (les plus récents)", minval=1, maxval=20, group=g2)
+maxPerDir = input.int(3, "OB affichés par sens (les plus PROCHES du prix, anciens inclus)", minval=1, maxval=20, group=g2)
 maxSize   = input.float(3.0, "Ignorer les OB plus hauts que N x ATR (0 = off)", minval=0.0, step=0.5, group=g2)
 minStars  = input.int(3, "Étoiles minimum affichées", minval=3, maxval=5, group=g2)
-maxObs    = input.int(20, "OB affichés au maximum", minval=1, maxval=100, group=g2)
+maxObs    = input.int(60, "OB frais gardés en mémoire", minval=5, maxval=150, group=g2)
 extR      = input.int(15, "Extension à droite (bougies)", minval=0, group=g2)
 showBos   = input.bool(true, "Afficher les BOS", group=g2)
 hideTouch = input.bool(true, "Masquer un OB dès qu'il est touché (seulement les OB frais)", group=g2)
@@ -264,16 +264,6 @@ f_confirm(Cand c, int d) =>
         OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na)
         o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
         obs.push(o)
-        // ne garder que les maxPerDir plus récents de ce sens
-        int cnt = 0
-        for i = obs.size() - 1 to 0
-            OB q = obs.get(i)
-            if q.dir == d
-                cnt += 1
-                if cnt > maxPerDir
-                    box.delete(q.bx)
-                    label.delete(q.lb)
-                    obs.remove(i)
         while obs.size() > maxObs
             OB old = obs.shift()
             box.delete(old.bx)
@@ -413,6 +403,40 @@ f_row(int r, bool ok, string tf, int bos, float dT, float dB, int dS, int dSt, f
         table.cell(tb, 2, r, f_cell(dT, dB, dS, dSt), text_color=dS == 5 and dSt < 2 ? c5 : dSt == 2 ? color.gray : cBear, text_size=size.small, text_halign=text.align_left)
         table.cell(tb, 3, r, f_cell(uT, uB, uS, uSt), text_color=uS == 5 and uSt < 2 ? c5 : uSt == 2 ? color.gray : cBull, text_size=size.small, text_halign=text.align_left)
     0
+
+// Affichage : seulement les maxPerDir OB frais les plus PROCHES du prix, par sens (les autres restent en mémoire, masqués)
+f_style(OB o, bool vis, float distAtr) =>
+    color col = o.dir == -1 ? cBear : cBull
+    bool five = o.stars == 5
+    box.set_bgcolor(o.bx, vis ? color.new(col, five ? 70 : o.stars == 4 ? 80 : 88) : color.new(col, 100))
+    box.set_border_color(o.bx, vis ? (five ? c5 : color.new(col, 50)) : color.new(col, 100))
+    label.set_textcolor(o.lb, vis ? (five ? c5 : col) : color.new(col, 100))
+    if vis
+        label.set_text(o.lb, f_label(o) + " · " + (distAtr <= 0 ? "prix dans la zone" : str.tostring(distAtr, "0.0") + " ATR"))
+    0
+
+if barstate.islast and obs.size() > 0
+    array<float> dS = array.new_float()
+    array<int>   iS = array.new_int()
+    array<float> dB = array.new_float()
+    array<int>   iB = array.new_int()
+    for [i, o] in obs
+        if o.state < 2
+            float dist = o.dir == -1 ? math.max(0.0, o.bot - close) : math.max(0.0, close - o.top)
+            if o.dir == -1
+                dS.push(dist)
+                iS.push(i)
+            else
+                dB.push(dist)
+                iB.push(i)
+    if dS.size() > 0
+        array<int> ord = dS.sort_indices(order.ascending)
+        for k = 0 to ord.size() - 1
+            f_style(obs.get(iS.get(ord.get(k))), k < maxPerDir, atr > 0 ? dS.get(ord.get(k)) / atr : 0.0)
+    if dB.size() > 0
+        array<int> ordB = dB.sort_indices(order.ascending)
+        for k = 0 to ordB.size() - 1
+            f_style(obs.get(iB.get(ordB.get(k))), k < maxPerDir, atr > 0 ? dB.get(ordB.get(k)) / atr : 0.0)
 
 if barstate.islast
     for b in hBx
