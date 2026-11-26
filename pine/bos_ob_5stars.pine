@@ -10,6 +10,7 @@
 //   ★ BOS confirmé à la clôture (avant ou après l'OB, dans la fenêtre)
 //   ★ Sweep : la mèche de la bougie suivante dépasse l'OB (liquidité de l'OB prise)
 //   ★ Liquidité externe : cette mèche dépasse aussi le dernier sommet précédent
+//   + OTE (confirmation) : l'OB est dans le retracement 61,8–79 % de la jambe précédente
 // Multi-TF : même moteur sur M5 / M15 / H1 / H4 (non-repaint, [1] + lookahead_on).
 // ─────────────────────────────────────────────────────────────────────────────
 indicator("BOS + Order Block 5★ — Multi-TF", "BOS OB 5★", overlay=true, max_boxes_count=500, max_lines_count=500, max_labels_count=500)
@@ -22,6 +23,12 @@ bosWin  = input.int(12, "BOS : doit arriver dans les N bougies après l'OB", min
 extLook = input.int(10, "Liquidité externe : sommets des N bougies avant l'OB", minval=2, maxval=50, group=g1)
 incWick = input.bool(false, "Zone : inclure la mèche du sweep (sinon bougie OB seule)", group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
+
+gO = "1b) OTE (confirmation)"
+oteLen = input.int(5, "Swings majeurs : pivot (bougies de chaque côté)", minval=2, group=gO)
+oteLo  = input.float(0.618, "OTE : début (ratio)", minval=0.3, maxval=0.9, step=0.001, group=gO)
+oteHi  = input.float(0.79, "OTE : fin (ratio)", minval=0.4, maxval=0.95, step=0.001, group=gO)
+reqOte = input.bool(false, "Afficher seulement les OB en OTE", group=gO)
 
 g2 = "2) Affichage"
 tfShow    = input.timeframe("", "TF des OB affichés (vide = TF du graphique)", group=g2)
@@ -52,7 +59,8 @@ cBos  = input.color(#E91E63, "BOS", group=g4)
 
 // ============================ OUTILS ================================
 f_stars(int n) =>
-    str.repeat("★", n) + str.repeat("☆", 5 - n)
+    int m = n % 10
+    str.repeat("★", m) + str.repeat("☆", 5 - m) + (n >= 10 ? " +OTE" : "")
 
 f_tfName(string tf) =>
     int s = timeframe.in_seconds(tf)
@@ -92,6 +100,49 @@ f_cand(int dir, int fa, float gapAtr, float a, int xl, bool incW) =>
         ext := sw and (dir == -1 ? high[s] > ref : low[s] < ref)
     [kOb, top, bot, sw, ext]
 
+// OTE : l'OB doit se trouver dans le retracement 61,8–79 % de la jambe PRÉCÉDENTE.
+// Vente : sommet majeur H → creux majeur L (avant l'OB), le rebond vers l'OB remonte en 61,8–79 % de H-L.
+f_ote(int dir, float top, float bot, int obBar, array<float> hp, array<int> hi, array<float> lp, array<int> li) =>
+    bool res = false
+    if hp.size() > 0 and lp.size() > 0
+        if dir == -1
+            float L = na
+            int Li = na
+            for k = lp.size() - 1 to 0
+                if li.get(k) < obBar
+                    L := lp.get(k)
+                    Li := li.get(k)
+                    break
+            if not na(L)
+                float H = na
+                for k = hp.size() - 1 to 0
+                    if hi.get(k) < Li
+                        H := hp.get(k)
+                        break
+                if not na(H) and H > L
+                    float zB = L + oteLo * (H - L)
+                    float zT = L + oteHi * (H - L)
+                    res := math.min(top, zT) > math.max(bot, zB)
+        else
+            float H = na
+            int Hi = na
+            for k = hp.size() - 1 to 0
+                if hi.get(k) < obBar
+                    H := hp.get(k)
+                    Hi := hi.get(k)
+                    break
+            if not na(H)
+                float L = na
+                for k = lp.size() - 1 to 0
+                    if li.get(k) < Hi
+                        L := lp.get(k)
+                        break
+                if not na(L) and H > L
+                    float zT = H - oteLo * (H - L)
+                    float zB = H - oteHi * (H - L)
+                    res := math.min(top, zT) > math.max(bot, zB)
+    res
+
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
 // Renvoie le dernier BOS + le dernier OB vente / achat confirmé (valeurs de la bougie CLÔTURÉE).
 f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
@@ -129,6 +180,24 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
     var int   uSt = 0
     var int   uState = 2
     var int   uDet = na
+    float mPh = ta.pivothigh(high, oteLen, oteLen)
+    float mPl = ta.pivotlow(low, oteLen, oteLen)
+    var array<float> mhp = array.new_float()
+    var array<int>   mhi = array.new_int()
+    var array<float> mlp = array.new_float()
+    var array<int>   mli = array.new_int()
+    if not na(mPh)
+        mhp.push(mPh)
+        mhi.push(bar_index - oteLen)
+        if mhp.size() > 10
+            mhp.shift()
+            mhi.shift()
+    if not na(mPl)
+        mlp.push(mPl)
+        mli.push(bar_index - oteLen)
+        if mlp.size() > 10
+            mlp.shift()
+            mli.shift()
     if not na(ePh)
         eSH := ePh
     if not na(ePl)
@@ -180,7 +249,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         dTop := pdTop
         dBot := pdBot
         dTm := pdTm
-        dSt := pdSt + 1
+        dSt := pdSt + 1 + (f_ote(-1, pdTop, pdBot, pdObBar, mhp, mhi, mlp, mli) ? 10 : 0)
         dState := 0
         dDet := bar_index
         pdTop := na
@@ -190,7 +259,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         uTop := puTop
         uBot := puBot
         uTm := puTm
-        uSt := puSt + 1
+        uSt := puSt + 1 + (f_ote(1, puTop, puBot, puObBar, mhp, mhi, mlp, mli) ? 10 : 0)
         uState := 0
         uDet := bar_index
         puTop := na
@@ -211,6 +280,7 @@ type OB
     int   state
     box   bx
     label lb
+    bool  ote
 
 type Cand
     float top
@@ -220,6 +290,25 @@ type Cand
     bool  ext
 
 var array<OB> obs = array.new<OB>()
+var array<float> gHp = array.new_float()
+var array<int>   gHi = array.new_int()
+var array<float> gLp = array.new_float()
+var array<int>   gLi = array.new_int()
+float gMh = ta.pivothigh(high, oteLen, oteLen)
+float gMl = ta.pivotlow(low, oteLen, oteLen)
+if barstate.isconfirmed
+    if not na(gMh)
+        gHp.push(gMh)
+        gHi.push(bar_index - oteLen)
+        if gHp.size() > 10
+            gHp.shift()
+            gHi.shift()
+    if not na(gMl)
+        gLp.push(gMl)
+        gLi.push(bar_index - oteLen)
+        if gLp.size() > 10
+            gLp.shift()
+            gLi.shift()
 bool useChart = tfShow == "" or tfShow == timeframe.period
 var Cand candD = na
 var Cand candU = na
@@ -236,14 +325,16 @@ var int   lastBullBos = na
 
 bool evBos  = false
 bool evNew5 = false
+bool evNew5Ote = false
 bool evNewBear = false
 bool evNewBull = false
 
 f_label(OB o) =>
-    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + " · liq. ext " + (o.ext ? "✓" : "✗") + " · " + f_state(o.state)
+    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + " · liq. ext " + (o.ext ? "✓" : "✗") + " · OTE " + (o.ote ? "✓" : "✗") + " · " + f_state(o.state)
 
 f_confirm(Cand c, int d) =>
     int st = 3 + (c.sw ? 1 : 0) + (c.ext ? 1 : 0)
+    bool ote = f_ote(d, c.top, c.bot, c.obBar, gHp, gHi, gLp, gLi)
     bool sizeOk = maxSize <= 0 or c.top - c.bot <= maxSize * atr
     // pas de doublon : si un OB frais du même sens chevauche, on garde le plus étoilé (à égalité, le plus récent)
     bool better = true
@@ -257,18 +348,18 @@ f_confirm(Cand c, int d) =>
                     box.delete(q.bx)
                     label.delete(q.lb)
                     obs.remove(i)
-    if useChart and sizeOk and st >= minStars and better
+    if useChart and sizeOk and st >= minStars and better and (not reqOte or ote)
         color col = d == -1 ? cBear : cBull
         bool five = st == 5
         box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
-        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na)
+        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na, ote)
         o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
         obs.push(o)
         while obs.size() > maxObs
             OB old = obs.shift()
             box.delete(old.bx)
             label.delete(old.lb)
-    st
+    st + (ote ? 10 : 0)
 
 if barstate.isconfirmed
     if not na(ph)
@@ -348,13 +439,15 @@ if barstate.isconfirmed
         if lastBearBos >= candD.obBar and lastBearBos - candD.obBar <= bosWin
             int st = f_confirm(candD, -1)
             evNewBear := true
-            evNew5 := evNew5 or st == 5
+            evNew5 := evNew5 or st % 10 == 5
+            evNew5Ote := evNew5Ote or st == 15
             candD := na
     if not na(candU) and not na(lastBullBos)
         if lastBullBos >= candU.obBar and lastBullBos - candU.obBar <= bosWin
             int st = f_confirm(candU, 1)
             evNewBull := true
-            evNew5 := evNew5 or st == 5
+            evNew5 := evNew5 or st % 10 == 5
+            evNew5Ote := evNew5Ote or st == 15
             candU := na
 
 // ======================= MULTI-TF (non-repaint) =======================
@@ -374,18 +467,18 @@ string tD = okD ? tfD : timeframe.period
 string tS = useChart ? timeframe.period : tfShow
 [sBos, sDT, sDB, sDTm, sDS, sDSt, sUT, sUB, sUTm, sUS, sUSt] = request.security(syminfo.tickerid, tS, f_engine(lenSw, fAfter, bosWin, extLook, minGap, incWick), lookahead=barmerge.lookahead_on)
 
-bool htfNew5 = (okA and ((aDS == 5 and aDTm != aDTm[1]) or (aUS == 5 and aUTm != aUTm[1]))) or (okB and ((bDS == 5 and bDTm != bDTm[1]) or (bUS == 5 and bUTm != bUTm[1]))) or (okC and ((cDS == 5 and cDTm != cDTm[1]) or (cUS == 5 and cUTm != cUTm[1]))) or (okD and ((dDS == 5 and dDTm != dDTm[1]) or (dUS == 5 and dUTm != dUTm[1])))
+bool htfNew5 = (okA and ((aDS % 10 == 5 and aDTm != aDTm[1]) or (aUS % 10 == 5 and aUTm != aUTm[1]))) or (okB and ((bDS % 10 == 5 and bDTm != bDTm[1]) or (bUS % 10 == 5 and bUTm != bUTm[1]))) or (okC and ((cDS % 10 == 5 and cDTm != cDTm[1]) or (cUS % 10 == 5 and cUTm != cUTm[1]))) or (okD and ((dDS % 10 == 5 and dDTm != dDTm[1]) or (dUS % 10 == 5 and dUTm != dUTm[1])))
 
 var array<box>   hBx = array.new<box>()
 var array<label> hLb = array.new<label>()
 var table tb = table.new(position.top_right, 4, 6, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
 
 f_htfZone(bool ok, string tf, float top, float bot, int tm, int st, int state, int d, bool force) =>
-    if ok and (showHtf or force) and not na(top) and (hideTouch ? state == 0 : state < 2) and st >= (force ? minStars : htfStars)
+    if ok and (showHtf or force) and not na(top) and (hideTouch ? state == 0 : state < 2) and st % 10 >= (force ? minStars : htfStars) and (not reqOte or st >= 10)
         color c = d == -1 ? cBear : cBull
         int xr = time + extR * chartSec * 1000
-        hBx.push(box.new(tm, top, xr, bot, xloc=xloc.bar_time, bgcolor=color.new(c, 92), border_color=st == 5 ? c5 : color.new(c, 40), border_style=line.style_dashed, border_width=st == 5 ? 2 : 1))
-        hLb.push(label.new(xr, top, "OB " + f_tfName(tf) + " " + (d == -1 ? "VENTE " : "ACHAT ") + f_stars(st) + " · " + f_state(state), xloc=xloc.bar_time, style=label.style_label_left, color=color.new(c, 100), textcolor=st == 5 ? c5 : c, size=size.small))
+        hBx.push(box.new(tm, top, xr, bot, xloc=xloc.bar_time, bgcolor=color.new(c, 92), border_color=st % 10 == 5 ? c5 : color.new(c, 40), border_style=line.style_dashed, border_width=st % 10 == 5 ? 2 : 1))
+        hLb.push(label.new(xr, top, "OB " + f_tfName(tf) + " " + (d == -1 ? "VENTE " : "ACHAT ") + f_stars(st) + " · " + f_state(state), xloc=xloc.bar_time, style=label.style_label_left, color=color.new(c, 100), textcolor=st % 10 == 5 ? c5 : c, size=size.small))
     0
 
 f_cell(float top, float bot, int st, int state) =>
@@ -400,8 +493,8 @@ f_row(int r, bool ok, string tf, int bos, float dT, float dB, int dS, int dSt, f
         table.cell(tb, 3, r, "", text_size=size.small)
     else
         table.cell(tb, 1, r, bos == 1 ? "haussier ▲" : bos == -1 ? "baissier ▼" : "—", text_color=bos == 1 ? cBull : bos == -1 ? cBear : color.gray, text_size=size.small)
-        table.cell(tb, 2, r, f_cell(dT, dB, dS, dSt), text_color=dS == 5 and dSt < 2 ? c5 : dSt == 2 ? color.gray : cBear, text_size=size.small, text_halign=text.align_left)
-        table.cell(tb, 3, r, f_cell(uT, uB, uS, uSt), text_color=uS == 5 and uSt < 2 ? c5 : uSt == 2 ? color.gray : cBull, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 2, r, f_cell(dT, dB, dS, dSt), text_color=dS % 10 == 5 and dSt < 2 ? c5 : dSt == 2 ? color.gray : cBear, text_size=size.small, text_halign=text.align_left)
+        table.cell(tb, 3, r, f_cell(uT, uB, uS, uSt), text_color=uS % 10 == 5 and uSt < 2 ? c5 : uSt == 2 ? color.gray : cBull, text_size=size.small, text_halign=text.align_left)
     0
 
 // Affichage : seulement les maxPerDir OB frais les plus PROCHES du prix, par sens (les autres restent en mémoire, masqués)
@@ -475,12 +568,12 @@ if barstate.islast
             if o.dir == -1
                 cdT := o.top
                 cdB := o.bot
-                cdS := o.stars
+                cdS := o.stars + (o.ote ? 10 : 0)
                 cdSt := o.state
             else
                 cuT := o.top
                 cuB := o.bot
-                cuS := o.stars
+                cuS := o.stars + (o.ote ? 10 : 0)
                 cuSt := o.state
         f_row(1, true, timeframe.period, bosDir, cdT, cdB, cdS, cdSt, cuT, cuB, cuS, cuSt)
         f_row(2, okA, tfA, aBos, aDT, aDB, aDS, aDSt, aUT, aUB, aUS, aUSt)
@@ -495,6 +588,7 @@ for o in obs
         in5 := true
 alertcondition(evBos, "BOS (TF du graphique)", "{{ticker}} : BOS détecté")
 alertcondition(evNew5, "Nouvel OB 5★ (TF du graphique)", "{{ticker}} : nouvel order block 5 étoiles")
+alertcondition(evNew5Ote, "Nouvel OB 5★ + OTE", "{{ticker}} : nouvel order block 5 étoiles dans l'OTE")
 alertcondition(evNew5 and evNewBear, "Nouvel OB VENTE 5★", "{{ticker}} : nouvel OB de vente 5 étoiles")
 alertcondition(evNew5 and evNewBull, "Nouvel OB ACHAT 5★", "{{ticker}} : nouvel OB d'achat 5 étoiles")
 alertcondition(in5 and not in5[1], "Prix dans un OB 5★", "{{ticker}} : le prix entre dans un OB 5 étoiles")
