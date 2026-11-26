@@ -8,8 +8,9 @@
 //   ★ OB à l'origine de l'impulsion
 //   ★ FVG (displacement)
 //   ★ BOS confirmé à la clôture (avant ou après l'OB, dans la fenêtre)
-//   ★ Sweep : la mèche de la bougie suivante dépasse l'OB (liquidité de l'OB prise)
-//   ★ Liquidité externe : cette mèche dépasse aussi le dernier sommet précédent
+//   ★ Sweep interne : la mèche de la bougie suivante dépasse l'OB, SANS casser un sommet externe
+//   ★ Aligné : l'OB va dans le sens de la tendance HTF (BOS du TF d'alignement)
+//   ⚠ Liquidité externe (la mèche casse aussi un vrai sommet) = malus : souvent une continuation
 //   + OTE (confirmation) : l'OB est dans le retracement 61,8–79 % de la jambe précédente
 // Multi-TF : même moteur sur M5 / M15 / H1 / H4 (non-repaint, [1] + lookahead_on).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,6 +24,8 @@ bosWin  = input.int(12, "BOS : doit arriver dans les N bougies après l'OB", min
 extLook = input.int(10, "Liquidité externe : sommets des N bougies avant l'OB", minval=2, maxval=50, group=g1)
 incWick = input.bool(false, "Zone : inclure la mèche du sweep (sinon bougie OB seule)", group=g1)
 minGap  = input.float(0.0, "FVG minimum (x ATR)", minval=0.0, step=0.05, group=g1)
+extMode = input.string("Malus (pas d'étoile sweep)", "Liquidité externe", options=["Malus (pas d'étoile sweep)", "Exclure l'OB", "Ignorer"], group=g1)
+tfAlign = input.timeframe("60", "TF d'alignement (tendance HTF)", group=g1)
 
 gO = "1b) OTE (confirmation)"
 oteLen = input.int(5, "Swings majeurs : pivot (bougies de chaque côté)", minval=2, group=gO)
@@ -55,11 +58,13 @@ g5 = "5) Mesure de performance (backtest des OB)"
 btOn   = input.bool(true, "Mesurer chaque OB : ordre limite dans l'OB", group=g5)
 entPct = input.float(0.5, "Entrée : profondeur dans l'OB (0,5 = 50 %)", minval=0.0, maxval=1.0, step=0.05, group=g5)
 btBuf  = input.float(0.1, "SL : marge au-delà de l'OB (x ATR)", minval=0.0, step=0.05, group=g5)
-btTp   = input.float(2.0, "TP retenu pour l'espérance (R)", minval=0.5, maxval=3.0, step=0.5, group=g5)
 btExp  = input.int(50, "Ordre annulé après N bougies sans entrée", minval=5, group=g5)
 btHold = input.int(100, "Durée max d'un trade (bougies)", minval=5, group=g5)
 btCost = input.float(0.35, "Coût spread + frais (en prix)", minval=0.0, step=0.05, group=g5)
 showBt = input.bool(true, "Tableau de performance", group=g5)
+sessA  = input.session("0800-1100", "Session London", group=g5)
+sessB  = input.session("1430-1700", "Session New York", group=g5)
+sessTz = input.string("Europe/Paris", "Fuseau horaire", group=g5)
 
 g4 = "4) Couleurs"
 cBear = input.color(#EF5350, "OB vente", group=g4)
@@ -153,10 +158,34 @@ f_ote(int dir, float top, float bot, int obBar, array<float> hp, array<int> hi, 
                     res := math.min(top, zT) > math.max(bot, zB)
     res
 
+// Tendance de structure (dernier BOS) d'un TF, valeur de la bougie clôturée
+f_trend(int len) =>
+    float h = ta.pivothigh(high, len, len)
+    float l = ta.pivotlow(low, len, len)
+    var float sh = na
+    var float sl = na
+    var int tr = 0
+    if not na(h)
+        sh := h
+    if not na(l)
+        sl := l
+    if not na(sh) and close > sh
+        tr := 1
+        sh := na
+    else if not na(sl) and close < sl
+        tr := -1
+        sl := na
+    tr[1]
+
+// sweep utile = sweep interne ; la liquidité externe est un malus (ou une exclusion)
+f_swStar(bool sw, bool ext) =>
+    sw and (not ext or extMode == "Ignorer")
+
 // ============ MOTEUR (utilisé pour chaque TF supérieur) ============
 // Renvoie le dernier BOS + le dernier OB vente / achat confirmé (valeurs de la bougie CLÔTURÉE).
 f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
     float a  = ta.atr(14)
+    int swingTr = f_trend(len * 5)
     float ePh = ta.pivothigh(high, len, len)
     float ePl = ta.pivotlow(low, len, len)
     var float eSH = na
@@ -236,7 +265,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         pdTm := time[kD]
         pdBar := bar_index
         pdObBar := bar_index - kD
-        pdSt := 2 + (swD ? 1 : 0) + (exD ? 1 : 0)
+        pdSt := extMode == "Exclure l'OB" and exD ? -99 : 2 + (f_swStar(swD, exD) ? 1 : 0)
     [kU, tU, bU, swU, exU] = f_cand(1, fa, gapAtr, a, xl, incW)
     if kU > 0
         puTop := tU
@@ -244,7 +273,7 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         puTm := time[kU]
         puBar := bar_index
         puObBar := bar_index - kU
-        puSt := 2 + (swU ? 1 : 0) + (exU ? 1 : 0)
+        puSt := extMode == "Exclure l'OB" and exU ? -99 : 2 + (f_swStar(swU, exU) ? 1 : 0)
     // BOS à la clôture
     if not na(eSL) and close < eSL
         eBos := -1
@@ -255,21 +284,21 @@ f_engine(int len, int fa, int bw, int xl, float gapAtr, bool incW) =>
         lastBullBos := bar_index
         eSH := na
     // confirmation : BOS entre l'OB et OB + bw bougies
-    if not na(pdTop) and not na(lastBearBos) and lastBearBos >= pdObBar and lastBearBos - pdObBar <= bw
+    if not na(pdTop) and pdSt >= 0 and not na(lastBearBos) and lastBearBos >= pdObBar and lastBearBos - pdObBar <= bw
         dTop := pdTop
         dBot := pdBot
         dTm := pdTm
-        dSt := pdSt + 1 + (f_ote(-1, pdTop, pdBot, pdObBar, mhp, mhi, mlp, mli) ? 10 : 0)
+        dSt := pdSt + 1 + (swingTr == -1 ? 1 : 0) + (f_ote(-1, pdTop, pdBot, pdObBar, mhp, mhi, mlp, mli) ? 10 : 0)
         dState := 0
         dDet := bar_index
         pdTop := na
     else if not na(pdTop) and bar_index - pdObBar > bw
         pdTop := na
-    if not na(puTop) and not na(lastBullBos) and lastBullBos >= puObBar and lastBullBos - puObBar <= bw
+    if not na(puTop) and puSt >= 0 and not na(lastBullBos) and lastBullBos >= puObBar and lastBullBos - puObBar <= bw
         uTop := puTop
         uBot := puBot
         uTm := puTm
-        uSt := puSt + 1 + (f_ote(1, puTop, puBot, puObBar, mhp, mhi, mlp, mli) ? 10 : 0)
+        uSt := puSt + 1 + (swingTr == 1 ? 1 : 0) + (f_ote(1, puTop, puBot, puObBar, mhp, mhi, mlp, mli) ? 10 : 0)
         uState := 0
         uDet := bar_index
         puTop := na
@@ -291,6 +320,7 @@ type OB
     box   bx
     label lb
     bool  ote
+    bool  al
 
 type Cand
     float top
@@ -320,6 +350,11 @@ if barstate.isconfirmed
             gLp.shift()
             gLi.shift()
 bool useChart = tfShow == "" or tfShow == timeframe.period
+// tendance du TF d'alignement (non-repaint)
+string tAl  = timeframe.in_seconds(tfAlign) > timeframe.in_seconds() ? tfAlign : timeframe.period
+int htfDir  = request.security(syminfo.tickerid, tAl, f_trend(lenSw), lookahead=barmerge.lookahead_on)
+bool inSessNow = not na(time(timeframe.period, sessA, sessTz)) or not na(time(timeframe.period, sessB, sessTz))
+
 var Cand candD = na
 var Cand candU = na
 float atr = ta.atr(14)
@@ -349,19 +384,22 @@ type Trade
     float risk
     int   g
     bool  ote
+    bool  al
+    bool  sess
     int   created
     int   fillBar
     int   state
     float mfe
 
 var array<Trade> trades = array.new<Trade>()
-// index : 0 = 3★, 1 = 4★, 2 = 5★, 3 = OTE ✓, 4 = total
-var array<int>   bN  = array.new_int(5, 0)
-var array<int>   bW  = array.new_int(5, 0)
-var array<int>   b1  = array.new_int(5, 0)
-var array<int>   b2  = array.new_int(5, 0)
-var array<int>   b3  = array.new_int(5, 0)
-var array<float> bR  = array.new_float(5, 0.0)
+// index : 0 = 3★, 1 = 4★, 2 = 5★, 3 = OTE ✓, 4 = aligné HTF, 5 = contre HTF, 6 = en session, 7 = hors session, 8 = total
+var array<int>   bN  = array.new_int(9, 0)
+var array<int>   b1  = array.new_int(9, 0)
+var array<int>   b2  = array.new_int(9, 0)
+var array<int>   b3  = array.new_int(9, 0)
+var array<float> bR1 = array.new_float(9, 0.0)
+var array<float> bR2 = array.new_float(9, 0.0)
+var array<float> bR3 = array.new_float(9, 0.0)
 var int bExp = 0
 
 f_addTrade(Cand c, int d, int st) =>
@@ -369,28 +407,36 @@ f_addTrade(Cand c, int d, int st) =>
         float en = d == -1 ? c.bot + (c.top - c.bot) * entPct : c.top - (c.top - c.bot) * entPct
         float sl = d == -1 ? c.top + btBuf * atr : c.bot - btBuf * atr
         float rk = math.max(math.abs(en - sl), syminfo.mintick)
-        trades.push(Trade.new(d, en, sl, rk, st % 10, st >= 10, bar_index, na, 0, 0.0))
+        trades.push(Trade.new(d, en, sl, rk, st % 10, st % 100 >= 10, st >= 100, false, bar_index, na, 0, 0.0))
     0
 
-f_rec(Trade t, float res) =>
-    array<int> ks = array.from(t.g - 3, 4)
+// exitR = résultat en R si l'objectif n'est pas atteint (SL = -1, sortie au temps = R à la clôture)
+f_rec(Trade t, float exitR) =>
+    array<int> ks = array.from(t.g - 3, 8, t.al ? 4 : 5, t.sess ? 6 : 7)
     if t.ote
         ks.push(3)
+    float c = btCost / t.risk
+    float r1 = (t.mfe >= 1.0 ? 1.0 : exitR) - c
+    float r2 = (t.mfe >= 2.0 ? 2.0 : exitR) - c
+    float r3 = (t.mfe >= 3.0 ? 3.0 : exitR) - c
     for k in ks
         bN.set(k, bN.get(k) + 1)
-        bW.set(k, bW.get(k) + (res > 0 ? 1 : 0))
         b1.set(k, b1.get(k) + (t.mfe >= 1.0 ? 1 : 0))
         b2.set(k, b2.get(k) + (t.mfe >= 2.0 ? 1 : 0))
         b3.set(k, b3.get(k) + (t.mfe >= 3.0 ? 1 : 0))
-        bR.set(k, bR.get(k) + res)
+        bR1.set(k, bR1.get(k) + r1)
+        bR2.set(k, bR2.get(k) + r2)
+        bR3.set(k, bR3.get(k) + r3)
     0
 
 f_label(OB o) =>
-    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + " · liq. ext " + (o.ext ? "✓" : "✗") + " · OTE " + (o.ote ? "✓" : "✗") + " · " + f_state(o.state)
+    (o.dir == -1 ? "OB VENTE " : "OB ACHAT ") + f_stars(o.stars) + "\nsweep " + (o.sw ? "✓" : "✗") + (o.ext ? " · liq. ext ⚠" : "") + " · HTF " + (o.al ? "✓" : "✗") + " · OTE " + (o.ote ? "✓" : "✗") + " · " + f_state(o.state)
 
 f_confirm(Cand c, int d) =>
-    int st = 3 + (c.sw ? 1 : 0) + (c.ext ? 1 : 0)
+    bool al = htfDir == d
+    int st = 3 + (f_swStar(c.sw, c.ext) ? 1 : 0) + (al ? 1 : 0)
     bool ote = f_ote(d, c.top, c.bot, c.obBar, gHp, gHi, gLp, gLi)
+    bool excl = extMode == "Exclure l'OB" and c.ext
     bool sizeOk = maxSize <= 0 or c.top - c.bot <= maxSize * atr
     // pas de doublon : si un OB frais du même sens chevauche, on garde le plus étoilé (à égalité, le plus récent)
     bool better = true
@@ -404,18 +450,18 @@ f_confirm(Cand c, int d) =>
                     box.delete(q.bx)
                     label.delete(q.lb)
                     obs.remove(i)
-    if useChart and sizeOk and st >= minStars and better and (not reqOte or ote)
+    if useChart and sizeOk and st >= minStars and better and (not reqOte or ote) and not excl
         color col = d == -1 ? cBear : cBull
         bool five = st == 5
         box b = box.new(c.obBar, c.top, bar_index + extR, c.bot, bgcolor=color.new(col, five ? 70 : st == 4 ? 80 : 88), border_color=five ? c5 : color.new(col, 50), border_width=five ? 2 : 1)
-        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na, ote)
+        OB o = OB.new(c.top, c.bot, d, c.obBar, bar_index, st, c.sw, c.ext, 0, b, na, ote, al)
         o.lb := label.new(bar_index + extR, (c.top + c.bot) / 2, f_label(o), style=label.style_label_left, color=color.new(col, 100), textcolor=five ? c5 : col, size=size.small)
         obs.push(o)
         while obs.size() > maxObs
             OB old = obs.shift()
             box.delete(old.bx)
             label.delete(old.lb)
-    st + (ote ? 10 : 0)
+    excl ? -1 : st + (ote ? 10 : 0) + (al ? 100 : 0)
 
 if barstate.isconfirmed
     if not na(ph)
@@ -493,19 +539,23 @@ if barstate.isconfirmed
     // ---- confirmation : BOS entre l'OB et OB + bosWin bougies (avant ou après le FVG)
     if not na(candD) and not na(lastBearBos)
         if lastBearBos >= candD.obBar and lastBearBos - candD.obBar <= bosWin
-            int st = f_confirm(candD, -1)
-            f_addTrade(candD, -1, st)
-            evNewBear := true
-            evNew5 := evNew5 or st % 10 == 5
-            evNew5Ote := evNew5Ote or st == 15
+            int st0 = f_confirm(candD, -1)
+            int st = st0 % 100
+            if st0 >= 0
+                f_addTrade(candD, -1, st0)
+            evNewBear := st0 >= 0
+            evNew5 := evNew5 or (st0 >= 0 and st % 10 == 5)
+            evNew5Ote := evNew5Ote or (st0 >= 0 and st == 15)
             candD := na
     if not na(candU) and not na(lastBullBos)
         if lastBullBos >= candU.obBar and lastBullBos - candU.obBar <= bosWin
-            int st = f_confirm(candU, 1)
-            f_addTrade(candU, 1, st)
-            evNewBull := true
-            evNew5 := evNew5 or st % 10 == 5
-            evNew5Ote := evNew5Ote or st == 15
+            int st0 = f_confirm(candU, 1)
+            int st = st0 % 100
+            if st0 >= 0
+                f_addTrade(candU, 1, st0)
+            evNewBull := st0 >= 0
+            evNew5 := evNew5 or (st0 >= 0 and st % 10 == 5)
+            evNew5Ote := evNew5Ote or (st0 >= 0 and st == 15)
             candU := na
 
 // ======================= MULTI-TF (non-repaint) =======================
@@ -645,14 +695,15 @@ if barstate.isconfirmed and btOn and trades.size() > 0
         Trade t = trades.get(i)
         if bar_index > t.created
             bool done = false
-            float res = na
+            float exitR = na
             if t.state == 0
                 if t.dir == -1 ? high >= t.en : low <= t.en
                     t.state := 1
                     t.fillBar := bar_index
+                    t.sess := inSessNow
                     if t.dir == -1 ? high >= t.sl : low <= t.sl
                         done := true
-                        res := -1.0
+                        exitR := -1.0
                 else if bar_index - t.created > btExp
                     bExp += 1
                     trades.remove(i)
@@ -660,31 +711,37 @@ if barstate.isconfirmed and btOn and trades.size() > 0
             else
                 if t.dir == -1 ? high >= t.sl : low <= t.sl
                     done := true
-                    res := t.mfe >= btTp ? btTp : -1.0
+                    exitR := -1.0
                 else
                     t.mfe := math.max(t.mfe, t.dir == -1 ? (t.en - low) / t.risk : (high - t.en) / t.risk)
-                    if t.mfe >= math.max(3.0, btTp)
+                    if t.mfe >= 3.0
                         done := true
-                        res := btTp
+                        exitR := 3.0
                     else if bar_index - t.fillBar >= btHold
                         done := true
-                        res := t.mfe >= btTp ? btTp : t.dir * (close - t.en) / t.risk
+                        exitR := t.dir * (close - t.en) / t.risk
             if done
-                f_rec(t, res - btCost / t.risk)
+                f_rec(t, exitR)
                 trades.remove(i)
 
-var table tbBt = table.new(position.bottom_right, 7, 7, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+var table tbBt = table.new(position.bottom_right, 8, 11, bgcolor=color.new(#0B1F3A, 8), border_width=1, border_color=color.new(color.gray, 60))
+f_pct(int a, int n) =>
+    n > 0 ? str.tostring(100.0 * a / n, "0") + " %" : "-"
+f_exp(float r, int n) =>
+    n > 0 ? str.tostring(r / n, "0.00") : "-"
+f_expCol(float r, int n) =>
+    n == 0 ? color.gray : r / n > 0.05 ? color.lime : r / n < 0 ? color.red : color.orange
 f_btRow(int r, string name, int k) =>
     int n = bN.get(k)
     color w = color.white
-    float ex = n > 0 ? bR.get(k) / n : 0.0
     table.cell(tbBt, 0, r, name, text_color=k == 2 ? c5 : w, text_size=size.small, text_halign=text.align_left)
     table.cell(tbBt, 1, r, str.tostring(n), text_color=n < 30 ? color.orange : w, text_size=size.small)
-    table.cell(tbBt, 2, r, n > 0 ? str.tostring(100.0 * b1.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
-    table.cell(tbBt, 3, r, n > 0 ? str.tostring(100.0 * b2.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
-    table.cell(tbBt, 4, r, n > 0 ? str.tostring(100.0 * b3.get(k) / n, "0") + " %" : "-", text_color=w, text_size=size.small)
-    table.cell(tbBt, 5, r, n > 0 ? str.tostring(ex, "0.00") + " R" : "-", text_color=ex > 0 ? color.lime : ex < 0 ? color.red : w, text_size=size.small)
-    table.cell(tbBt, 6, r, str.tostring(bR.get(k), "0.0") + " R", text_color=bR.get(k) >= 0 ? color.lime : color.red, text_size=size.small)
+    table.cell(tbBt, 2, r, f_pct(b1.get(k), n), text_color=w, text_size=size.small)
+    table.cell(tbBt, 3, r, f_pct(b2.get(k), n), text_color=w, text_size=size.small)
+    table.cell(tbBt, 4, r, f_pct(b3.get(k), n), text_color=w, text_size=size.small)
+    table.cell(tbBt, 5, r, f_exp(bR1.get(k), n), text_color=f_expCol(bR1.get(k), n), text_size=size.small)
+    table.cell(tbBt, 6, r, f_exp(bR2.get(k), n), text_color=f_expCol(bR2.get(k), n), text_size=size.small)
+    table.cell(tbBt, 7, r, f_exp(bR3.get(k), n), text_color=f_expCol(bR3.get(k), n), text_size=size.small)
     0
 
 if barstate.islast and btOn and showBt
@@ -694,15 +751,20 @@ if barstate.islast and btOn and showBt
     table.cell(tbBt, 2, 0, "1R atteint", text_color=w, text_size=size.small)
     table.cell(tbBt, 3, 0, "2R atteint", text_color=w, text_size=size.small)
     table.cell(tbBt, 4, 0, "3R atteint", text_color=w, text_size=size.small)
-    table.cell(tbBt, 5, 0, "Espérance (TP " + str.tostring(btTp, "0.0") + "R)", text_color=w, text_size=size.small)
-    table.cell(tbBt, 6, 0, "Net", text_color=w, text_size=size.small)
+    table.cell(tbBt, 5, 0, "Esp. TP 1R", text_color=w, text_size=size.small)
+    table.cell(tbBt, 6, 0, "Esp. TP 2R", text_color=w, text_size=size.small)
+    table.cell(tbBt, 7, 0, "Esp. TP 3R", text_color=w, text_size=size.small)
     f_btRow(1, "★★★☆☆", 0)
     f_btRow(2, "★★★★☆", 1)
     f_btRow(3, "★★★★★", 2)
     f_btRow(4, "+ OTE ✓", 3)
-    f_btRow(5, "TOTAL", 4)
-    table.cell(tbBt, 0, 6, "Non déclenchés : " + str.tostring(bExp) + " | en cours : " + str.tostring(trades.size()), text_color=color.gray, text_size=size.small, text_halign=text.align_left)
-    table.merge_cells(tbBt, 0, 6, 6, 6)
+    f_btRow(5, "Aligné " + f_tfName(tAl), 4)
+    f_btRow(6, "Contre " + f_tfName(tAl), 5)
+    f_btRow(7, "En session", 6)
+    f_btRow(8, "Hors session", 7)
+    f_btRow(9, "TOTAL", 8)
+    table.cell(tbBt, 0, 10, "Espérance en R par trade, coût inclus | non déclenchés : " + str.tostring(bExp) + " | en cours : " + str.tostring(trades.size()), text_color=color.gray, text_size=size.small, text_halign=text.align_left)
+    table.merge_cells(tbBt, 0, 10, 7, 10)
 
 // ============================== ALERTES ==============================
 bool in5 = false
